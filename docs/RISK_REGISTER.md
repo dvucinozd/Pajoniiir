@@ -31,7 +31,8 @@ decisions themselves are recorded in
 smoke closes only the exact scenario it exercised; it must not be promoted to
 unrelated acceptance.
 
-For M2.3, the duplicate raw track-ID gate is closed and the real Rekordbox cue
-A/C and loop comparison is explicitly accepted as unrun. All other applicable
-pre-tag gates are closed; exact-tag build, signed installation, product smoke
-and publication verification remain mandatory release-procedure steps.
+For M2.3, duplicate raw track-ID isolation has passing pre-tag evidence on
+`M2.2-37-g751d3c6` but must be repeated on the exact tagged image before
+publication. The real Rekordbox cue A/C and loop comparison is explicitly
+accepted as unrun. Exact-tag build, signed installation, duplicate isolation,
+product smoke and publication verification remain mandatory release steps.

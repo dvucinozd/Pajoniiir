@@ -25,11 +25,15 @@ The installed candidate `M2.2-37-g751d3c6` on `ota_0` passed:
 - real-media load timing and catalog identity across controlled reboot/remount;
 - slow-network Web Remote convergence and a physical-phone title, PLAY-state
   and visible MAIN-meter decay check;
-- a default-OFF PCM timeline scheduler probe followed by restoration and smoke
-  of the exact maintenance candidate; and
 - duplicate raw track-ID isolation across two independent Rekordbox exports,
   including separate Hot Cue state across remount and software reboot, with
   cleanup confirmed on both media.
+
+A separate temporary instrumented image `M2.2-47-g07618a5`, with the normally
+default-OFF PCM timeline scheduler probe enabled, passed 100 forced iterations.
+The exact maintenance candidate was restored afterward and passed its paired
+runtime smoke. The probe result is evidence for the timeline implementation;
+it is not attributed to the installed `M2.2-37-g751d3c6` binary.
 
 The complete qualification basis is recorded in
 [`P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md),
@@ -45,7 +49,9 @@ and
 3. Build with ESP-IDF v6.0.2 from the exact tag, sign with trusted key
    `rel-001`, and independently verify every artifact.
 4. Install the signed bundle, verify the opposite slot, image identity,
-   USB0/USB1 recovery, playback, MAIN/cue and strict health counters.
+   USB0/USB1 recovery, playback, MAIN/cue and strict health counters. Repeat
+   the two-media duplicate raw track-ID isolation on the exact M2.3 image;
+   pre-tag candidate evidence alone does not close that exact-image gate.
 5. Push the immutable tag and publish the GitHub Release only after the tagged
    image passes.
 6. Upload the versioned public OTA bundle first, independently fetch and hash

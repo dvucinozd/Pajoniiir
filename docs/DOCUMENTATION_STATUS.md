@@ -79,7 +79,8 @@ On 2026-09-28 the operator explicitly accepted the deferred real Rekordbox cue
 A/C and loop slot/time comparison as outside the M2.3 release scope. It remains
 NOT RUN and is not represented as a pass. With that recorded limitation, the
 maintenance candidate is approved for the exact-tag M2.3 build, installation
-and publication sequence. The decision is
+and qualification sequence. Publication still requires the two-media duplicate
+raw track-ID gate to pass again on the exact tagged M2.3 image. The decision is
 [`validation/M2_3_RELEASE_DECISION_20260928.md`](validation/M2_3_RELEASE_DECISION_20260928.md).
 
 The exact broader qualification status is in

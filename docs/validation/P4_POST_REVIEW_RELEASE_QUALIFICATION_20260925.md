@@ -146,7 +146,9 @@ The same image passed a paired three-minute live dual-deck runtime smoke before
 the exact `M2.2-37-g751d3c6` candidate was restored. See
 [`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
 
-All mandatory gates in the selected scope are now passed or explicitly
-accepted. The release decision and exact remaining publication sequence are
-recorded in
+All pre-tag gates in the selected scope are now passed or explicitly accepted.
+Because a prior candidate image does not qualify a new tagged binary, the
+two-media duplicate raw track-ID gate must run again after exact M2.3
+installation and before publication. The release decision and remaining
+sequence are recorded in
 [`M2_3_RELEASE_DECISION_20260928.md`](M2_3_RELEASE_DECISION_20260928.md).
