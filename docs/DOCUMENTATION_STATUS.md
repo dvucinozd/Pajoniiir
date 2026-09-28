@@ -69,10 +69,14 @@ identity or public channel.
 
 The candidate still requires real Rekordbox cue/loop comparison and duplicate
 raw track-ID isolation across two media before a new immutable release
-decision. The exact scope and measurements are recorded in
+decision. The duplicate-ID host regression and guided physical harness are in
+place, but no two-media hardware PASS has been recorded. The exact scope and
+measurements are recorded in
 [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
 and
 [`validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
+The execution procedure is
+[`validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md`](validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md).
 
 ## Accepted limitations
 
