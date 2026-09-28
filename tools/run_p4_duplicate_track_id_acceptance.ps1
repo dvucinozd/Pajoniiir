@@ -381,6 +381,13 @@ function Invoke-DuplicateIdSelfTest {
             -Snapshot $idleUnderflow).Count -ne 0) {
         throw "idle underflow policy self-test failed"
     }
+    $uacFault = $clean | Select-Object *
+    $uacFault.uac_data_loss = $true
+    $uacFault.uac_flags = 1
+    if (@(Get-DuplicateIdHealthFailures `
+            -Baseline $clean -Final $uacFault).Count -ne 1) {
+        throw "UAC data-loss rejection self-test failed"
+    }
     $fault = $clean | Select-Object *
     $fault.output_late = 1
     if (@(Get-DuplicateIdHealthFailures -Baseline $clean -Final $fault).Count -ne 1) {
