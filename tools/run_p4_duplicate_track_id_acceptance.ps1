@@ -171,6 +171,11 @@ function Invoke-PadStep {
     }
     $after = Wait-DeckPosition -ExpectedPositionMs $ExpectedPositionMs `
         -Stage "${Stage}_after_pad"
+    $padFailures = @(Get-DuplicateIdHealthFailures `
+        -Baseline $before -Final $after)
+    if ($padFailures.Count -ne 0) {
+        throw "$Stage health failure: $($padFailures -join '; ')"
+    }
     return [pscustomobject]@{
         before = $before
         after = $after
@@ -222,6 +227,11 @@ function Clear-Cue {
         $after = Get-DeviceSnapshot -Name "${Label}_after_clear"
         if ($after.controller_midi_packets -gt $before.controller_midi_packets -and
             $after.semantic_events -gt $before.semantic_events) {
+            $clearFailures = @(Get-DuplicateIdHealthFailures `
+                -Baseline $before -Final $after)
+            if ($clearFailures.Count -ne 0) {
+                throw "$Label cleanup health failure: $($clearFailures -join '; ')"
+            }
             Request-OperatorStep -Message "Confirm Hot Cue pad $CuePad LED is OFF on medium $Label after the clear action."
             return [pscustomobject]@{ before = $before; after = $after }
         }
@@ -231,12 +241,15 @@ function Clear-Cue {
 }
 
 function Get-StrictHealthCounterNames {
+    # The UAC consumer may zero-fill while playback is idle, and that expected
+    # path contributes to raw underflow_frames. Active playback loss is gated
+    # by data_loss_flags on every monitored pad snapshot instead.
     return @(
         "topology_probe_failures", "controller_interface_claim_failures",
         "controller_transfer_alloc_failures", "controller_probe_event_drops",
         "daemon_errors", "recovery_failures", "recovery_queue_drops",
         "runtime_queue_failures", "service_log_dropped", "dropped_blocks",
-        "overflow_frames", "underflow_frames", "packet_failures",
+        "overflow_frames", "packet_failures",
         "packet_lost_frames", "pcm1", "pcm2", "output_late"
     )
 }
@@ -359,6 +372,14 @@ function Invoke-DuplicateIdSelfTest {
     }
     if (@(Get-DuplicateIdAbsoluteCounterFailures -Snapshot $clean).Count -ne 0) {
         throw "clean absolute-counter self-test failed"
+    }
+    $idleUnderflow = $clean | Select-Object *
+    $idleUnderflow.underflow_frames = 123456
+    if (@(Get-DuplicateIdHealthFailures `
+            -Baseline $clean -Final $idleUnderflow).Count -ne 0 -or
+        @(Get-DuplicateIdAbsoluteCounterFailures `
+            -Snapshot $idleUnderflow).Count -ne 0) {
+        throw "idle underflow policy self-test failed"
     }
     $fault = $clean | Select-Object *
     $fault.output_late = 1

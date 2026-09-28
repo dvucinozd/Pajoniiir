@@ -80,6 +80,13 @@ The result is PASS only when:
 - the firmware version and slot remain unchanged; and
 - all strict health checks remain clean before and after reboot.
 
+`underflow_frames` is not an absolute idle-health counter: the continuous UAC
+consumer can zero-fill an empty ring while no deck is playing, and that
+expected path contributes to the raw value. The harness therefore gates active
+UAC `data_loss_flags` at every monitored pad/recall snapshot and keeps
+dropped, overflow, packet, PCM, `output_late`, USB and log counters strict. A
+non-zero active data-loss flag still fails immediately.
+
 The harness writes JSON plus a Markdown summary under
 `tmp/p4-duplicate-track-id` by default. Retain the passing evidence in the
 release validation record before closing the gate. A self-test is part of
