@@ -56,9 +56,9 @@ and
 3. Build with ESP-IDF v6.0.2 from the exact tag, sign with trusted key
    `rel-001`, and independently verify every artifact.
 4. Install the signed bundle and verify the opposite slot, image identity,
-   USB0/USB1 recovery, playback and strict health counters. The exact-image
-   duplicate-ID repetition is accepted as unrun and must not be reported as a
-   pass.
+   USB0/USB1 recovery, playback, audible MAIN/cue and strict health counters.
+   The exact-image duplicate-ID repetition is accepted as unrun and must not be
+   reported as a pass.
 5. Push the immutable tag and publish the GitHub Release only after the tagged
    image passes.
 6. Upload the versioned public OTA bundle first, independently fetch and hash
