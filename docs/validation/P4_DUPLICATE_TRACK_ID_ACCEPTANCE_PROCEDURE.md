@@ -23,7 +23,8 @@ Prepare two labelled removable media, A and B:
 - the exports are independently generated and therefore have different
   `export.pdb` contents; a byte-for-byte copy intentionally has the same
   persistent identity and does not exercise this gate;
-- both tracks are longer than the selected cue positions; and
+- both tracks cover the selected cue positions and the harness's 10-second
+  separated recall probe positions; and
 - the selected FLX4 Hot Cue pad is empty on both media. The default is pad 8.
 
 Mount each medium once and read `/api/library`. Record the common `track_key`
@@ -59,8 +60,11 @@ reboot, validates exact firmware/slot and checks USB, UAC, PCM, packet,
 4. reconnects the PC to the Pajoniiir AP after reboot if Windows drops it; and
 5. clears the dedicated pad on both media when prompted.
 
-Media and pad prompts are polled automatically; no Enter key is required.
-Abort with `Ctrl+C` if an expected-empty pad is already lit.
+Before each monitored pad action, the harness asks the operator to select and
+visually verify D1 HOT CUE mode, then press Enter. This keeps the mode-button
+MIDI event outside the pad-action evidence window. Media changes and the
+following pad press are polled automatically. Abort with `Ctrl+C` if an
+expected-empty pad is already lit.
 
 ## Pass conditions
 

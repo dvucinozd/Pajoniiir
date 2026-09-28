@@ -64,6 +64,14 @@ function Test-GenerationChanged {
         $Generation -ne [uint32]$PreviousGeneration
 }
 
+function Get-RecallProbePosition {
+    param([uint32]$ExpectedPositionMs)
+    if ($ExpectedPositionMs -ge 11000) {
+        return [uint32]($ExpectedPositionMs - 10000)
+    }
+    return [uint32]($ExpectedPositionMs + 10000)
+}
+
 function Invoke-SeekPost {
     param([uint32]$PositionMs)
     $headers = @{ "X-DDJ-Control" = "1" }
@@ -143,6 +151,7 @@ function Invoke-PadStep {
         [uint32]$ExpectedPositionMs,
         [string]$Stage
     )
+    Request-OperatorStep -Message "Select HOT CUE mode for D1 and verify its mode LED. Do not press a performance pad yet."
     $before = Get-DeviceSnapshot -Name "${Stage}_before_pad"
     Write-Host "ACTION_REQUIRED: $Message"
     Write-Host "The harness is monitoring the physical MIDI event; no Enter key is required."
@@ -160,10 +169,8 @@ function Invoke-PadStep {
     if ($null -eq $after) {
         throw "$Stage did not observe a physical MIDI/semantic pad event"
     }
-    if (-not (Test-PositionWithin -Actual $after.deck1_position_ms `
-            -Expected $ExpectedPositionMs -Tolerance $PositionToleranceMs)) {
-        throw "$Stage expected D1 near $ExpectedPositionMs ms, got $($after.deck1_position_ms) ms"
-    }
+    $after = Wait-DeckPosition -ExpectedPositionMs $ExpectedPositionMs `
+        -Stage "${Stage}_after_pad"
     return [pscustomobject]@{
         before = $before
         after = $after
@@ -177,15 +184,14 @@ function Prepare-And-SetCue {
     Invoke-SeekPost -PositionMs $PositionMs
     [void](Wait-DeckPosition -ExpectedPositionMs $PositionMs -Stage "${Label}_seek")
     return Invoke-PadStep -Stage "${Label}_set" -ExpectedPositionMs $PositionMs `
-        -Message "On FLX4 select HOT CUE mode. Verify pad $CuePad LED is OFF for medium $Label, then press pad $CuePad once and verify its LED turns ON. If it is already ON, abort with Ctrl+C instead of overwriting a cue."
+        -Message "Verify pad $CuePad LED is OFF for medium $Label, then press pad $CuePad once and verify its LED turns ON. If it is already ON, abort with Ctrl+C instead of overwriting a cue."
 }
 
 function Recall-Cue {
     param($Medium, [uint32]$ExpectedPositionMs, [string]$Label)
     [void](Load-MediumTrack -Medium $Medium)
-    $probePosition = [uint32]([Math]::Min(
-        [uint64]($ExpectedPositionMs + 10000),
-        [uint64]290000))
+    $probePosition = Get-RecallProbePosition `
+        -ExpectedPositionMs $ExpectedPositionMs
     Invoke-SeekPost -PositionMs $probePosition
     [void](Wait-DeckPosition -ExpectedPositionMs $probePosition -Stage "${Label}_probe_seek")
     return Invoke-PadStep -Stage "${Label}_recall" `
@@ -207,6 +213,7 @@ function Request-MediumSwap {
 
 function Clear-Cue {
     param([string]$Label)
+    Request-OperatorStep -Message "Select HOT CUE mode for D1 and verify its mode LED. Do not press a performance pad yet."
     $before = Get-DeviceSnapshot -Name "${Label}_before_clear"
     Write-Host "ACTION_REQUIRED: On medium $Label hold SHIFT and press Hot Cue pad $CuePad once. Verify the pad LED turns OFF."
     Write-Host "The harness is monitoring the physical MIDI event; no Enter key is required."
@@ -222,16 +229,21 @@ function Clear-Cue {
     throw "$Label cleanup did not observe a physical MIDI/semantic pad event"
 }
 
+function Get-StrictHealthCounterNames {
+    return @(
+        "topology_probe_failures", "controller_interface_claim_failures",
+        "controller_transfer_alloc_failures", "controller_probe_event_drops",
+        "daemon_errors", "recovery_failures", "recovery_queue_drops",
+        "runtime_queue_failures", "service_log_dropped", "dropped_blocks",
+        "overflow_frames", "underflow_frames", "packet_failures",
+        "packet_lost_frames", "pcm1", "pcm2", "output_late"
+    )
+}
+
 function Get-DuplicateIdHealthFailures {
     param($Baseline, $Final)
     $failures = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($field in @(
-            "topology_probe_failures", "controller_interface_claim_failures",
-            "controller_transfer_alloc_failures", "controller_probe_event_drops",
-            "daemon_errors", "recovery_failures", "recovery_queue_drops",
-            "runtime_queue_failures", "service_log_dropped", "dropped_blocks",
-            "overflow_frames", "underflow_frames", "packet_failures",
-            "packet_lost_frames", "pcm1", "pcm2", "output_late")) {
+    foreach ($field in @(Get-StrictHealthCounterNames)) {
         $delta = Get-CounterDelta -Current $Final.$field -Previous $Baseline.$field
         if ($delta -ne 0) {
             Add-Failure $failures "$field increased by $delta"
@@ -258,6 +270,17 @@ function Get-DuplicateIdHealthFailures {
     }
     if ($Final.twdt_current) {
         Add-Failure $failures "current TWDT ISR flag is set"
+    }
+    return @($failures)
+}
+
+function Get-DuplicateIdAbsoluteCounterFailures {
+    param($Snapshot)
+    $failures = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($field in @(Get-StrictHealthCounterNames)) {
+        if ([uint64]$Snapshot.$field -ne [uint64]0) {
+            Add-Failure $failures "$field is $($Snapshot.$field) after reboot"
+        }
     }
     return @($failures)
 }
@@ -307,6 +330,13 @@ function Invoke-DuplicateIdSelfTest {
         (Test-GenerationChanged -Generation 2 -PreviousGeneration 2)) {
         throw "generation comparison self-test failed"
     }
+    $probeLow = Get-RecallProbePosition -ExpectedPositionMs 1000
+    $probeHigh = Get-RecallProbePosition -ExpectedPositionMs 600000
+    if ($probeLow -ne 11000 -or $probeHigh -ne 590000 -or
+        (Test-PositionWithin -Actual $probeLow -Expected 1000 -Tolerance 3000) -or
+        (Test-PositionWithin -Actual $probeHigh -Expected 600000 -Tolerance 3000)) {
+        throw "recall probe separation self-test failed"
+    }
     $clean = [pscustomobject]@{
         version="test"; slot="ota_0"; ota_state="idle"; ota_error=""
         storage_mounted=$true; controller_present=$true; root_power_mask=3
@@ -326,10 +356,16 @@ function Invoke-DuplicateIdSelfTest {
     if (@(Get-DuplicateIdHealthFailures -Baseline $clean -Final $clean).Count -ne 0) {
         throw "clean health self-test failed"
     }
+    if (@(Get-DuplicateIdAbsoluteCounterFailures -Snapshot $clean).Count -ne 0) {
+        throw "clean absolute-counter self-test failed"
+    }
     $fault = $clean | Select-Object *
     $fault.output_late = 1
     if (@(Get-DuplicateIdHealthFailures -Baseline $clean -Final $fault).Count -ne 1) {
         throw "health fault rejection self-test failed"
+    }
+    if (@(Get-DuplicateIdAbsoluteCounterFailures -Snapshot $fault).Count -ne 1) {
+        throw "absolute-counter fault rejection self-test failed"
     }
     Write-Output "P4 duplicate raw track-ID acceptance harness self-test passed"
 }
@@ -430,8 +466,11 @@ try {
         $recovered.slot -ne $baseline.slot) {
         throw "firmware identity changed across reboot"
     }
-    $postBootFailures = @(Get-PostBootFailures -Snapshot $recovered `
-        -BootLog $bootLog -ExpectedSlot $baseline.slot)
+    $postBootFailures = @(
+        @(Get-PostBootFailures -Snapshot $recovered `
+            -BootLog $bootLog -ExpectedSlot $baseline.slot)
+        @(Get-DuplicateIdAbsoluteCounterFailures -Snapshot $recovered)
+    )
     if ($postBootFailures.Count -ne 0) {
         throw "post-reboot health failure: $($postBootFailures -join '; ')"
     }
