@@ -76,11 +76,12 @@ clean. The evidence is
 [`validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md`](validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md).
 
 On 2026-09-28 the operator explicitly accepted the deferred real Rekordbox cue
-A/C and loop slot/time comparison as outside the M2.3 release scope. It remains
-NOT RUN and is not represented as a pass. With that recorded limitation, the
-maintenance candidate is approved for the exact-tag M2.3 build, installation
-and qualification sequence. Publication still requires the two-media duplicate
-raw track-ID gate to pass again on the exact tagged M2.3 image. The decision is
+A/C and loop slot/time comparison and repetition of the duplicate raw track-ID
+gate on the exact M2.3 binary as outside the release scope. Both remain NOT RUN
+and are not represented as passes; the duplicate-ID behavior retains its PASS
+on the `M2.2-37-g751d3c6` maintenance candidate. With those recorded
+limitations, the candidate is approved for the exact-tag M2.3 build,
+installation and qualification sequence. The decision is
 [`validation/M2_3_RELEASE_DECISION_20260928.md`](validation/M2_3_RELEASE_DECISION_20260928.md).
 
 The exact broader qualification status is in

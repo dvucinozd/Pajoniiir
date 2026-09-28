@@ -127,6 +127,10 @@ Accepted unrun scope for the M2.3 release decision:
   slot/time comparison from the current release scope on 2026-09-28 because
   it is not currently relevant. It remains **NOT RUN — OPERATOR ACCEPTED** and
   is not reported as a pass.
+- The operator explicitly accepted repetition of duplicate raw track-ID
+  isolation on the exact M2.3 binary as unrun. The guided rerun was stopped
+  before any Hot Cue pad action. The prior candidate PASS remains valid
+  evidence but is not represented as exact-M2.3 proof.
 
 The duplicate-ID hardware gate passed on 2026-09-28. Two independent exports
 shared raw `track_key=1` but recalled isolated Hot Cue positions at 11000 ms
@@ -146,9 +150,8 @@ The same image passed a paired three-minute live dual-deck runtime smoke before
 the exact `M2.2-37-g751d3c6` candidate was restored. See
 [`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
 
-All pre-tag gates in the selected scope are now passed or explicitly accepted.
-Because a prior candidate image does not qualify a new tagged binary, the
-two-media duplicate raw track-ID gate must run again after exact M2.3
-installation and before publication. The release decision and remaining
-sequence are recorded in
+All gates in the selected scope are passed or explicitly accepted. The
+two-media duplicate raw track-ID result belongs to `M2.2-37-g751d3c6`; the
+operator accepted its exact-M2.3 repetition as unrun. The release decision and
+remaining sequence are recorded in
 [`M2_3_RELEASE_DECISION_20260928.md`](M2_3_RELEASE_DECISION_20260928.md).

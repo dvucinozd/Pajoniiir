@@ -4,12 +4,19 @@
 
 Status: **APPROVED FOR EXACT-TAG BUILD AND RELEASE**.
 
-The operator explicitly removed the remaining real-Rekordbox cue A/C and loop
-slot/time comparison from the M2.3 release scope because it is not currently
-relevant to the deployed workflow. The check is recorded as **NOT RUN —
-OPERATOR ACCEPTED**, not as a pass. It remains a requalification item if cue
-import fidelity, ANLZ cue parsing or loop persistence becomes release-critical
-or changes later.
+The operator explicitly removed two remaining exact-release checks from the
+M2.3 release scope because they are not currently relevant to the deployed
+workflow:
+
+- the real-Rekordbox cue A/C and loop slot/time comparison; and
+- repetition of the duplicate raw track-ID hardware gate on the exact M2.3
+  binary.
+
+Both checks are recorded as **NOT RUN — OPERATOR ACCEPTED**, not as passes. The
+duplicate-ID behavior retains its passing hardware evidence on the installed
+`M2.2-37-g751d3c6` maintenance candidate. Rerun the relevant gate if cue import,
+ANLZ parsing, loop persistence, media identity, persistent Hot Cue storage or
+media lifecycle behavior becomes release-critical or changes later.
 
 With that scope decision, no mandatory pre-tag functional gate remains for the
 post-M2.2 maintenance candidate. The selected immutable release version is
@@ -48,10 +55,10 @@ and
 2. Create a local annotated `M2.3` tag on that exact commit.
 3. Build with ESP-IDF v6.0.2 from the exact tag, sign with trusted key
    `rel-001`, and independently verify every artifact.
-4. Install the signed bundle, verify the opposite slot, image identity,
-   USB0/USB1 recovery, playback, MAIN/cue and strict health counters. Repeat
-   the two-media duplicate raw track-ID isolation on the exact M2.3 image;
-   pre-tag candidate evidence alone does not close that exact-image gate.
+4. Install the signed bundle and verify the opposite slot, image identity,
+   USB0/USB1 recovery, playback, audible MAIN/cue and strict health counters.
+   The exact-image duplicate-ID repetition is accepted as unrun and must not be
+   reported as a pass.
 5. Push the immutable tag and publish the GitHub Release only after the tagged
    image passes.
 6. Upload the versioned public OTA bundle first, independently fetch and hash
