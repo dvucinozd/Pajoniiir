@@ -75,9 +75,14 @@ Cleanup was operator-confirmed on both media and strict device health remained
 clean. The evidence is
 [`validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md`](validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md).
 
-The candidate still requires the deferred real Rekordbox cue A/C and loop
-slot/time comparison before a new immutable release decision, unless that
-scope is explicitly accepted. The exact broader qualification status is in
+On 2026-09-28 the operator explicitly accepted the deferred real Rekordbox cue
+A/C and loop slot/time comparison as outside the M2.3 release scope. It remains
+NOT RUN and is not represented as a pass. With that recorded limitation, the
+maintenance candidate is approved for the exact-tag M2.3 build, installation
+and publication sequence. The decision is
+[`validation/M2_3_RELEASE_DECISION_20260928.md`](validation/M2_3_RELEASE_DECISION_20260928.md).
+
+The exact broader qualification status is in
 [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
 and
 [`validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
@@ -98,6 +103,8 @@ The execution procedure is
   are operator-confirmed. Recovery signing from the backup remains deferred
   maintenance, not completed evidence.
 - The recorder is compiled out. Non-FLX4 profiles are host evidence only.
+- Real Rekordbox cue A/C and loop slot/time comparison is not run for M2.3;
+  the operator accepted it as outside the current deployment scope.
 
 ## Source-of-truth order
 

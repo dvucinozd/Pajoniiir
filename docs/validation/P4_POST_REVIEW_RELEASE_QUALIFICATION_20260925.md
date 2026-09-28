@@ -121,11 +121,12 @@ Closed by this exact-image run:
   including separate store/recall positions, remount, software reboot and
   cleanup.
 
-Still open before promoting this maintenance candidate to a new immutable
-production release:
+Accepted unrun scope for the M2.3 release decision:
 
-1. Compare cue A/C and loop slots/times from a real Rekordbox export with the
-   Rekordbox display.
+- The operator explicitly removed the real Rekordbox cue A/C and loop
+  slot/time comparison from the current release scope on 2026-09-28 because
+  it is not currently relevant. It remains **NOT RUN — OPERATOR ACCEPTED** and
+  is not reported as a pass.
 
 The duplicate-ID hardware gate passed on 2026-09-28. Two independent exports
 shared raw `track_key=1` but recalled isolated Hot Cue positions at 11000 ms
@@ -145,6 +146,7 @@ The same image passed a paired three-minute live dual-deck runtime smoke before
 the exact `M2.2-37-g751d3c6` candidate was restored. See
 [`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
 
-No new release tag or public `latest.json` change is justified until the
-applicable open gates are either passed or explicitly accepted with a recorded
-scope decision.
+All mandatory gates in the selected scope are now passed or explicitly
+accepted. The release decision and exact remaining publication sequence are
+recorded in
+[`M2_3_RELEASE_DECISION_20260928.md`](M2_3_RELEASE_DECISION_20260928.md).

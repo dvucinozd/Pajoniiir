@@ -12,6 +12,7 @@ Status: **active P4-only register, reconciled 2026-09-28**.
 | CLOSED | Lifetime idle UAC underflow is mistaken for active data loss | Session-scoped health passed focused transitions and the final multi-hour soak | Preserve session-scoped flags and regression coverage |
 | CLOSED | First remote transport action is consumed only to dismiss the screensaver | Fixed and exact-image smoked after more than 120 seconds idle | Preserve remote queue semantics and authoritative state confirmation |
 | CLOSED (maintenance candidate) | Two Rekordbox exports with the same raw numeric track ID share persistent Hot Cue state | On 2026-09-28 two independent one-track exports both exposed `track_key=1`; A recalled 11000 ms across remount and software reboot, B recalled 22000 ms after remount, both cues were cleared, and strict health evidence remained clean | Preserve full `media_persistent_id_t` storage keys and rerun the two-media gate after identity, PDB, persistent cue or media lifecycle changes |
+| ACCEPTED LIMITATION (M2.3) | Real Rekordbox cue A/C or loop slot/time import differs from the controller/application display | The direct comparison was not run. On 2026-09-28 the operator explicitly removed it from the current release scope because it is not relevant to the deployed workflow | Do not report the comparison as passed; rerun it if cue import fidelity, ANLZ parsing or loop persistence becomes release-critical or changes |
 | CLOSED (M2.2 baseline) | Pull/push OTA or web mutation leaves the product unavailable | M2.1 pull/push recovery evidence remains applicable; M2.2 additionally passed marked authoritative SYNC, interrupted-upload rejection, signed opposite-slot installation, embedded web UI smoke and public-channel verification | Repeat the relevant matrix after OTA, network, web mutation or partition-layout changes |
 | ACCEPTED LIMITATION | Final enclosure changes power, temperature, RF or service access | Operator reports the unit has operated in its current intended enclosure for approximately two months and confirms wired recovery access; dedicated numeric thermal/RF/strain evidence was not captured | Preserve the current topology and repeat qualification after any enclosure, wiring, supply or RF-layout change |
 | ACCEPTED LIMITATION | Shared service credential permits nearby disruption | Operator selected one shared service password; WPA2/WPA3 transition mode advertises PMF capability; firmware updates remain signature-protected | Verify association from the actual service client on the final image; restrict distribution/exposure and revisit per-device credentials or WPA3-only PMF-required mode if deployment expands |
@@ -29,3 +30,8 @@ decisions themselves are recorded in
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md). A focused
 smoke closes only the exact scenario it exercised; it must not be promoted to
 unrelated acceptance.
+
+For M2.3, the duplicate raw track-ID gate is closed and the real Rekordbox cue
+A/C and loop comparison is explicitly accepted as unrun. All other applicable
+pre-tag gates are closed; exact-tag build, signed installation, product smoke
+and publication verification remain mandatory release-procedure steps.
