@@ -1,6 +1,6 @@
 # P4 operation and release checklist
 
-Status: **current M2.2 checklist, reconciled 2026-09-23**.
+Status: **current P4 checklist, reconciled 2026-09-28**.
 
 ## Normal startup
 
