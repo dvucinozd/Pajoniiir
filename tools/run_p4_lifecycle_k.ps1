@@ -68,8 +68,9 @@ function Get-PostBootFailures {
     if ($Snapshot.storage_last_mount_result -ne 0) {
         Add-Failure $failures "storage mount result is $($Snapshot.storage_last_mount_result)"
     }
-    if ($Snapshot.recovery_requests -ne $Snapshot.recovery_successes) {
-        Add-Failure $failures "host recovery requests/successes are $($Snapshot.recovery_requests)/$($Snapshot.recovery_successes)"
+    $recovery = Get-RecoveryAccounting -Final $Snapshot
+    if (-not $recovery.balanced) {
+        Add-Failure $failures "host recovery outcomes do not account for requests: $($recovery.requests) request(s), $($recovery.successes) success(es), $($recovery.suppressed_active) suppressed-active, $($recovery.coalesced) coalesced, $($recovery.failures) failure(s)"
     }
     if ($Snapshot.uac_data_loss -or $Snapshot.uac_flags -ne 0) {
         Add-Failure $failures "active UAC data-loss state is set"
@@ -177,7 +178,8 @@ function Invoke-KSelfTest {
         controller_probe_event_drops=0; recovery_failures=0
         recovery_queue_drops=0; daemon_errors=0; runtime_queue_failures=0
         service_log_dropped=0; pcm1=0; pcm2=0; output_late=0
-        storage_last_mount_result=0; recovery_requests=1; recovery_successes=1
+        storage_last_mount_result=0; recovery_requests=1; recovery_coalesced=0
+        recovery_successes=1; recovery_suppressed_active=0
         uac_data_loss=$false; uac_flags=0; twdt_current=$false
     }
     $script:ExpectedVersion = "test"

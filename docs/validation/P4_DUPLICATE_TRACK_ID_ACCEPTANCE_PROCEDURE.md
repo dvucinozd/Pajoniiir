@@ -87,7 +87,16 @@ UAC `data_loss_flags` at every monitored pad/recall snapshot and keeps
 dropped, overflow, packet, PCM, `output_late`, USB and log counters strict. A
 non-zero active data-loss flag still fails immediately.
 
+USB host recovery requests are balanced against all terminal outcomes:
+successful cycles, active-enumeration suppression, coalesced requests and
+failed cycles. Recovery failures and queue drops remain strict failures. This
+matches the firmware diagnostics contract and prevents an intentional
+`suppressed_active` outcome from being misreported as an incomplete recovery.
+
 The harness writes JSON plus a Markdown summary under
 `tmp/p4-duplicate-track-id` by default. Retain the passing evidence in the
 release validation record before closing the gate. A self-test is part of
 `tests/run_p4_host_tests.ps1` and can also be run directly with `-SelfTest`.
+
+The 2026-09-28 execution on `M2.2-37-g751d3c6` passed; see
+[`P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md`](P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md).
