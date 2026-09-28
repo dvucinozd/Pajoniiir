@@ -222,6 +222,7 @@ function Clear-Cue {
         $after = Get-DeviceSnapshot -Name "${Label}_after_clear"
         if ($after.controller_midi_packets -gt $before.controller_midi_packets -and
             $after.semantic_events -gt $before.semantic_events) {
+            Request-OperatorStep -Message "Confirm Hot Cue pad $CuePad LED is OFF on medium $Label after the clear action."
             return [pscustomobject]@{ before = $before; after = $after }
         }
         Start-Sleep -Milliseconds 50

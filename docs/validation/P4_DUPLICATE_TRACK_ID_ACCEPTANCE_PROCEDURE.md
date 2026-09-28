@@ -63,8 +63,9 @@ reboot, validates exact firmware/slot and checks USB, UAC, PCM, packet,
 Before each monitored pad action, the harness asks the operator to select and
 visually verify D1 HOT CUE mode, then press Enter. This keeps the mode-button
 MIDI event outside the pad-action evidence window. Media changes and the
-following pad press are polled automatically. Abort with `Ctrl+C` if an
-expected-empty pad is already lit.
+following pad press are polled automatically. After each clear event, the
+operator must confirm with Enter that the selected pad LED is OFF. Abort with
+`Ctrl+C` if an expected-empty pad is already lit.
 
 ## Pass conditions
 
