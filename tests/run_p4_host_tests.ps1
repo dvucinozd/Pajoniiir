@@ -2948,6 +2948,11 @@ Invoke-Step -Name "run P4 release qualification harness self-test" `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tools/run_p4_release_qualification.ps1", "-SelfTest")
 
+Invoke-Step -Name "run P4 duplicate raw track-ID acceptance harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_duplicate_track_id_acceptance.ps1", "-SelfTest")
+
 Invoke-Step -Name "run P4 UAC transition stress harness self-test" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `

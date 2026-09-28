@@ -126,6 +126,13 @@ production release:
 2. Exercise two media/export identities that deliberately share the same raw
    numeric track ID, including remount and reboot isolation.
 
+Host regression coverage now derives two different persistent identities for
+the same catalog key and proves separate Hot Cue blobs. The guided physical
+procedure and evidence harness are documented in
+[`P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md`](P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md).
+This improves repeatability but does not close the open two-media hardware
+gate until the required exports are exercised on the installed candidate.
+
 If ANLZ cache writes are enabled later, separately qualify true cold versus
 cache-hit loads; current production configuration has no cache-write path to
 qualify.

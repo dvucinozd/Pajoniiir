@@ -94,19 +94,28 @@ static media_persistent_id_t persistent_id_for_key(uint32_t track_key)
     return id;
 }
 
+static void publish_loaded_track_with_id(uint8_t deck,
+                                         uint32_t track_key,
+                                         const media_persistent_id_t *id,
+                                         uint16_t bpm,
+                                         const anlz_metadata_t *anlz)
+{
+    assert(deck_core_publish_loaded_track(deck,
+                                          1u,
+                                          track_key,
+                                          id,
+                                          bpm,
+                                          300000u,
+                                          anlz) == ESP_OK);
+}
+
 static void publish_loaded_track(uint8_t deck,
                                  uint32_t track_key,
                                  uint16_t bpm,
                                  const anlz_metadata_t *anlz)
 {
     media_persistent_id_t id = persistent_id_for_key(track_key);
-    assert(deck_core_publish_loaded_track(deck,
-                                          1u,
-                                          track_key,
-                                          &id,
-                                          bpm,
-                                          300000u,
-                                          anlz) == ESP_OK);
+    publish_loaded_track_with_id(deck, track_key, &id, bpm, anlz);
 }
 
 static void publish_loaded_bpm(uint8_t deck, uint16_t bpm)
@@ -2529,6 +2538,43 @@ static void test_hot_cue_during_track_replace_cannot_use_previous_key(void)
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
 }
 
+static void test_same_raw_track_key_on_two_media_keeps_hot_cues_isolated(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    const uint32_t shared_track_key = 4242u;
+    media_persistent_id_t media_a = persistent_id_for_key(shared_track_key);
+    media_persistent_id_t media_b = media_a;
+    media_b.bytes[0] ^= 0x80u;
+    assert(!media_persistent_id_equal(&media_a, &media_b));
+    (void)hot_cue_store_clear(&media_a);
+    (void)hot_cue_store_clear(&media_b);
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, false, true);
+
+    publish_loaded_track_with_id(CTRL_DECK_1, shared_track_key,
+                                 &media_a, 120u, NULL);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 11111u;
+    deck_core_test_apply_event(&pad);
+
+    assert(deck_core_clear_loaded_track(CTRL_DECK_1, 1u) == ESP_OK);
+    publish_loaded_track_with_id(CTRL_DECK_1, shared_track_key,
+                                 &media_b, 120u, NULL);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 22222u;
+    deck_core_test_apply_event(&pad);
+
+    hot_cue_store_blob_t blob_a = {0};
+    hot_cue_store_blob_t blob_b = {0};
+    assert(hot_cue_store_load(&media_a, &blob_a) == ESP_OK);
+    assert(hot_cue_store_load(&media_b, &blob_b) == ESP_OK);
+    assert(blob_a.valid_mask == 1u);
+    assert(blob_b.valid_mask == 1u);
+    assert(blob_a.slots[0].pos_ms == 11111u);
+    assert(blob_b.slots[0].pos_ms == 22222u);
+}
+
 static void test_hot_cue_pad_set_and_clear_updates_pad_led(void)
 {
     deck_core_test_reset();
@@ -2949,6 +2995,7 @@ int main(void)
     test_pad_fx_pad_action_updates_momentary_pad_led();
     test_hot_cue_pad_stores_empty_slot_at_requested_deck_position();
     test_hot_cue_during_track_replace_cannot_use_previous_key();
+    test_same_raw_track_key_on_two_media_keeps_hot_cues_isolated();
     test_hot_cue_pad_set_and_clear_updates_pad_led();
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();
