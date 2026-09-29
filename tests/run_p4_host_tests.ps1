@@ -3041,6 +3041,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set")
 
+Assert-FileContains `
+    -Name "p4 pull OTA accepts trusted cross-signed certificate chains" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y")
+
 Invoke-ApiContract
 
 # Components whose `#include "<impl>.c"` compilation wrapper has been retired.

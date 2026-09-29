@@ -124,6 +124,11 @@ CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCP_SACK_OUT=y
 
+# Public OTA certificates may chain through a cross-signed root while CA and
+# hostname verification remain mandatory. The ESP-IDF certificate bundle needs
+# this callback enabled to validate those otherwise trusted chains.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+
 # ── P4-only direct controller/audio product ──────────────────────────────────
 # One shared Host Library owns USB0 storage and USB1 FLX4 MIDI/UAC. MAIN uses
 # PCM5102A; CUE/headphones are sent directly over FLX4 USB Audio.
