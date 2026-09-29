@@ -1,11 +1,11 @@
 # P4 post-release development plan
 
-Status: **M2.2 released; post-M2.2 maintenance planning**.
+Status: **M2.4 released; post-M2.4 maintenance planning**.
 
 ## Current baseline
 
-- Production tag: `M2.2`
-- Frozen source: `2c2ec32c253d368765123d7bbf8d37389b790b55`
+- Production tag: `M2.4`
+- Frozen source: `9d0c954fc502ae237fabedb764368cd9b10f10dc`
 - Required toolchain: ESP-IDF v6.0.2
 - Active firmware target: `firmware/main-deck-p4`
 - Current architecture: direct P4 USB0 media plus USB1 FLX4 MIDI/UAC
@@ -31,6 +31,21 @@ Every change starts from its impact, not from the age of the previous test:
 
 Preserve firmware version, source commit, slot, boot identity, strict counter
 deltas and operator-visible/audible results in new validation records.
+
+## Completed M2.4 scope
+
+M2.4 freezes the post-M2.2 production-review fixes and the narrow TLS
+certificate-bundle correction from PR #43. The latter enables validation of
+valid cross-signed public chains while retaining mandatory CA and hostname
+verification. The exact tagged build, signed package, physical installation,
+pre-public and post-public production pull probes, cold-boot hardware telemetry
+smoke and GitHub/public asset round trips passed. The release record is
+[`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
+
+The signed OTA software reboot did not enumerate USB0/USB1; a full power cycle
+restored both roots and all product functions. Preserve the cold-cycle operator
+step for the current release and investigate unattended post-OTA recovery before
+claiming it for a later release.
 
 ## Completed M2.2 scope
 
@@ -61,7 +76,7 @@ through both the public pull channel and GitHub Releases. The release record is
 
 ## Ordered future work
 
-These are optional post-M2.2 projects, not defects in the released product:
+These are post-M2.4 maintenance projects or deferred product extensions:
 
 1. **Non-FLX4 controller qualification.** Obtain real hardware and capture
    descriptors, MIDI, LEDs, reconnect behavior and four-channel audio before
@@ -81,6 +96,9 @@ These are optional post-M2.2 projects, not defects in the released product:
 6. **LIBAPTA integration.** Begin only after the upstream embedded profile and
    release gates in [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md)
    are satisfied.
+7. **Post-OTA USB recovery.** Reproduce why a signed OTA software reboot on
+   M2.3/M2.4 left both roots unenumerated until a full power cycle, then restore
+   automatic dual-root recovery without weakening the recovery arbiter.
 
 ## Release discipline
 

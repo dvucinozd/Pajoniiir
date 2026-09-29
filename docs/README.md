@@ -21,9 +21,9 @@ services and signed OTA. There is no active S3 firmware or inter-board link.
 - [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) — current production
   identity, accepted limitations and source-of-truth order.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — P4 runtime architecture and ownership.
-- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — post-M2.1 maintenance roadmap.
+- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — post-M2.4 maintenance roadmap.
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) — active and accepted product risks.
-- [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md) — M2.1
+- [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md) — M2.4
   network, signing-key and irreversible-provisioning decisions.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — FLX4 mapping and per-control
   acceptance status.
@@ -77,6 +77,13 @@ whitespace. Changes to `docs/` also retain the separate Pages deployment gate.
   records the installed post-review maintenance image soak, real-media latency,
   catalog reboot/remount and slow-network browser evidence, together with the
   remaining physical and instrumented release gates.
+
+## M2.4 production release
+
+- [`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md)
+  records the exact build and hashes, M2.3 TLS failure, M2.4 cross-signed-chain
+  remediation, signed installation, production probes, cold-boot product smoke
+  and publication verification.
 
 Superseded S3/dual-processor documents, completed implementation plans and
 intermediate RC validation notes were removed from the working tree during the

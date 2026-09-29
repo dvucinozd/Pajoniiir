@@ -1,6 +1,6 @@
 # P4 operation and release checklist
 
-Status: **current P4 checklist, reconciled 2026-09-28**.
+Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Normal startup
 
@@ -60,7 +60,7 @@ Status: **current P4 checklist, reconciled 2026-09-28**.
 ## Before a release
 
 - [ ] Freeze a clean commit and run complete CI/build/package gates.
-- [ ] Create a new immutable version; never move `M2`, `M2.1` or `M2.2`.
+- [ ] Create a new immutable version; never move `M2`, `M2.1`, `M2.2`, `M2.3` or `M2.4`.
 - [ ] Build and sign from the exact tag, then independently verify bundle and
   manifest signatures/hashes.
 - [ ] Install the exact tagged image and run impact-appropriate physical,
@@ -80,6 +80,6 @@ Repeat the relevant electrical/lifecycle/audio/OTA gates after changes to:
 - Wi-Fi transition, web mutation, signing, OTA partitions or trust keys;
 - display/touch timing, UI ownership or controller-to-UI dispatch.
 
-The M2.2 release evidence is indexed in [`README.md`](README.md). Current
+The M2.4 release evidence is indexed in [`README.md`](README.md). Current
 accepted limitations are in [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md)
 and [`RISK_REGISTER.md`](RISK_REGISTER.md).

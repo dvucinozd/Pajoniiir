@@ -1,12 +1,12 @@
-# M2.2 security and provisioning policy
+# M2.4 security and provisioning policy
 
-Status: **applied to released M2.2; irreversible ESP32-P4 provisioning
+Status: **applied to released M2.4; irreversible ESP32-P4 provisioning
 intentionally deferred**.
 
 ## Release identity
 
-- The production version is `M2.2`, frozen at
-  `2c2ec32c253d368765123d7bbf8d37389b790b55`.
+- The production version is `M2.4`, frozen at
+  `9d0c954fc502ae237fabedb764368cd9b10f10dc`.
 - The existing annotated `M2` tag is immutable and must not be moved.
 - The existing annotated `M2.1` tag remains the immutable prior production
   baseline and must not be moved.
@@ -14,8 +14,11 @@ intentionally deferred**.
   exact tagged image passed installation and product smoke before the tag and
   production channel were published. The published tag is immutable and must
   never be moved.
-- Pull OTA accepts the bare `M2.2` tag and later
-  `M2.2-<distance>-g<hash>` development versions. Local signed push OTA remains
+- The annotated `M2.3` and `M2.4` tags are immutable. M2.4 supersedes M2.3
+  because the latter could not validate the current valid cross-signed public
+  TLS chain.
+- Pull OTA accepts the bare `M2.4` tag and later
+  `M2.4-<distance>-g<hash>` development versions. Local signed push OTA remains
   the intentional rollback path.
 
 ## Service network
@@ -33,25 +36,25 @@ intentionally deferred**.
 
 ## OTA signing key
 
-- `rel-001` remains the trusted release key for M2.2.
+- `rel-001` remains the trusted release key for M2.4.
 - Store the private key in encrypted offline primary storage and keep one
   separately located encrypted offline backup. Neither copy may enter Git,
   build logs, release artifacts, firmware/NVS or the hosting account.
 - The operator confirmed creation of both encrypted offline copies on
   2026-09-20 and explicitly accepted backup recovery signing as deferred
-  maintenance rather than an open M2.2 gate.
+  maintenance rather than an open M2.4 gate.
 - Verify backup recovery by signing a disposable test payload which the
   committed public key accepts. Record only success, key ID and public-key
   fingerprint; never record the private key or its passphrase. This is a future
-  maintenance action and is not claimed as completed M2.2 evidence.
+  maintenance action and is not claimed as completed M2.4 evidence.
 - Normal rotation is a firmware release signed by `rel-001` that introduces a
   successor trust key before `rel-001` is retired. Emergency recovery after
   loss or compromise uses the confirmed wired service path. Multi-key overlap
-  is future implementation work and is not claimed by M2.2.
+  is future implementation work and is not claimed by M2.4.
 
 ## Secure Boot, Flash Encryption and eFuses
 
-M2.2 does **not** enable ESP32-P4 Secure Boot, Flash Encryption or security
+M2.4 does **not** enable ESP32-P4 Secure Boot, Flash Encryption or security
 eFuse provisioning. There is only one ESP32-P4 board, and the currently
 confirmed wired recovery path has not been qualified after those irreversible
 changes. Burning security eFuses on the only working unit is outside this
@@ -77,7 +80,7 @@ No release script may burn an eFuse implicitly.
 
 ## SBOM decision
 
-An SBOM is explicitly not required for M2.2. Dependency provenance and the
+An SBOM is explicitly not required for M2.4. Dependency provenance and the
 committed ESP-IDF component lock remain mandatory, but no SPDX/CycloneDX
 generator is a release gate unless the distribution or compliance scope
 changes.
