@@ -3041,10 +3041,13 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set")
 
-Assert-FileContains `
-    -Name "p4 pull OTA accepts trusted cross-signed certificate chains" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
-    -LiteralPatterns @("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y")
+Write-Host "==> static p4 pull OTA accepts trusted cross-signed certificate chains"
+$sdkconfigDefaults = Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults"
+if (-not ((Get-Content -LiteralPath $sdkconfigDefaults) -contains `
+        "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y")) {
+    throw "cross-signed certificate-chain support must be active in sdkconfig.defaults"
+}
+Write-Host "    PASS"
 
 Invoke-ApiContract
 
