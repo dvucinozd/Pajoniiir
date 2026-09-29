@@ -1,8 +1,8 @@
 # Pajoniiir project overview
 
-Status: **released P4-only product overview, reconciled 2026-09-23**.
+Status: **released P4-only product overview, reconciled 2026-09-29**.
 
-Pajoniiir M2.2 is a standalone dual-deck DJ system. A Guition
+Pajoniiir M2.4 is a standalone dual-deck DJ system. A Guition
 `JC4880P443C_I_W` ESP32-P4 board hosts the Pioneer DDJ-FLX4 and Rekordbox USB
 media directly, renders the 4.3-inch touch interface, owns playback/mixing/DSP
 and exposes local Wi-Fi maintenance and signed OTA. A performance computer is
@@ -37,11 +37,12 @@ former two-processor design does not represent a second runtime target.
 
 ## Release state
 
-Production release `M2.2` freezes commit `2c2ec32`. Its exact ESP-IDF v6.0.2
-build, signed package, hardware installation, responsive Wi-Fi Remote smoke,
-public OTA channel and GitHub Release passed. It inherits the unchanged M2.1
-USB/audio/playback baseline. See
-[`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
+Production release `M2.4` freezes commit `9d0c954`. Its exact ESP-IDF v6.0.2
+build, signed package, physical installation, live cross-signed TLS probe,
+cold-boot USB/audio telemetry smoke, clean operator-confirmed MAIN/cue, public OTA channel and GitHub Release
+passed. It inherits the M2.1 audio baseline and the post-M2.2 maintenance
+qualification. See
+[`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
 
 The current `master` may contain documentation or later development commits;
 the tag remains the immutable production identity. Accepted security and

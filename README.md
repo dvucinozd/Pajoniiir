@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-# Pajoniiir M2.2
+# Pajoniiir M2.4
 
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
@@ -35,7 +35,7 @@ runs the two playback decks and mixer, and sends MAIN and headphone-cue audio.
 - Signed local and remote OTA updates are supported.
 
 The current production release is
-[`M2.2`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.2).
+[`M2.4`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4).
 
 ## Hardware
 
@@ -222,12 +222,12 @@ at `firmware/main-deck-p4/dependencies.lock` is committed.
 
 ## Project status and documentation
 
-`M2.2` is the immutable production release based on commit `2c2ec32`. It adds
-the responsive embedded Wi-Fi Remote controller and authoritative SYNC state
-while preserving the qualified M2.1 playback, USB and audio baseline. Its exact
-tagged ESP-IDF v6.0.2 build, signed OTA installation, hardware/API smoke,
-public pull channel and GitHub assets passed. See the
-[M2.2 production release report](docs/validation/M2_2_PRODUCTION_RELEASE_20260923.md)
+`M2.4` is the immutable production release based on commit `9d0c954`. It keeps
+the qualified playback, controller, UI and audio behavior while restoring pull
+OTA compatibility with the current valid cross-signed public TLS chain. Its
+exact ESP-IDF v6.0.2 build, signed installation, live production-channel probe,
+cold-boot hardware/API smoke, clean operator-confirmed MAIN/cue and published assets passed. See the
+[M2.4 production release report](docs/validation/M2_4_PRODUCTION_RELEASE_20260929.md)
 and the inherited
 [M2.1 production baseline](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 

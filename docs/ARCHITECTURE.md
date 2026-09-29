@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **current M2.2 P4-only architecture, reconciled 2026-09-23**. The P4 is
+Status: **current M2.4 P4-only architecture, reconciled 2026-09-29**. The P4 is
 both the authoritative playback/UI engine and the direct dual-root USB host.
 No secondary firmware target or inter-board transport belongs to the product.
 
@@ -208,7 +208,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `master` path inherited by the M2.2 production release:
+Active `master` path frozen by the M2.4 production release:
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -235,9 +235,13 @@ Active `master` path inherited by the M2.2 production release:
   owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
   and releases device/interface ownership, then submits at most one deferred
   root-recovery request. A physical device-gone event cancels that soft request.
-  M2.2 inherits the repeated reconnect and post-reboot dual-playback evidence
-  summarized in
-  [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
+  The P4 matrix records the earlier reconnect and non-OTA post-reboot
+  dual-playback evidence. M2.4 does not inherit its signed-OTA recovery result:
+  USB0 and USB1 remained unenumerated after the M2.4 OTA software reboot until
+  a cold power cycle. See
+  [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
+  and
+  [M2_4_PRODUCTION_RELEASE_20260929.md](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
 
 The retired S3 UART and monitor-I2S implementation is available only in Git
 history.

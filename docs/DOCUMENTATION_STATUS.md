@@ -1,6 +1,6 @@
 # Documentation status
 
-Status: **current P4-only source of truth, reconciled 2026-09-28**.
+Status: **current P4-only source of truth, reconciled 2026-09-29**.
 
 ## Product boundary
 
@@ -16,31 +16,32 @@ in current code/file formats. They do not imply an active S3 processor.
 
 ## Production release
 
-| Item | M2.2 value |
+| Item | M2.4 value |
 | --- | --- |
-| Annotated tag | `M2.2` |
-| Frozen source | `2c2ec32c253d368765123d7bbf8d37389b790b55` |
-| Tag object | `d4e344cab3fb06c43d2b4bf78218032545e1c1ca` |
+| Annotated tag | `M2.4` |
+| Frozen source | `9d0c954fc502ae237fabedb764368cd9b10f10dc` |
+| Tag object | `c106f918e3c0919421481cca12ecf94ad7af49fa` |
 | Toolchain | ESP-IDF v6.0.2 |
-| Installed release record | `M2.2`, `ota_0`, OTA state `idle` and empty `last_error` |
-| Application | 2,493,472 bytes; SHA-256 `d2aeced882c1c80c0df4b3a00e371898b3da7a1ffb470bb4be4162b4a2427e9b` |
-| Signed OTA bundle | 2,493,660 bytes; SHA-256 `5552d32527e55d7393fe89a49bdf1b753209af8d2a788f9e8d83fbda84ba0676` |
+| Installed release record | `M2.4`, `ota_1`, boot 560, reset `POWERON`, OTA `idle` and empty `last_error` |
+| Application | 2,505,264 bytes; SHA-256 `1bc85aaa2ee26fc5c183ef673e72f6017d87539f4ddd9032f8d403c5bcc2da52` |
+| Signed OTA bundle | 2,505,452 bytes; SHA-256 `c76b9160bdf9757e04b4b44e92a4f034bf6e913ac35caef7b4fa12092c3e35c4` |
 | Public channel | `https://ota.pajoniiir.eu` |
-| GitHub Release | `https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.2` |
+| GitHub Release | `https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4` |
 
 The installation identity above records the accepted release session; it is
 not a claim about a later live boot unless `/api/firmware` is checked again.
 Commits after the immutable tag are maintenance/development commits and do not
-change the published M2.2 artifact.
+change the published M2.4 artifact.
 
 ## Acceptance summary
 
-M2.2 inherits the completed M2.1 P4 qualification and passed its focused
-Wi-Fi Remote gates: exact-tagged build, signature/package verification, signed
-OTA installation, opposite-slot boot, 324-track USB0 library, embedded UI and
-authoritative SYNC smoke, public-channel verification and GitHub asset
-round-trip verification. The production release record is
-[`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
+M2.4 inherits the completed M2.1 P4 qualification, the M2.2 Wi-Fi Remote
+release and the post-review maintenance qualification. Its exact-tagged build,
+signature/package verification, signed opposite-slot installation, live
+cross-signed production TLS probes, cold-boot USB0/FLX4/UAC telemetry smoke,
+dual-deck playback and operator-confirmed clean MAIN/cue, public-channel verification and GitHub asset
+round-trip verification passed. The production release record is
+[`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
 
 The retained supporting evidence covers:
 
@@ -53,7 +54,7 @@ The retained supporting evidence covers:
   post-reboot dual-USB recovery;
 - accepted common 5 V and protected dual-VBUS bench/enclosure wiring.
 
-## Post-release maintenance candidate
+## Inherited maintenance qualification and accepted exclusions
 
 Merge image `M2.2-37-g751d3c6` at `751d3c6` has passed a separate
 180.058-minute dual-deck soak with operator-confirmed MAIN/cue audio, real-media
@@ -64,8 +65,8 @@ wrap/handoff iterations, a 1 us maximum publication critical section and a
 paired live three-minute dual-deck runtime smoke. The release candidate was
 then restored and verified on `ota_0`. Its physical-phone Web Remote follow-up
 also passed real-track title/PLAY state and visible MAIN meter decay, reaching
-zero 788 ms after STOP. This evidence does not change the published M2.2
-identity or public channel.
+zero 788 ms after STOP. This evidence is inherited by M2.4 because its release
+delta after M2.3 is limited to TLS certificate-bundle configuration.
 
 On 2026-09-28 the same candidate passed duplicate raw track-ID isolation across
 two independently generated Rekordbox exports. Both exposed `track_key=1`,
@@ -77,11 +78,11 @@ clean. The evidence is
 
 On 2026-09-28 the operator explicitly accepted the deferred real Rekordbox cue
 A/C and loop slot/time comparison and repetition of the duplicate raw track-ID
-gate on the exact M2.3 binary as outside the release scope. Both remain NOT RUN
+gate on the exact M2.3/M2.4 binary as outside the release scope. Both remain NOT RUN
 and are not represented as passes; the duplicate-ID behavior retains its PASS
 on the `M2.2-37-g751d3c6` maintenance candidate. With those recorded
-limitations, the candidate is approved for the exact-tag M2.3 build,
-installation and qualification sequence. The decision is
+limitations, the candidate was approved for the exact-tag release build,
+installation and qualification sequence. The original decision is
 [`validation/M2_3_RELEASE_DECISION_20260928.md`](validation/M2_3_RELEASE_DECISION_20260928.md).
 
 The exact broader qualification status is in
@@ -105,8 +106,13 @@ The execution procedure is
   are operator-confirmed. Recovery signing from the backup remains deferred
   maintenance, not completed evidence.
 - The recorder is compiled out. Non-FLX4 profiles are host evidence only.
-- Real Rekordbox cue A/C and loop slot/time comparison is not run for M2.3;
+- Real Rekordbox cue A/C and loop slot/time comparison is not run for M2.4;
   the operator accepted it as outside the current deployment scope.
+- Exact-tag repetition of duplicate raw track-ID isolation is not run for M2.4;
+  the passing result remains tied to `M2.2-37-g751d3c6`.
+- The M2.4 signed OTA software reboot did not enumerate USB0/USB1. Boot 560
+  after a full power cycle restored storage, FLX4 MIDI/UAC and clean playback;
+  automatic post-OTA dual-root recovery is a follow-up item.
 
 ## Source-of-truth order
 
