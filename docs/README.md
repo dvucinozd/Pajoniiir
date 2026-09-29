@@ -1,14 +1,14 @@
 # Pajoniiir documentation
 
-Status: **current P4-only documentation index, reconciled 2026-09-20**.
+Status: **current P4-only documentation index, reconciled 2026-09-29**.
 
-Pajoniiir M2.1 is a released standalone dual-deck system. The ESP32-P4 owns
+Pajoniiir M2.4 is a released standalone dual-deck system. The ESP32-P4 owns
 USB media, DDJ-FLX4 control/audio, playback, mixer/DSP, display, network
 services and signed OTA. There is no active S3 firmware or inter-board link.
 
 ## User documentation
 
-- [`index.html`](index.html) — published M2.1 user manual.
+- [`index.html`](index.html) — published M2.4 user manual.
 - [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) — concise product and release
   overview.
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — power, USB and PCM5102A wiring.

@@ -235,9 +235,13 @@ Active `master` path frozen by the M2.4 production release:
   owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
   and releases device/interface ownership, then submits at most one deferred
   root-recovery request. A physical device-gone event cancels that soft request.
-  M2.4 inherits the repeated reconnect and post-reboot dual-playback evidence
-  summarized in
-  [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
+  The P4 matrix records the earlier reconnect and non-OTA post-reboot
+  dual-playback evidence. M2.4 does not inherit its signed-OTA recovery result:
+  USB0 and USB1 remained unenumerated after the M2.4 OTA software reboot until
+  a cold power cycle. See
+  [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
+  and
+  [M2_4_PRODUCTION_RELEASE_20260929.md](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
 
 The retired S3 UART and monitor-I2S implementation is available only in Git
 history.
