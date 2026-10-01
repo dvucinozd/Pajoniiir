@@ -1,6 +1,6 @@
 # P4 post-release development plan
 
-Status: **M2.4 released; post-M2.4 maintenance planning**.
+Status: **M2.4 released; M2.5 USB recovery and additional-controller work**.
 
 ## Current baseline
 
@@ -74,9 +74,26 @@ tag was built, signed, installed on `ota_0`, hardware/API-smoked and published
 through both the public pull channel and GitHub Releases. The release record is
 [`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
 
-## Ordered future work
+## M2.5 scope and execution order
 
-These are post-M2.4 maintenance projects or deferred product extensions:
+1. Reproduce and fix automatic dual-root recovery after a software/OTA reboot.
+   Preserve the shared recovery arbiter and active-enumeration exclusion.
+   The [2026-10-01 investigation](validation/P4_M2_5_USB_REBOOT_INVESTIGATION_20261001.md)
+   records the weak-supply reboot loop and successful software-reboot/signed-OTA
+   telemetry on unchanged M2.4 after supply replacement. No firmware fix is
+   currently justified; operator MAIN/cue and physical-control confirmation
+   also passed. Repeat recovery acceptance on the final M2.5 image.
+2. Qualify additional real DJ controllers. Existing profile files, including
+   Hercules DJControl Inpulse 500, are candidates, not accepted hardware.
+   Freeze the supported-device list from descriptor, MIDI, LED, reconnect and
+   applicable audio evidence; preserve FLX4 regression acceptance.
+3. Qualify the exact release image, including signed opposite-slot OTA and
+   automatic USB0/USB1 return without manual power cycling, MAIN and cue.
+
+## Other future work
+
+These remain maintenance projects or deferred product extensions. Controller
+qualification and post-OTA recovery below are now assigned to M2.5 above:
 
 1. **Non-FLX4 controller qualification.** Obtain real hardware and capture
    descriptors, MIDI, LEDs, reconnect behavior and four-channel audio before

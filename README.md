@@ -231,6 +231,10 @@ cold-boot hardware/API smoke, clean operator-confirmed MAIN/cue and published as
 and the inherited
 [M2.1 production baseline](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
+M2.5 development targets automatic USB recovery after OTA restart and physically
+qualified additional DJ controllers. These are planned capabilities; see the
+[development plan](docs/DEVELOPMENT_PLAN.md).
+
 - [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)

@@ -59,6 +59,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Before a release
 
+- [ ] For M2.5, prove automatic USB0/USB1 recovery after software restart and
+  signed opposite-slot OTA with reboot diagnostics disabled; confirm FLX4 and
+  each newly advertised controller on real hardware, including MAIN/cue.
 - [ ] Freeze a clean commit and run complete CI/build/package gates.
 - [ ] Create a new immutable version; never move `M2`, `M2.1`, `M2.2`, `M2.3` or `M2.4`.
 - [ ] Build and sign from the exact tag, then independently verify bundle and
