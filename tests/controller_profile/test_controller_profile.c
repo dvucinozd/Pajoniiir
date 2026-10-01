@@ -203,8 +203,8 @@ static void test_runtime_mapping(void)
     expect_event(&ev, 0x01, 0x10, 1);
     assert(cp_runtime_process(&profile, &rt, 0x90, 0x0B, 0x00, &ev));
     expect_event(&ev, 0x01, 0x10, 0);
-    assert(cp_runtime_process(&profile, &rt, 0x80, 0x0B, 0x40, &ev));
-    expect_event(&ev, 0x01, 0x10, 0);
+    /* The table matches exact status bytes; this fixture declares only 0x90. */
+    assert(!cp_runtime_process(&profile, &rt, 0x80, 0x0B, 0x40, &ev));
 
     /* packed value: press sets mask, release keeps base */
     assert(cp_runtime_process(&profile, &rt, 0x97, 0x03, 0x7F, &ev));
@@ -334,6 +334,52 @@ static void test_led_mapping(void)
     printf("  LED output mapping                                PASS\n");
 }
 
+static void test_cc7_scaling(void)
+{
+    blob_builder_t b;
+    cp_profile_t profile;
+    cp_runtime_t rt;
+    cp_event_t ev;
+    capture_t cap = {0};
+    blob_init(&b);
+    blob_add_input(&b, 0xB0, 1, CP_IN_CC7_TO14, 0xFF,
+                   3, 0x50, CP_IN_FLAG_REPLAY, 0, 0, NULL);
+    blob_add_input(&b, 0xB1, 9, CP_IN_CC7_TO14, 0xFF,
+                   3, 0x35, 0, 0, 0, NULL);
+    blob_finish(&b, 1, 2, 0);
+    assert(cp_profile_parse(b.buf, b.len, &profile) == CP_OK);
+    cp_runtime_init(&rt);
+    assert(cp_runtime_emit_snapshot(&profile, &rt, capture_cb, &cap) == 0);
+    int previous = -1;
+    for (int v = 0; v <= 127; v++) {
+        assert(cp_runtime_process(&profile, &rt, 0xB0, 1, (uint8_t)v, &ev));
+        assert(ev.type == 3 && ev.id == 0x50);
+        assert(ev.value > previous && ev.value <= 16383);
+        if (v == 0) assert(ev.value == 0);
+        if (v == 64) assert(ev.value == 8192);
+        if (v == 127) assert(ev.value == 16383);
+        previous = ev.value;
+        cap.count = 0;
+        assert(cp_runtime_emit_snapshot(&profile, &rt, capture_cb, &cap) == 1);
+        expect_event(&cap.events[0], 3, 0x50, ev.value);
+    }
+    assert(cp_runtime_process(&profile, &rt, 0xB1, 9, 64, &ev));
+    expect_event(&ev, 3, 0x35, 8192);
+    cap.count = 0;
+    assert(cp_runtime_emit_snapshot(&profile, &rt, capture_cb, &cap) == 1);
+    assert(cap.events[0].id == 0x50); /* tempo is never replayed */
+    cp_runtime_init(&rt);
+    assert(cp_runtime_emit_snapshot(&profile, &rt, capture_cb, &cap) == 0);
+    wr_u16(b.buf + 4, CP_VERSION_LEGACY);
+    assert(cp_profile_parse(b.buf, b.len, &profile) == CP_ERR_BOUNDS);
+    build_basic(&b);
+    wr_u16(b.buf + 4, CP_VERSION_LEGACY);
+    assert(cp_profile_parse(b.buf, b.len, &profile) == CP_OK);
+    wr_u16(b.buf + 4, 1);
+    assert(cp_profile_parse(b.buf, b.len, &profile) == CP_ERR_VERSION);
+    printf("  CC7 scaling, replay and version compatibility      PASS\n");
+}
+
 int main(void)
 {
     printf("=== controller_profile format/runtime tests ===\n");
@@ -341,6 +387,7 @@ int main(void)
     test_runtime_mapping();
     test_snapshot();
     test_led_mapping();
+    test_cc7_scaling();
     printf("controller_profile tests passed\n");
     return 0;
 }

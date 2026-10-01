@@ -24,6 +24,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] After FLX4 reconnect, confirm profile, MIDI IN/OUT, UAC, LEDs and held
   controls have converged to the P4-owned state.
 - [ ] Do not advertise a non-FLX4 profile from host fixtures alone.
+- [ ] Before installing scaled CC profiles, confirm firmware supports S3CP v3.
+  M2.4 accepts only v2; keep the installed v2 profiles until firmware update.
+  See [M2.5 scaling validation](validation/P4_M2_5_CC7_SCALING_20261002.md).
 
 ## Wi-Fi Remote
 

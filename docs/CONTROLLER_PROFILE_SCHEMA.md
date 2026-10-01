@@ -93,6 +93,7 @@ emits one semantic event. `event` names come from the vocabulary below.
 | `encoder_2c` | `event`, `status`, `data1` | Two's-complement relative: `0x00`/`0x40` drop; `< 0x40` positive; else `data2 - 0x80`. |
 | `cc14` | `event`, `status`, `msb`, `lsb`, `replay` (bool) | 14-bit CC pair. Compiler emits two table entries sharing one pairing slot; the runtime emits `value = msb<<7 \| lsb` only when both halves have been seen. |
 | `cc7_abs` | `event`, `status`, `data1`, `replay` (bool) | 7-bit absolute → `value = data2 & 0x7F`. |
+| `cc7_to14` | `event` (PITCH), `status` (CC), `data1`, `replay` (bool) | S3CP v3 only: maps 0/64/127 to 0/8192/16383 using integer scaling; intermediate values are monotonic. |
 | `state_pair` | `event`, `members` (2× `{status,data1}`), `values` (4 entries, `null` = no emit) | Two buttons share latched pressed-state bits; on every edge the runtime emits `values[member0_bit \| member1_bit<<1]`. Used for FLX4 Beat FX target CH1/CH2/BOTH. |
 
 `replay: true` marks absolute controls whose last complete value the P4-local
@@ -155,7 +156,18 @@ LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `hot_cue_pads`, `pad_fx1_pads`, `pad_fx2_pads`, `beat_jump_pads`,
 `beat_loop_pads`, `beat_jump_shift_helpers`.
 
-## profile.s3bin compatibility format (S3CP v2)
+## profile.s3bin compatibility format (S3CP v2/v3)
+
+The M2.5 development parser accepts v2 and v3. The compiler emits v3 only
+when a `cc7_to14` input is present; unchanged profiles remain byte-compatible
+v2. M2.4 rejects v3: install the new firmware before replacing a v2 profile
+with one using scaling. No installed-device acceptance is implied.
+
+For `v = data2 & 127`, scaling is `v * 128` up to 64, otherwise
+`8192 + ((v - 64) * 8191 + 31) / 63` (integer division). This preserves
+center detents and both endpoints; it does not add physical resolution.
+Replay stores the scaled value. Tempo entries must omit replay, while mixer
+entries should enable it. Existing `cc7_abs` (including Beat FX depth) is unchanged.
 
 The filename and four-byte magic predate the P4-only architecture. They remain
 only to preserve existing SD cards, profile tooling and deployed web updates;
@@ -174,7 +186,7 @@ bytes from offset 16 to the end of the file.
 | Offset | Size | Field |
 | ---: | ---: | --- |
 | 0 | 4 | magic `"S3CP"` |
-| 4 | 2 | version (1) |
+| 4 | 2 | version (2, or 3 for scaled CC) |
 | 6 | 2 | header_size (32) |
 | 8 | 4 | profile_size (total file bytes) |
 | 12 | 4 | crc32 over bytes `[16, profile_size)` |
@@ -216,6 +228,7 @@ Input entries follow the header; output entries follow the inputs.
 | 5 | CC14_LSB | store LSB in pair_slot; emit when pair complete |
 | 6 | CC7_ABS | `value = data2 & 0x7F` |
 | 7 | NOTE_STATE_PAIR | latch member bit (flags bit1 selects member B) in pair_slot; emit `lut[bitA \| bitB<<1]`, `-1` = no emit |
+| 8 | CC7_TO14 | v3 only; center-preserving 7-to-14-bit scaling above; CC/PITCH only, no pair slot, only REPLAY flag allowed |
 
 ### Output entry — 12 bytes
 

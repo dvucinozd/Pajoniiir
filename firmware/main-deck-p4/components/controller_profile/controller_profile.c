@@ -53,7 +53,8 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
     uint32_t profile_size = rd_u32(data + 8);
     uint32_t crc = rd_u32(data + 12);
 
-    if (version != CP_VERSION || header_size != CP_HEADER_SIZE) {
+    if ((version != CP_VERSION && version != CP_VERSION_LEGACY) ||
+        header_size != CP_HEADER_SIZE) {
         return CP_ERR_VERSION;
     }
     if (profile_size != len || profile_size < CP_HEADER_SIZE) {
@@ -100,7 +101,14 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         for (int b = 0; b < 4; b++) {
             e->lut[b] = (int8_t)p[12 + b];
         }
-        if (e->raw_type > CP_IN_NOTE_STATE_PAIR) {
+        if (e->raw_type > CP_IN_CC7_TO14 ||
+            (version == CP_VERSION_LEGACY && e->raw_type > CP_IN_NOTE_STATE_PAIR)) {
+            return CP_ERR_BOUNDS;
+        }
+        if (e->raw_type == CP_IN_CC7_TO14 &&
+            ((e->match_status & 0xF0) != 0xB0 || e->semantic_type != 0x03 ||
+             e->pair_slot != CP_PAIR_SLOT_NONE ||
+             (e->flags & ~CP_IN_FLAG_REPLAY) != 0)) {
             return CP_ERR_BOUNDS;
         }
         bool needs_slot = e->raw_type == CP_IN_CC14_MSB ||
@@ -218,7 +226,15 @@ bool cp_runtime_process(const cp_profile_t *profile, cp_runtime_t *rt,
             return pair_value(slot, &out->value);
         }
         case CP_IN_CC7_ABS:
+        case CP_IN_CC7_TO14:
             out->value = (int16_t)(data2 & 0x7F);
+            if (e->raw_type == CP_IN_CC7_TO14) {
+                /* Piecewise integer scaling preserves center detents and both
+                 * endpoints. No allocation or floating point in MIDI input. */
+                int32_t v = out->value;
+                out->value = (int16_t)(v <= 64 ? v * 128 :
+                                      8192 + ((v - 64) * 8191 + 31) / 63);
+            }
             rt->cc7_value[i] = out->value;
             rt->cc7_valid[i] = true;
             return true;
@@ -270,7 +286,7 @@ size_t cp_runtime_emit_snapshot(const cp_profile_t *profile,
                 return count;
             }
             count++;
-        } else if (e->raw_type == CP_IN_CC7_ABS) {
+        } else if (e->raw_type == CP_IN_CC7_ABS || e->raw_type == CP_IN_CC7_TO14) {
             if (!rt->cc7_valid[i]) {
                 continue;
             }

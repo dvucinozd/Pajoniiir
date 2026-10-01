@@ -87,6 +87,9 @@ through both the public pull channel and GitHub Releases. The release record is
    Hercules DJControl Inpulse 500, are candidates, not accepted hardware.
    Freeze the supported-device list from descriptor, MIDI, LED, reconnect and
    applicable audio evidence; preserve FLX4 regression acceptance.
+   [CC7 scaling implementation](validation/P4_M2_5_CC7_SCALING_20261002.md)
+   adds v3 mixer/tempo input support with v2 compatibility. Deployment and
+   physical non-FLX4 acceptance remain open.
 3. Qualify the exact release image, including signed opposite-slot OTA and
    automatic USB0/USB1 return without manual power cycling, MAIN and cue.
 

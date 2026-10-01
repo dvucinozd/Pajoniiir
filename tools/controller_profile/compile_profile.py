@@ -18,6 +18,7 @@ import zlib
 
 S3CP_MAGIC = b"S3CP"
 S3CP_VERSION = 2
+S3CP_SCALED_VERSION = 3
 HEADER_SIZE = 32
 INPUT_ENTRY_SIZE = 16
 OUTPUT_ENTRY_SIZE = 12
@@ -44,6 +45,7 @@ RAW_CC14_MSB = 4
 RAW_CC14_LSB = 5
 RAW_CC7_ABS = 6
 RAW_NOTE_STATE_PAIR = 7
+RAW_CC7_TO14 = 8
 
 RAW_TYPE_NAMES = {
     RAW_NOTE_BUTTON: "note_button",
@@ -54,6 +56,7 @@ RAW_TYPE_NAMES = {
     RAW_CC14_LSB: "cc14_lsb",
     RAW_CC7_ABS: "cc7_abs",
     RAW_NOTE_STATE_PAIR: "note_state_pair",
+    RAW_CC7_TO14: "cc7_to14",
 }
 
 FLAG_REPLAY = 0x0001
@@ -288,11 +291,15 @@ def compile_inputs(inputs):
             entries.append(Entry(num(item["status"]), num(item["lsb"]),
                                  RAW_CC14_LSB, t, i, pair_slot=slot,
                                  flags=flags))
-        elif kind == "cc7_abs":
+        elif kind in ("cc7_abs", "cc7_to14"):
             t, i = resolve_event(item["event"])
+            raw = RAW_CC7_TO14 if kind == "cc7_to14" else RAW_CC7_ABS
+            if raw == RAW_CC7_TO14 and (t != TYPE_PITCH or
+                                        num(item["status"]) & 0xF0 != 0xB0):
+                raise ValueError("cc7_to14 requires a CC message and PITCH semantic")
             flags = FLAG_REPLAY if item.get("replay") else 0
             entries.append(Entry(num(item["status"]), num(item["data1"]),
-                                 RAW_CC7_ABS, t, i, flags=flags))
+                                 raw, t, i, flags=flags))
         elif kind == "state_pair":
             t, i = resolve_event(item["event"])
             slot = alloc_slot()
@@ -393,7 +400,8 @@ def compile_profile(profile):
         raise ValueError("profile too large (%d > %d bytes)" %
                          (profile_size, MAX_PROFILE_SIZE))
     crc = zlib.crc32(tail + body) & 0xFFFFFFFF
-    header = S3CP_MAGIC + struct.pack("<HHII", S3CP_VERSION, HEADER_SIZE,
+    version = S3CP_SCALED_VERSION if any(e.raw_type == RAW_CC7_TO14 for e in entries) else S3CP_VERSION
+    header = S3CP_MAGIC + struct.pack("<HHII", version, HEADER_SIZE,
                                       profile_size, crc) + tail
     assert len(header) == HEADER_SIZE
     return header + body

@@ -8,6 +8,9 @@
 
 # Pajoniiir M2.4
 
+M2.5 development: [7-bit controller scaling](docs/validation/P4_M2_5_CC7_SCALING_20261002.md)
+adds S3CP v3 while retaining v2 profiles. It is not yet installed or hardware-qualified.
+
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
 [![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)

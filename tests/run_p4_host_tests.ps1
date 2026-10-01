@@ -3366,10 +3366,13 @@ Invoke-Step -Name "run firmware lifecycle regression" -WorkingDirectory $RepoRoo
 
 # Resolve the current PowerShell executable for both Windows PowerShell and pwsh.
 $HostShell = (Get-Process -Id $PID).Path
-foreach ($suite in @("controller_runtime", "controller_usb_host", "controller_led_runtime")) {
+foreach ($suite in @("controller_profile", "controller_runtime", "controller_usb_host", "controller_led_runtime")) {
     Invoke-Step -Name "run $suite" -WorkingDirectory $RepoRoot -Executable $HostShell `
         -Arguments @("-NoProfile", "-File", (Join-Path $PSScriptRoot "$suite/run_tests.ps1"))
 }
+
+Invoke-Step -Name "run profile compiler and converter" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/controller_profile_converter/test_convert_web_profile.py")
 
 # Windows PowerShell propagates $LASTEXITCODE as the script's exit status, so a
 # script that ends after any native command inherits that command's code even

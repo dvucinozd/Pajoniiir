@@ -22,6 +22,20 @@ def profile(controls=None, feedback_outputs=None):
 
 
 class ConverterTests(unittest.TestCase):
+    def test_scaled_cc_requires_v3_without_changing_legacy_profiles(self):
+        p = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,
+             "inputs": [{"type": "cc7_to14", "event": "deck1.tempo",
+                         "status": 0xB0, "data1": 9}]}
+        blob = compile_profile(p)
+        self.assertEqual(int.from_bytes(blob[4:6], "little"), 3)
+        self.assertEqual(blob[34], 8)
+        self.assertEqual(blob[38], 0)
+        p["inputs"][0]["type"] = "cc7_abs"
+        self.assertEqual(int.from_bytes(compile_profile(p)[4:6], "little"), 2)
+        p["inputs"][0].update(type="cc7_to14", event="deck1.play")
+        with self.assertRaisesRegex(ValueError, "PITCH"):
+            compile_profile(p)
+
     def assert_compiles(self, converted):
         blob = compile_profile(converted)
         self.assertEqual(blob[:4], b"S3CP")

@@ -18,7 +18,8 @@ extern "C" {
 #endif
 
 #define CP_MAGIC            "S3CP"
-#define CP_VERSION          2
+#define CP_VERSION          3
+#define CP_VERSION_LEGACY   2
 #define CP_HEADER_SIZE      32
 #define CP_INPUT_ENTRY_SIZE 16
 #define CP_OUTPUT_ENTRY_SIZE 12
@@ -46,6 +47,7 @@ typedef enum {
     CP_IN_CC14_LSB = 5,
     CP_IN_CC7_ABS = 6,
     CP_IN_NOTE_STATE_PAIR = 7,
+    CP_IN_CC7_TO14 = 8, /* v3: 0/64/127 -> 0/8192/16383 */
 } cp_raw_type_t;
 
 /* Input entry flags. */
