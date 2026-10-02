@@ -33,7 +33,8 @@ extern "C" {
 
 /* S3CP header layout (little-endian). Must match the schema/compiler. */
 #define CPM_MAGIC        "S3CP"
-#define CPM_VERSION      2
+#define CPM_VERSION      3
+#define CPM_VERSION_LEGACY 2
 #define CPM_HEADER_SIZE  32
 #define CPM_INPUT_ENTRY_SIZE  16
 #define CPM_OUTPUT_ENTRY_SIZE 12
@@ -41,7 +42,7 @@ extern "C" {
 #define CPM_MAX_OUTPUTS       160
 #define CPM_MAX_PAIR_SLOTS    40
 #define CPM_PAIR_SLOT_NONE    0xFF
-#define CPM_MAX_RAW_TYPE      7
+#define CPM_MAX_RAW_TYPE      8
 #define CPM_MAX_OUTPUT_KIND   1
 
 typedef struct {

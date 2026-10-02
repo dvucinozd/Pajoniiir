@@ -479,6 +479,30 @@ static void test_atomic_install_and_recovery(void)
     assert(controller_profile_storage_install(INSTALL_ROOT, "../escape",
                                               g_blob, g_blob_len, true,
                                               NULL) == ESP_ERR_INVALID_ARG);
+    /* v3 must pass the same SD/upload validator as the runtime parser. */
+    memcpy(bad, g_blob, g_blob_len);
+    wr_u16(bad + 4, 3);
+    uint8_t *scaled = bad + CPM_HEADER_SIZE;
+    scaled[0] = 0xB0;
+    scaled[2] = 8;
+    scaled[3] = 0xFF;
+    scaled[4] = 3;
+    scaled[5] = 0x50;
+    wr_u16(scaled + 6, 1);
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_storage_install(INSTALL_ROOT, "test_profile",
+                                              bad, g_blob_len, true, &meta) == ESP_OK);
+    assert_file_equals(target, bad, g_blob_len);
+    wr_u16(bad + 4, 2);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) == ESP_ERR_INVALID_ARG);
+    wr_u16(bad + 4, 3);
+    scaled[4] = 1;
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_storage_install(INSTALL_ROOT, "test_profile",
+                                              bad, g_blob_len, true, NULL) == ESP_ERR_INVALID_ARG);
+    scaled[4] = 3;
+    refresh_crc(bad, g_blob_len);
+    assert_file_equals(target, bad, g_blob_len);
     cleanup_install_tree();
     printf("  atomic profile install + interrupted-swap recovery PASS\n");
 }
