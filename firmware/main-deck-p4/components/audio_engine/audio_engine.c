@@ -43,6 +43,7 @@
 #include "audio_pad_fx.h"
 #include "audio_pcm_ring.h"
 #include "audio_pcm_timeline.h"
+#include "audio_pvbr_validation.h"
 #include "audio_scratch_buffer.h"
 #include "audio_scratch.h"
 #include "audio_resampler.h"
@@ -2666,6 +2667,11 @@ static void ae_loader_task(void *arg)
 
     AE_LOCK();
     eng->file_size = (size_t)fsz;
+    if (eng->has_pvbr &&
+        !audio_pvbr_is_valid(eng->pvbr, AUDIO_PVBR_LEN, eng->file_size)) {
+        eng->has_pvbr = false;
+        ESP_LOGW(TAG, "PVBR offsets exceed source length; using seek fallback");
+    }
     eng->file_pos = 0u;
     eng->fp = NULL;
     AE_UNLOCK();
@@ -4168,19 +4174,12 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     }
 
     if (pvbr_400) {
-        bool any_nonzero = false;
-        for (uint32_t i = 1u; i < AUDIO_PVBR_LEN; i++) {
-            if (pvbr_400[i] > 0) {
-                any_nonzero = true;
-                break;
-            }
-        }
-        if (any_nonzero) {
+        if (audio_pvbr_is_valid(pvbr_400, AUDIO_PVBR_LEN, 0u)) {
             memcpy(eng->pvbr, pvbr_400, AUDIO_PVBR_LEN * sizeof(uint32_t));
             eng->has_pvbr = true;
-            ESP_LOGI(TAG, "PVBR seek table loaded and verified (has non-zero values)");
+            ESP_LOGI(TAG, "PVBR seek table monotonic; source bounds checked by loader");
         } else {
-            ESP_LOGI(TAG, "PVBR table contains only zeros; using linear seek fallback");
+            ESP_LOGI(TAG, "PVBR table invalid or incomplete; using seek fallback");
             memset(eng->pvbr, 0, sizeof eng->pvbr);
             eng->has_pvbr = false;
         }

@@ -1655,6 +1655,16 @@ Assert-FileDoesNotContain `
 
 $tests = @(
     @{
+        Name = "audio_pvbr_validation"
+        Dir = "tests/audio_pvbr_validation"
+        Target = "test_audio_pvbr_validation.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_pvbr_validation.exe", "test_audio_pvbr_validation.c"
+        )
+    },
+    @{
         Name = "ui_beat_indicator"
         Dir = "tests/ui_beat_indicator"
         Target = "test_ui_beat_indicator.exe"

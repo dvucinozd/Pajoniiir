@@ -14,7 +14,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | Pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR bounds verified; remainder pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -74,6 +74,36 @@ Verification on 2026-10-03:
 This is an uncommitted-source development build, not a signed release artifact.
 The source commit will identify the reviewable package; a future release must
 rebuild and qualify its exact frozen version.
+
+## B1: PVBR validation before seek
+
+The existing engine accepted a table when any entry after the first was
+nonzero. It now requires a nondecreasing table with actual forward progress.
+Once the worker has opened the source and obtained its length, every offset
+must be strictly inside that file. A rejected table uses the existing seek
+fallback; it does not prevent playback. Checks run in the load path, not once
+per audio block, and the current PCM timeline remains intact.
+
+This is an original integration safeguard required by package B, rather than
+a copied donor module. It does not yet correct ID3-relative offsets, validate
+MPEG frame alignment, implement exact seek skipping or resolve analysis versus
+decoded duration. Those remain open package B work.
+
+Verification on 2026-10-03:
+
+- New `audio_pvbr_validation` suite: PASS (null/empty/constant/descending,
+  repeated valid offsets, partial zero-filled tail and exact/outside EOF).
+- Complete P4 host runner: PASS (exit 0).
+- ESP-IDF 6.0.2 P4 build: PASS; dependency lock unchanged.
+- Application: 2,505,632 bytes; 1,164,384 bytes below the 0x380000 budget.
+- Build SHA-256: `ee387e854c3b4fda0f9ff8942e0b32b1cba780b9f934d5114b66f91aa1217e2c`.
+- Deterministic dual-deck Master Tempo soak: PASS, 300 virtual seconds,
+  zero sample drift and clipping. This is host evidence, not measured hardware
+  deadline or audible acceptance.
+- Physical MP3 cue/seek A/B, scratch and dual-deck output: **NOT RUN**.
+
+The recorded build includes uncommitted B1 source. No persistent format changes
+are involved; reverting B1 restores the previous table admission policy.
 
 ## Provenance and rollback
 
