@@ -20,6 +20,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] For the [fork improvements branch](FORK_IMPROVEMENTS.md), verify titles
   against the real Rekordbox export and confirm beat number 1 is accented,
   including a grid starting on beat 3. Host fixtures are not physical acceptance.
+- [ ] Before hardware acceptance of [software steps A and B1–B5](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md),
+  compare MP3/WAV/FLAC tail seeks, paused CUE/scratch and active loop resize
+  against the existing device, then run MAIN/cue listening and the exact-image
+  dual-deck soak. These checks remain **NOT RUN**.
 
 - [ ] Use FAT32 or exFAT media on superfloppy, MBR or GPT layouts.
 - [ ] Confirm the expected Rekordbox library count before relying on the media.

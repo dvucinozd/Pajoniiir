@@ -15,6 +15,8 @@ MAIN/cue smoke passed; physical non-FLX4 qualification remains open.
 [Fork improvements integration](docs/FORK_IMPROVEMENTS.md) is in progress in
 an isolated development branch. JC1060, DDJ-400 and Pro DJ Link are planned;
 their hardware acceptance has not run.
+[Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
+record the current package checkpoint.
 
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)

@@ -4,6 +4,8 @@ Work in progress on `codex/fork-improvements`, starting from
 `05296b8e8a2a10e38b3af58bb1e8034fbe806519`. Production remains M2.4.
 Donor: [kayrozen/Pajoniiir](https://github.com/kayrozen/Pajoniiir/tree/428b97dd4a175f03d3a172c8db9c4d5ed94195fb),
 frozen at `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323).
+The [2026-10-04 software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
+records the pushed checkpoint and hardware gates left unrun.
 
 ## Scope and delivery status
 
