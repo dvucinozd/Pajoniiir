@@ -8,11 +8,11 @@
 static void test_grid_position_uses_current_beat_phase(void)
 {
     const anlz_beat_t beats[] = {
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 1000},
-        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 1500},
-        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
-        {.beat_phase = 3, .bpm_x100 = 12000, .time_ms = 2500},
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 3000},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 1000},
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 1500},
+        {.beat_phase = 3, .bpm_x100 = 12000, .time_ms = 2000},
+        {.beat_phase = 4, .bpm_x100 = 12000, .time_ms = 2500},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 3000},
     };
 
     ui_beat_indicator_state_t state =
@@ -24,12 +24,12 @@ static void test_grid_position_uses_current_beat_phase(void)
     assert(state.progress_permille == 520);
 }
 
-static void test_grid_marks_downbeat_phase_zero(void)
+static void test_grid_marks_downbeat_number_one(void)
 {
     const anlz_beat_t beats[] = {
-        {.beat_phase = 3, .bpm_x100 = 12000, .time_ms = 2500},
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 3000},
-        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 3500},
+        {.beat_phase = 4, .bpm_x100 = 12000, .time_ms = 2500},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 3000},
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 3500},
     };
 
     ui_beat_indicator_state_t state =
@@ -118,10 +118,34 @@ static void test_phase_delta_marks_close_offsets_as_locked(void)
     assert(delta.locked);
 }
 
+static void test_shifted_and_invalid_grid(void)
+{
+    anlz_beat_t beats[] = {
+        {.beat_phase = 3, .time_ms = 0},
+        {.beat_phase = 4, .time_ms = 500},
+        {.beat_phase = 1, .time_ms = 1000},
+        {.beat_phase = 2, .time_ms = 1500},
+    };
+    for (unsigned i = 0; i < 4; ++i) {
+        ui_beat_indicator_state_t state =
+            ui_beat_indicator_calculate(i * 500 + 100, beats, 4, 120);
+        assert(state.valid);
+        assert(state.phase == (i + 2) % 4);
+        assert(state.downbeat == (i == 2));
+    }
+    const uint16_t invalid[] = {0, 5, UINT16_MAX};
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        beats[0].beat_phase = invalid[i];
+        assert(!anlz_beat_is_downbeat(invalid[i]));
+        assert(!ui_beat_indicator_calculate(100, beats, 4, 120).valid);
+    }
+}
+
 int main(void)
 {
     test_grid_position_uses_current_beat_phase();
-    test_grid_marks_downbeat_phase_zero();
+    test_grid_marks_downbeat_number_one();
+    test_shifted_and_invalid_grid();
     test_bpm_fallback_without_grid();
     test_invalid_without_grid_or_bpm();
     test_phase_delta_reports_deck2_late();

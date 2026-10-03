@@ -74,10 +74,20 @@ extern "C" {
 
 /* ── Beat grid entry (8 bytes, big-endian in file) ────────────────────────── */
 typedef struct {
-    uint16_t beat_phase;   /* phase within the bar (0–3 for beats 1–4)    */
+    uint16_t beat_phase;   /* PQTZ beat number 1–4; 0 means unknown      */
     uint16_t bpm_x100;     /* BPM × 100  (e.g. 12850 → 128.50 BPM)       */
     uint32_t time_ms;      /* absolute position from start of track (ms)  */
 } anlz_beat_t;
+
+static inline bool anlz_beat_is_downbeat(uint16_t beat_phase)
+{
+    return beat_phase == 1u;
+}
+
+static inline uint8_t anlz_beat_bar_index(uint16_t beat_phase)
+{
+    return beat_phase >= 1u && beat_phase <= 4u ? (uint8_t)(beat_phase - 1u) : 0u;
+}
 
 /* ── Cue type ─────────────────────────────────────────────────────────────── */
 typedef enum {

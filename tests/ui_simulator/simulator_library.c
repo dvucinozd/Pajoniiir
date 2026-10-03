@@ -274,7 +274,7 @@ esp_err_t library_load_anlz(library_track_t *track)
     }
     uint32_t beat_ms = track->bpm ? (60000u / track->bpm) : 500u;
     for (uint16_t i = 0; i < s_current_meta.beat_count; i++) {
-        s_current_meta.beats[i].beat_phase = (uint16_t)(i & 3u);
+        s_current_meta.beats[i].beat_phase = (uint16_t)((i & 3u) + 1u);
         s_current_meta.beats[i].bpm_x100 = (uint16_t)(track->bpm * 100u);
         s_current_meta.beats[i].time_ms = i * beat_ms;
     }

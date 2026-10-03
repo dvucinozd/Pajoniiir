@@ -1,5 +1,7 @@
 param(
-    [switch]$KeepArtifacts
+    [switch]$KeepArtifacts,
+    [string[]]$Suite = @(),
+    [switch]$ListSuites
 )
 
 # Keep this file ASCII-only. It has no BOM, and Windows PowerShell 5.1 decodes a
@@ -409,6 +411,7 @@ function Assert-CiDependenciesPinned {
     }
 }
 
+function Invoke-SourceContracts {
 Invoke-Step -Name "web UI browser contract" `
     -WorkingDirectory (Join-Path $RepoRoot "tests/web_ui_contract") `
     -Executable $Node.Source `
@@ -1648,7 +1651,22 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("atoi(")
 
+}
+
 $tests = @(
+    @{
+        Name = "ui_beat_indicator"
+        Dir = "tests/ui_beat_indicator"
+        Target = "test_ui_beat_indicator.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_beat_indicator.exe", "test_ui_beat_indicator.c",
+            "../../firmware/main-deck-p4/components/ui/ui_beat_indicator.c"
+        )
+    },
     @{
         Name = "audio_load_validation_gate"
         Dir = "tests/audio_load_validation_gate"
@@ -2832,6 +2850,17 @@ $tests = @(
 
 $created = New-Object System.Collections.Generic.List[string]
 
+if ($ListSuites) {
+    $tests | ForEach-Object { $_.Name }
+    exit 0
+}
+if ($Suite.Count -gt 0) {
+    foreach ($name in $Suite) {
+        if ($name -notin $tests.Name) { throw "Unknown suite: $name. Use -ListSuites." }
+    }
+    $tests = @($tests | Where-Object { $_.Name -in $Suite })
+}
+
 foreach ($test in $tests) {
     $dir = Join-Path $RepoRoot $test.Dir
     $target = Join-Path $dir $test.Target
@@ -2847,6 +2876,14 @@ foreach ($test in $tests) {
     }
     Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target `
                 -Arguments $runArgs -MinTestsRun $minTestsRun
+}
+
+if ($Suite.Count -gt 0) {
+    if (-not $KeepArtifacts) {
+        foreach ($target in $created) { Remove-Item -LiteralPath $target -Force }
+    }
+    Write-Host "Selected functional suites passed; full regression gate was not requested."
+    exit 0
 }
 
 # Prefer the ESP-IDF virtualenv interpreter: it is the one guaranteed to carry a
@@ -3373,6 +3410,10 @@ foreach ($suite in @("controller_profile", "controller_runtime", "controller_usb
 
 Invoke-Step -Name "run profile compiler and converter" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/controller_profile_converter/test_convert_web_profile.py")
+
+# Keep source-text contracts after executable suites: a stale UI spelling must
+# not prevent functional regressions from running. Default CI still runs both.
+Invoke-SourceContracts
 
 # Windows PowerShell propagates $LASTEXITCODE as the script's exit status, so a
 # script that ends after any native command inherits that command's code even

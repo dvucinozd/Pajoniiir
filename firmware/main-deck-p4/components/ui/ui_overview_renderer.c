@@ -167,7 +167,7 @@ static void draw_zoom_grid(uint8_t *pixels,
     if (meta && meta->beats && meta->beat_count > 0) {
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
-            bool downbeat = (meta->beats[b].beat_phase % 4u) == 0u;
+            bool downbeat = anlz_beat_is_downbeat(meta->beats[b].beat_phase);
             if (downbeats_only && !downbeat) {
                 continue;
             }
@@ -212,7 +212,7 @@ static void draw_zoom_grid(uint8_t *pixels,
         return;
     }
 
-    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
+    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(0);
     if (caps_only && style.cap_palette_index == 0) {
         return;
     }
@@ -327,7 +327,7 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
 
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
-            bool downbeat = (meta->beats[b].beat_phase % 4u) == 0u;
+            bool downbeat = anlz_beat_is_downbeat(meta->beats[b].beat_phase);
             if (downbeats_only && !downbeat) {
                 continue;
             }
@@ -388,7 +388,7 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
         return;
     }
 
-    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
+    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(0);
     if (caps_only && style.cap_palette_index == 0) {
         return;
     }

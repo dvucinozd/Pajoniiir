@@ -15,7 +15,7 @@ static uint16_t build_dense_beat_grid(anlz_beat_t *beats,
     uint32_t beat_len_ms = 60000u / bpm;
 
     while (count < capacity && time_ms < duration_ms) {
-        beats[count].beat_phase = count % 4u;
+        beats[count].beat_phase = count % 4u + 1u;
         beats[count].bpm_x100 = bpm * 100u;
         beats[count].time_ms = time_ms;
         count++;
@@ -49,9 +49,9 @@ static void test_dense_beat_grid_becomes_sparse_overview_guides(void)
 static void test_regular_beats_are_not_overview_grid_guides(void)
 {
     const anlz_beat_t beats[] = {
-        {.beat_phase = 1, .bpm_x100 = 12800, .time_ms = 1000},
-        {.beat_phase = 2, .bpm_x100 = 12800, .time_ms = 1500},
-        {.beat_phase = 3, .bpm_x100 = 12800, .time_ms = 2000},
+        {.beat_phase = 2, .bpm_x100 = 12800, .time_ms = 1000},
+        {.beat_phase = 3, .bpm_x100 = 12800, .time_ms = 1500},
+        {.beat_phase = 4, .bpm_x100 = 12800, .time_ms = 2000},
     };
     int columns[8];
 
@@ -77,7 +77,7 @@ static void test_zoom_grid_styles_regular_beats_as_dim_background_guides(void)
 
 static void test_zoom_grid_styles_downbeats_as_full_height_markers(void)
 {
-    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(0);
+    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
 
     assert(style.palette_index == 4u);
     assert(style.line_width_px == 2);

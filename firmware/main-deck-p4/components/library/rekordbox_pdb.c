@@ -109,7 +109,7 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 
 /* String-offset table indices */
 #define STR_IDX_ANLZ_PATH   14u     /* /PIONEER/USBANLZ/.../ANLZ0000.DAT      */
-#define STR_IDX_TITLE       18u
+#define STR_IDX_TITLE       17u
 #define STR_IDX_FILENAME    19u
 #define STR_IDX_FILE_PATH   20u
 

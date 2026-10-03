@@ -35,7 +35,7 @@ static void test_main_renderer_keeps_downbeat_grid_on_top(void)
         .sample_count = sizeof(samples),
     };
     anlz_beat_t beats[] = {
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 4000},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 4000},
     };
     anlz_metadata_t meta = {
         .beats = beats,
@@ -88,7 +88,7 @@ static void test_main_renderer_draws_downbeat_triangle_at_bottom(void)
         .sample_count = sizeof(samples),
     };
     anlz_beat_t beats[] = {
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 2000},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 2000},
     };
     anlz_metadata_t meta = {
         .beats = beats,
@@ -195,7 +195,7 @@ static void test_main_rgb565_renderer_draws_downbeat_triangle_at_bottom(void)
         .sample_count = sizeof(samples),
     };
     anlz_beat_t beats[] = {
-        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 2000},
+        {.beat_phase = 1, .bpm_x100 = 12000, .time_ms = 2000},
     };
     anlz_metadata_t meta = {
         .beats = beats,

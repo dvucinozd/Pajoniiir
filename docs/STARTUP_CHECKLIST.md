@@ -17,6 +17,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] For the [fork improvements branch](FORK_IMPROVEMENTS.md), verify titles
+  against the real Rekordbox export and confirm beat number 1 is accented,
+  including a grid starting on beat 3. Host fixtures are not physical acceptance.
+
 - [ ] Use FAT32 or exFAT media on superfloppy, MBR or GPT layouts.
 - [ ] Confirm the expected Rekordbox library count before relying on the media.
 - [ ] For a reconnect test, record which root was removed and avoid accidental

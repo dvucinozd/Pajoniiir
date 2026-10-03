@@ -92,6 +92,67 @@ static void put_le32(uint8_t *dst, uint32_t value)
     dst[3] = (uint8_t)((value >> 24u) & 0xFFu);
 }
 
+static void put_le16(uint8_t *dst, uint16_t value)
+{
+    dst[0] = (uint8_t)value;
+    dst[1] = (uint8_t)(value >> 8);
+}
+
+static void fixture_short_string(uint8_t *row, unsigned index,
+                                 unsigned offset, const char *value)
+{
+    size_t len = strlen(value);
+    put_le16(row + 0x5e + index * 2, (uint16_t)offset);
+    row[offset] = (uint8_t)(((len + 1) << 1) | 1);
+    memcpy(row + offset + 1, value, len);
+}
+
+static void test_track_title_fields(void)
+{
+    /* Deliberately different strings at 17, 18 and 19: the historical wrong
+     * index must fail even if every string is valid DeviceSQL. */
+    const char *expected[] = {"Tagged title", "fallback.mp3", "\xC4\x8C", "fallback.mp3"};
+    for (unsigned variant = 0; variant < 4; ++variant) {
+        uint8_t data[1024] = {0};
+        uint8_t *page = data + 512;
+        uint8_t *row = page + 40;
+        put_le32(data + 4, 512);
+        put_le32(data + 8, 1);
+        put_le32(data + 36, 1);
+        put_le32(page + 12, UINT32_MAX);
+        put_le32(page + 24, 1);
+        put_le16(row, 0x24);
+        put_le32(row + 0x48, 123);
+        page[508] = 1;
+        fixture_short_string(row, 17, 160, "Tagged title");
+        fixture_short_string(row, 18, 200, "WRONG INDEX 18");
+        fixture_short_string(row, 19, 240, "fallback.mp3");
+        if (variant == 1) fixture_short_string(row, 17, 160, "");
+        if (variant == 2) {
+            row[160] = 0x90;
+            put_le16(row + 161, 8);
+            row[163] = 0;
+            put_le16(row + 164, 0x010c);
+            put_le16(row + 166, 0);
+        }
+        if (variant == 3) put_le16(row + 0x5e + 17 * 2, UINT16_MAX);
+        const char *path = "test_title_fields.pdb";
+        TEST(expected[variant]);
+        FILE *fp = fopen(path, "wb");
+        if (!fp) { FAIL("fixture open"); continue; }
+        bool written = fwrite(data, 1, sizeof(data), fp) == sizeof(data);
+        written = fclose(fp) == 0 && written;
+        pdb_t *pdb = NULL;
+        pdb_track_t track = {0};
+        bool valid = written && pdb_open(path, &pdb) == ESP_OK &&
+            pdb_track_count(pdb) == 1 && pdb_get_track(pdb, 0, &track) == ESP_OK &&
+            strcmp(track.title, expected[variant]) == 0;
+        pdb_close(pdb);
+        remove(path);
+        CHECK(valid, "title index, UTF-16 or filename fallback");
+    }
+}
+
 static void test_malformed_page_zero_row_groups(void)
 {
     const char *path = "test_malformed_page_zero.pdb";
@@ -255,6 +316,7 @@ int main(int argc, char *argv[])
     /* Always run API contract tests */
     test_api_contracts();
     test_devicesql_utf16_to_utf8();
+    test_track_title_fields();
     test_malformed_page_zero_row_groups();
     test_paged_track_import_reports_truncation();
 

@@ -169,7 +169,10 @@ ui_beat_indicator_state_t ui_beat_indicator_calculate(uint32_t position_ms,
     }
 
     uint32_t elapsed = position_ms > beat_start ? position_ms - beat_start : 0;
-    uint8_t phase = (uint8_t)(beats[idx].beat_phase % 4u);
+    if (beats[idx].beat_phase < 1u || beats[idx].beat_phase > 4u) {
+        return invalid_state();
+    }
+    uint8_t phase = anlz_beat_bar_index(beats[idx].beat_phase);
 
     return (ui_beat_indicator_state_t){
         .valid = true,
