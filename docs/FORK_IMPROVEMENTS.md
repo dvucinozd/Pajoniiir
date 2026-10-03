@@ -14,7 +14,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR bounds verified; remainder pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR and B2 cue preroll software verified; remainder pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -104,6 +104,37 @@ Verification on 2026-10-03:
 
 The recorded build includes uncommitted B1 source. No persistent format changes
 are involved; reverting B1 restores the previous table admission policy.
+
+## B2: cue preroll cannot stall before the cue
+
+The paused CUE path previously reserved the entire two-second forward PCM cap
+for history. The decoder needs space for one full MP3 decode batch before it
+starts another iteration, so it could stop just short of the cue. The preroll
+helper now leaves one maximum decode batch free, moves the timeline playhead
+onto the cue as soon as that frame is written, and keeps both normal and
+Master Tempo output gated while preroll is pending. A timeline generation
+change invalidates late publication. At source EOF before the cue, the helper
+publishes the actual last decoded point to release the gate.
+
+The helper is adapted from donor `428b97dd` under the repository MIT license.
+The upstream canonical PCM timeline, output position and transport ownership
+remain authoritative. No persistence, controller ABI or OTA format changes.
+
+Verification on 2026-10-04:
+
+- New retained-PCM simulation: PASS at 22.05, 44.1, 48, 96 and 192 kHz,
+  including short preroll, immediate PLAY gating, short EOF and reproduction
+  of the old full-cap stall.
+- Complete P4 host runner and extracted firmware lifecycle regression: PASS.
+- ESP-IDF 6.0.2 P4 build: PASS; 2,505,952 bytes, 1,164,064 below the
+  application budget; dependency lock unchanged.
+- Deterministic 300-second dual-deck Master Tempo soak: PASS, zero frame
+  drift and clipping.
+- Physical paused CUE/scratch, MAIN/cue listening and dual-deck soak: **NOT RUN**.
+
+Source commit and physical qualification must be recorded before calling this
+hardware accepted. The next package B steps still include exact VBR seek,
+duration authority, loop resize and persistent cue merge.
 
 ## Provenance and rollback
 

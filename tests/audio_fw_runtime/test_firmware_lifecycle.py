@@ -71,6 +71,8 @@ typedef int esp_err_t;
 typedef int *SemaphoreHandle_t;
 typedef struct {
     bool playing, paused, playback_finished, loading, eof, decoder_open;
+    bool timeline_preroll_pending;
+    uint32_t timeline_preroll_frames;
     bool flac_ready, flac_recovery_pending;
     unsigned load_progress;
     uint64_t flac_resume_frame;

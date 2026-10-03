@@ -1395,7 +1395,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 paused seek pre-roll centers cue scratch history and future" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("timeline_preroll_pending", "decode_target_ms = target_ms - pre_ms", "cue pre-roll D%u ready", "audio_pcm_timeline_set_playhead")
+    -LiteralPatterns @("audio_cue_preroll_arm(", "publish_cue_preroll(", "timeline_preroll_generation", "audio_pcm_timeline_set_playhead")
 
 Assert-FileContains `
     -Name "p4 scratch position and release wrap inside active loops" `
@@ -1654,6 +1654,18 @@ Assert-FileDoesNotContain `
 }
 
 $tests = @(
+    @{
+        Name = "audio_cue_preroll"
+        Dir = "tests/audio_cue_preroll"
+        Target = "test_audio_cue_preroll.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_cue_preroll.exe", "test_audio_cue_preroll.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_cue_preroll.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
+        )
+    },
     @{
         Name = "audio_pvbr_validation"
         Dir = "tests/audio_pvbr_validation"

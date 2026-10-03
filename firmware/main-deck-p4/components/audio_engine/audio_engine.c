@@ -43,6 +43,7 @@
 #include "audio_pad_fx.h"
 #include "audio_pcm_ring.h"
 #include "audio_pcm_timeline.h"
+#include "audio_cue_preroll.h"
 #include "audio_pvbr_validation.h"
 #include "audio_scratch_buffer.h"
 #include "audio_scratch.h"
@@ -321,6 +322,7 @@ typedef struct {
     /* Paused/CUE seek pre-roll: decode starts before the requested position,
      * then moves canonical play_seq to this frame once history is published. */
     uint32_t timeline_preroll_frames;
+    uint32_t timeline_preroll_generation;
     bool     timeline_preroll_pending;
 
     /* Pitch: 1.0 = ±0%, > 1.0 = faster, < 1.0 = slower  (range 0.9 – 1.1) */
@@ -566,6 +568,8 @@ static inline bool atomic_load_bool(const bool *value)
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
 }
 
+static inline void atomic_store_bool(bool *value, bool new_value);
+
 static inline bool timeline_active(uint8_t deck)
 {
     return deck < AUDIO_ENGINE_DECK_COUNT &&
@@ -580,7 +584,8 @@ static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
     if (deck >= AUDIO_ENGINE_DECK_COUNT) deck = AE_DECK_0;
     /* A control task can arm a seek after this output block snapshotted the
      * deck as active. Do not pop (or count an underrun) from that stale block. */
-    if (atomic_load_bool(&s_start_waiting[deck]) ||
+    if (atomic_load_bool(&s_engines[deck].timeline_preroll_pending) ||
+        atomic_load_bool(&s_start_waiting[deck]) ||
         atomic_load_bool(&s_start_seek_pending[deck])) return false;
     if (timeline_active(deck)) {
         bool ok = audio_pcm_timeline_pop(&s_pcm_timelines[deck], out_frame);
@@ -620,6 +625,25 @@ static uint32_t deck_pcm_free(uint8_t deck, uint32_t sample_rate)
     if (target > s_pcm_timelines[deck].capacity) target = s_pcm_timelines[deck].capacity;
     uint32_t future = audio_pcm_timeline_future_frames(&s_pcm_timelines[deck]);
     return future < target ? target - future : 0u;
+}
+
+/* Decoder-owned publication; pending keeps the output owner away from play_seq
+ * until the history is complete. A reset invalidates the old publication. */
+static void publish_cue_preroll(uint8_t deck, audio_engine_state_t *eng, bool eof)
+{
+    if (!atomic_load_bool(&eng->timeline_preroll_pending)) return;
+    audio_pcm_timeline_t *t = &s_pcm_timelines[deck];
+    if (audio_pcm_timeline_generation(t) != eng->timeline_preroll_generation) {
+        atomic_store_bool(&eng->timeline_preroll_pending, false);
+        return;
+    }
+    audio_cue_preroll_t p = { .frames = eng->timeline_preroll_frames, .pending = true };
+    uint64_t playhead;
+    if (audio_cue_preroll_publish_point(&p, audio_pcm_timeline_write_seq(t), eof,
+                                       &playhead) &&
+        audio_pcm_timeline_set_playhead(t, playhead)) {
+        atomic_store_bool(&eng->timeline_preroll_pending, false);
+    }
 }
 #endif
 
@@ -1339,7 +1363,8 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     if (deck >= AUDIO_ENGINE_DECK_COUNT || !timeline_active(deck) || !out) return false;
-    if (atomic_load_bool(&s_start_waiting[deck]) ||
+    if (atomic_load_bool(&s_engines[deck].timeline_preroll_pending) ||
+        atomic_load_bool(&s_start_waiting[deck]) ||
         atomic_load_bool(&s_start_seek_pending[deck])) return false;
     audio_pcm_timeline_t *timeline = &s_pcm_timelines[deck];
     uint32_t generation = audio_pcm_timeline_generation(timeline);
@@ -1436,6 +1461,7 @@ static bool deck_output_active(uint8_t deck)
     /* Platter-hold silences the deck and freezes its position (the mixer skips an
      * inactive deck, so it neither outputs nor pops/advances the ring). */
     if (atomic_load_bool(&s_deck_hold[deck])) return false;
+    if (atomic_load_bool(&eng->timeline_preroll_pending)) return false;
     if (atomic_load_bool(&s_scratch_abort_seek_waiting[deck])) return false;
     if (atomic_load_bool(&s_scratch_playing[deck]) &&
         (atomic_load_bool(&s_scratch_started_paused[deck]) ||
@@ -2829,19 +2855,17 @@ static void ae_decode_task(void *arg)
                     seek_reason == AE_SEEK_REASON_USER &&
                     !atomic_load_bool(&eng->playing) &&
                     eng->sample_rate > 0u && target_ms > 0u;
-                uint32_t decode_target_ms = target_ms;
-                if (cue_preroll) {
-                    uint32_t pre_ms = target_ms < AE_TIMELINE_FORWARD_MS
-                        ? target_ms : AE_TIMELINE_FORWARD_MS;
-                    decode_target_ms = target_ms - pre_ms;
-                    eng->timeline_preroll_frames =
-                        (uint32_t)(((uint64_t)pre_ms * eng->sample_rate) / 1000u);
-                    eng->timeline_preroll_pending =
-                        eng->timeline_preroll_frames > 0u;
-                } else {
-                    eng->timeline_preroll_frames = 0u;
-                    eng->timeline_preroll_pending = false;
-                }
+                uint32_t cap = (uint32_t)(((uint64_t)eng->sample_rate *
+                                            AE_TIMELINE_FORWARD_MS) / 1000u);
+                if (cap > s_pcm_timelines[ctx->deck].capacity)
+                    cap = s_pcm_timelines[ctx->deck].capacity;
+                uint32_t max_pre = cap > MINIMP3_MAX_SAMPLES_PER_FRAME
+                    ? cap - MINIMP3_MAX_SAMPLES_PER_FRAME : 0u;
+                audio_cue_preroll_t preroll;
+                uint32_t decode_target_ms = audio_cue_preroll_arm(
+                    &preroll, cue_preroll, target_ms, eng->sample_rate, max_pre);
+                eng->timeline_preroll_frames = preroll.frames;
+                atomic_store_bool(&eng->timeline_preroll_pending, preroll.pending);
                 if (eng->format == AUDIO_FORMAT_WAV) {
                     ae_wav_seek_to_ms(eng, decode_target_ms);
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
@@ -2872,6 +2896,8 @@ static void ae_decode_task(void *arg)
                 if (!loop_seek) {
                     taskENTER_CRITICAL(&s_ring_flush_mux);
                     deck_pcm_reset(ctx->deck);
+                    eng->timeline_preroll_generation =
+                        audio_pcm_timeline_generation(&s_pcm_timelines[ctx->deck]);
                     audio_resampler_reset(resampler);
                     taskEXIT_CRITICAL(&s_ring_flush_mux);
                     atomic_store_bool(&s_start_seek_pending[ctx->deck], false);
@@ -2893,6 +2919,9 @@ static void ae_decode_task(void *arg)
              atomic_load_bool(&s_scratch_playing[ctx->deck]))) {
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
+        }
+        if (atomic_load_bool(&eng->eof)) {
+            publish_cue_preroll(ctx->deck, eng, true);
         }
         if (atomic_load_bool(&eng->eof) ||
             deck_pcm_free(ctx->deck, eng->sample_rate) <
@@ -3013,6 +3042,7 @@ static void ae_decode_task(void *arg)
         AE_UNLOCK();
 
         if (eof && samples <= 0) {
+            publish_cue_preroll(ctx->deck, eng, true);
             /* Decoder EOF is not transport EOF. The output task remains active
              * until it drains all already-decoded future PCM. */
             while (atomic_load_bool(&eng->eof) && runtime->run) {
@@ -3072,18 +3102,8 @@ static void ae_decode_task(void *arg)
             }
             if (capture_interrupted) break;
             (void)deck_pcm_push(ctx->deck, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
-        }
-        if (timeline_active(ctx->deck) && eng->timeline_preroll_pending &&
-            audio_pcm_timeline_write_seq(&s_pcm_timelines[ctx->deck]) >=
-                eng->timeline_preroll_frames) {
-            if (audio_pcm_timeline_set_playhead(
-                    &s_pcm_timelines[ctx->deck], eng->timeline_preroll_frames)) {
-                eng->timeline_preroll_pending = false;
-                ESP_LOGI(TAG,
-                         "cue pre-roll D%u ready: history=%u frames target=%u ms",
-                         (unsigned)ctx->deck,
-                         (unsigned)eng->timeline_preroll_frames,
-                         (unsigned)eng->output_base_ms);
+            if (atomic_load_bool(&eng->timeline_preroll_pending)) {
+                publish_cue_preroll(ctx->deck, eng, false);
             }
         }
         if (timeline_active(ctx->deck) && scratch_newest_valid && !capture_interrupted) {
@@ -4370,6 +4390,7 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
     uint32_t prebuffer_frames =
         atomic_load_u32(&s_start_prebuffer_frames[deck]);
     bool wait_for_prebuffer =
+        atomic_load_bool(&eng->timeline_preroll_pending) ||
         atomic_load_bool(&s_start_seek_pending[deck]) ||
         !audio_start_gate_ready(deck_pcm_used(deck),
                                 prebuffer_frames,
@@ -4454,6 +4475,8 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 
     AE_LOCK();
     if (eng->fp) { fclose(eng->fp); eng->fp = NULL; }
+    atomic_store_bool(&eng->timeline_preroll_pending, false);
+    eng->timeline_preroll_frames = 0u;
     if (eng->decoder_open) {
         audio_decoder_close(&eng->decoder);
         eng->decoder_open = false;
@@ -5011,11 +5034,11 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
      * a short control-path window to publish the centered pre-roll rather than
      * engaging a one-sided scratch window or requiring a second touch. */
     for (uint32_t waits = 0u; waits < 60u &&
-         eng->timeline_preroll_pending; waits++) {
+         atomic_load_bool(&eng->timeline_preroll_pending); waits++) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 #endif
-    if (eng->timeline_preroll_pending) {
+    if (atomic_load_bool(&eng->timeline_preroll_pending)) {
         ESP_LOGW(TAG, "scratch begin D%u rejected: cue pre-roll pending",
                  (unsigned)deck);
         return false;
