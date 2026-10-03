@@ -14,7 +14,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B4 software verified; remainder pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B5 software verified; remainder pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -197,6 +197,34 @@ Verification on 2026-10-04:
   drift and clipping. Documentation integrity and diff whitespace: PASS.
 - Actual export with shortened analysis, MP3/WAV/FLAC tail seek and operator
   listening on JC4880/FLX4: **NOT RUN**.
+
+## B5: Active-loop resize and exit
+
+The imported MIT `audio_loop_resize` model from donor `428b97dd` identifies
+where already-published PCM ceases to match changed loop bounds. The P4 decode
+task withdraws only that unconsumed future under the existing ring/timeline
+critical section, then resumes at the new start for a shortened loop or at the
+old end when an extended or exited loop should continue through the file.
+Multiple control changes before the decoder wakes retain the first old bounds.
+An explicit user seek still flushes the ring and invalidates the pending cut.
+For a loop shortened behind the audible playhead, the engine requests a seek
+to the same phase inside the new bounds.
+
+The canonical P4 timeline, output position and scratch ownership remain in
+place. The imported model is tested with short loops that wrap many times
+within the two-second decode runway. Exact-image operator A/B playback and
+MAIN/cue listening remain a hardware acceptance gate.
+
+Verification on 2026-10-04:
+
+- Loop resize model: PASS across 69,920 simulated cases (47,936 cuts and
+  11,362 playhead jumps), including X2, /2, changed IN, exit and short loops.
+- Complete P4 host runner: PASS; ESP-IDF 6.0.2 P4 build: PASS. Application
+  2,510,528 bytes, 1,159,488 below the 0x380000 budget; lock unchanged.
+- Deterministic 300-second dual-deck Master Tempo soak: PASS, zero frame
+  drift and clipping. Documentation integrity and diff whitespace: PASS.
+- Physical loop resize while both decks play, scratch interaction, MAIN/cue
+  listening and exact-image soak: **NOT RUN**.
 
 ## Provenance and rollback
 

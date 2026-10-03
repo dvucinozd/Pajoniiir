@@ -46,6 +46,7 @@
 #include "audio_cue_preroll.h"
 #include "audio_seek_skip.h"
 #include "audio_track_length.h"
+#include "audio_loop_resize.h"
 #include "audio_pvbr_validation.h"
 #include "audio_scratch_buffer.h"
 #include "audio_scratch.h"
@@ -227,6 +228,7 @@ typedef enum {
 typedef enum {
     AE_SEEK_REASON_USER = 0,
     AE_SEEK_REASON_LOOP,
+    AE_SEEK_REASON_LOOP_CONTINUE,
     AE_SEEK_REASON_SCRATCH_RELEASE,
     AE_SEEK_REASON_SCRATCH_ABORT,
 } ae_seek_reason_t;
@@ -362,6 +364,13 @@ typedef struct {
     volatile uint32_t loop_start_ms;
     volatile uint32_t loop_end_ms;
     volatile bool     loop_active;
+#if AE_FW
+    /* The queued PCM still follows these bounds until the decode task cuts it. */
+    bool     loop_resize_pending;
+    uint32_t loop_resize_from_start_ms;
+    uint32_t loop_resize_from_end_ms;
+    bool     seek_was_loop_wrap;
+#endif
 } audio_engine_state_t;
 
 static audio_engine_state_t  s_engines[AUDIO_ENGINE_DECK_COUNT];
@@ -2365,6 +2374,43 @@ static void ae_prepare_pvbr_geometry(audio_engine_state_t *eng, audio_fw_preload
              (unsigned)first.hz);
 }
 
+/* Decode task only, under AE_LOCK. Withdraw only the future that still follows
+ * the old loop; history and already consumed PCM remain owned by the output. */
+static bool ae_apply_loop_resize(audio_engine_state_t *eng, uint8_t deck)
+{
+    if (eng->seek_requested) return false;
+    atomic_store_bool(&eng->loop_resize_pending, false);
+    audio_loop_resize_in_t in = {
+        .old_start_ms = eng->loop_resize_from_start_ms,
+        .old_end_ms = eng->loop_resize_from_end_ms,
+        .new_start_ms = eng->loop_active ? eng->loop_start_ms
+                                         : eng->loop_resize_from_start_ms,
+        .new_end_ms = eng->loop_active ? eng->loop_end_ms : UINT32_MAX,
+        .seek_base_ms = eng->seek_base_ms,
+        .frames_since_seek = eng->frames_since_seek,
+        .since_wrap = eng->seek_was_loop_wrap,
+        .sample_rate = eng->sample_rate,
+    };
+    taskENTER_CRITICAL(&s_ring_flush_mux);
+    in.ring_frames = deck_pcm_used(deck);
+    const audio_loop_resize_plan_t plan = audio_loop_resize_plan(&in);
+    const uint32_t dropped = plan.cut
+        ? deck_pcm_drop_newest(deck, plan.drop_frames) : 0u;
+    taskEXIT_CRITICAL(&s_ring_flush_mux);
+    if (!plan.cut) return false;
+    eng->seek_target_ms = plan.seek_ms;
+    eng->seek_reason = plan.exact ? AE_SEEK_REASON_LOOP_CONTINUE
+                                  : AE_SEEK_REASON_LOOP;
+    eng->seek_requested = true;
+    atomic_store_bool(&eng->eof, false);
+    ESP_LOGI(TAG, "D%u loop resize %u-%u -> %u-%u ms: drop %u/%u frames, seek %u ms",
+             (unsigned)deck, (unsigned)in.old_start_ms, (unsigned)in.old_end_ms,
+             (unsigned)in.new_start_ms, (unsigned)in.new_end_ms,
+             (unsigned)dropped, (unsigned)plan.drop_frames,
+             (unsigned)plan.seek_ms);
+    return true;
+}
+
 /*
  * seek_estimate — O(1) seek used when neither an IFI seek-table nor a usable
  * PVBR table is available. Estimates the byte offset assuming roughly constant
@@ -2944,7 +2990,8 @@ static void ae_decode_task(void *arg)
             if (eng->seek_requested) {
                 uint32_t target_ms = eng->seek_target_ms;
                 ae_seek_reason_t seek_reason = (ae_seek_reason_t)eng->seek_reason;
-                bool loop_seek = seek_reason == AE_SEEK_REASON_LOOP;
+                bool loop_seek = seek_reason == AE_SEEK_REASON_LOOP ||
+                                 seek_reason == AE_SEEK_REASON_LOOP_CONTINUE;
                 bool cue_preroll = timeline_active(ctx->deck) &&
                     seek_reason == AE_SEEK_REASON_USER &&
                     !atomic_load_bool(&eng->playing) &&
@@ -2968,7 +3015,8 @@ static void ae_decode_task(void *arg)
                                              decode_target_ms);
                 } else if (eng->has_pvbr) {
                     uint32_t entry_ms = seek_pvbr(eng, decode_target_ms);
-                    if (!loop_seek && eng->pvbr_geometry_exact &&
+                    if (seek_reason != AE_SEEK_REASON_LOOP &&
+                        eng->pvbr_geometry_exact &&
                         eng->pvbr_geom.hz == eng->sample_rate) {
                         eng->seek_skip_frames = audio_seek_skip_frames(
                             decode_target_ms, entry_ms, eng->sample_rate);
@@ -2978,6 +3026,8 @@ static void ae_decode_task(void *arg)
                 }
                 eng->seek_base_ms      = decode_target_ms;
                 eng->frames_since_seek = 0u;
+                eng->seek_was_loop_wrap = seek_reason == AE_SEEK_REASON_LOOP;
+                if (!loop_seek) atomic_store_bool(&eng->loop_resize_pending, false);
                 if (!loop_seek) {
                     eng->output_base_ms = target_ms;
                     eng->output_frames_since_seek = 0u;
@@ -3019,6 +3069,12 @@ static void ae_decode_task(void *arg)
              atomic_load_bool(&s_scratch_playing[ctx->deck]))) {
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
+        }
+        if (atomic_load_bool(&eng->loop_resize_pending)) {
+            AE_LOCK();
+            const bool reseek = ae_apply_loop_resize(eng, ctx->deck);
+            AE_UNLOCK();
+            if (reseek) continue;
         }
         if (atomic_load_bool(&eng->eof)) {
             publish_cue_preroll(ctx->deck, eng, true);
@@ -4327,6 +4383,10 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
     eng->seek_base_ms      = 0u;
     eng->frames_since_seek = 0u;
+#if AE_FW
+    atomic_store_bool(&eng->loop_resize_pending, false);
+    eng->seek_was_loop_wrap = false;
+#endif
     eng->output_base_ms    = 0u;
     eng->output_frames_since_seek = 0u;
 #if AE_FW
@@ -4836,6 +4896,17 @@ esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t 
 
 #if AE_FW
 static bool deck_transport_supported(uint8_t deck);
+
+/* Preserve the bounds against which already-published future PCM was decoded.
+ * Several control changes before the worker wakes still need one cut from the
+ * original path to the final path. Caller holds AE_LOCK. */
+static void ae_note_loop_change(audio_engine_state_t *eng, bool changed)
+{
+    if (!changed || atomic_load_bool(&eng->loop_resize_pending)) return;
+    eng->loop_resize_from_start_ms = eng->loop_start_ms;
+    eng->loop_resize_from_end_ms = eng->loop_end_ms;
+    atomic_store_bool(&eng->loop_resize_pending, true);
+}
 #endif
 
 esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
@@ -4846,11 +4917,26 @@ esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t e
 #endif
     audio_engine_state_t *eng = &s_engines[deck];
     AE_LOCK();
+#if AE_FW
+    const bool resize = eng->loop_active &&
+        (eng->loop_start_ms != start_ms || eng->loop_end_ms != end_ms);
+    ae_note_loop_change(eng, resize);
+#endif
     eng->loop_start_ms = start_ms;
     eng->loop_end_ms   = end_ms;
     eng->loop_active   = true;
     AE_UNLOCK();
     ESP_LOGI(TAG, "Audio loop set: %lu ms to %lu ms", (unsigned long)start_ms, (unsigned long)end_ms);
+#if AE_FW
+    /* If the newly shortened loop is already behind the audible playhead,
+     * move to the corresponding phase; there is no future PCM to preserve. */
+    uint32_t jump_ms = 0u;
+    if (resize && audio_loop_resize_jump_ms(
+                      audio_engine_position_ms_for_deck(deck),
+                      start_ms, end_ms, &jump_ms)) {
+        return audio_engine_request_user_seek(deck, jump_ms);
+    }
+#endif
     return ESP_OK;
 }
 
@@ -4861,6 +4947,9 @@ esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
     AE_LOCK();
+#if AE_FW
+    ae_note_loop_change(&s_engines[deck], s_engines[deck].loop_active);
+#endif
     s_engines[deck].loop_active = false;
     AE_UNLOCK();
     ESP_LOGI(TAG, "Audio loop cleared");
