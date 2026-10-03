@@ -306,6 +306,9 @@ typedef struct {
     /* PVBR seek table — 400 file-byte offsets (from ANLZ0000.DAT) */
     uint32_t pvbr[AUDIO_PVBR_LEN];
     bool     has_pvbr;
+    /* Rekordbox analysis/PVBR time base; it may end before the audio file. */
+    uint32_t analysis_span_ms;
+    /* Best known file length, used for seek bounds and tail extrapolation. */
     uint32_t duration_ms;
     audio_pvbr_geometry_t pvbr_geom;
     size_t   mp3_audio_start;
@@ -1712,10 +1715,8 @@ static esp_err_t ae_wav_init_from_cache(audio_engine_state_t *eng,
     eng->wav_current_frame = 0u;
     eng->file_pos = data_offset;
     atomic_store_bool(&eng->eof, eng->wav_total_frames == 0u);
-    if (eng->duration_ms == 0u) {
-        eng->duration_ms = (uint32_t)((eng->wav_total_frames * 1000ull) /
-                                      (uint64_t)sample_rate);
-    }
+    eng->duration_ms = (uint32_t)((eng->wav_total_frames * 1000ull) /
+                                  (uint64_t)sample_rate);
     ESP_LOGI(TAG, "WAV cache: %u Hz, %u ch, %u frames",
              (unsigned)sample_rate, (unsigned)channels,
              (unsigned)eng->wav_total_frames);
@@ -2006,7 +2007,7 @@ static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
     eng->format = AUDIO_FORMAT_FLAC;
     eng->sample_rate = flac->sampleRate;
     eng->channels = (int)flac->channels;
-    if (eng->duration_ms == 0u && flac->sampleRate > 0u) {
+    if (flac->totalPCMFrameCount > 0u && flac->sampleRate > 0u) {
         eng->duration_ms = (uint32_t)((flac->totalPCMFrameCount * 1000ull) /
                                       (uint64_t)flac->sampleRate);
     }
@@ -2267,7 +2268,7 @@ static uint32_t seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 {
     uint32_t target_byte = 0u;
     uint32_t entry_ms = audio_pvbr_locate(eng->pvbr, AUDIO_PVBR_LEN,
-                                           eng->duration_ms, eng->duration_ms,
+                                           eng->analysis_span_ms, eng->duration_ms,
                                            eng->file_size, &eng->pvbr_geom,
                                            position_ms, &target_byte);
     eng->file_pos = target_byte;
@@ -2323,6 +2324,14 @@ static void ae_prepare_pvbr_geometry(audio_engine_state_t *eng, audio_fw_preload
         ESP_LOGW(TAG, "PVBR offsets not aligned to MPEG frames; using fallback");
         return;
     }
+    /* Reject implausible counts before using them for seek geometry or length.
+     * Even the smallest supported MPEG Layer III frame consumes more than 24
+     * bytes, so a larger frame count cannot fit in this file. */
+    if (first.count == UINT32_MAX ||
+        (first.count > 0u &&
+         first.count > (eng->file_size - id3) / 24u + 1u)) {
+        first.count = 0u;
+    }
     eng->pvbr_geom = (audio_pvbr_geometry_t){
         .base = base,
         .frames = first.count ? first.count + 1u : 0u,
@@ -2330,6 +2339,27 @@ static void ae_prepare_pvbr_geometry(audio_engine_state_t *eng, audio_fw_preload
         .hz = first.hz,
     };
     eng->pvbr_geometry_exact = first.count > 0u;
+    if (eng->pvbr_geometry_exact) {
+        /* The PVBR offsets were checked against MPEG frames above. Its analysis
+         * time base must stay fixed, while the Xing/VBRI frame count can reveal
+         * audio beyond the final analysis entry. Never shorten a PDB span from
+         * an untrusted or damaged header. */
+        const uint64_t file_duration =
+            ((uint64_t)first.count * first.frame_samples * 1000u) / first.hz;
+        const uint32_t file_ms = file_duration <= UINT32_MAX
+            ? (uint32_t)file_duration : 0u;
+        const uint32_t resolved = audio_track_length_resolve(
+            eng->analysis_span_ms, file_ms);
+        if (file_ms > 0u &&
+            (eng->analysis_span_ms == 0u ||
+             (uint64_t)file_ms <= (uint64_t)eng->analysis_span_ms * 2u) &&
+            resolved > eng->duration_ms) {
+            eng->duration_ms = resolved;
+            ESP_LOGI(TAG, "MP3 file length %u ms exceeds analysis span %u ms",
+                     (unsigned)eng->duration_ms,
+                     (unsigned)eng->analysis_span_ms);
+        }
+    }
     ESP_LOGI(TAG, "PVBR geometry: base=%u frames=%u rate=%u",
              (unsigned)base, (unsigned)eng->pvbr_geom.frames,
              (unsigned)first.hz);
@@ -4218,6 +4248,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
     eng->load_progress = 0;
+    eng->analysis_span_ms = duration_ms;
 
 #if AE_FW
     audio_format_t detected_format = audio_format_detect_path(mp3_path);
@@ -4260,7 +4291,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         eng->decoder_open = true;
         eng->sample_rate = eng->decoder.info.sample_rate;
         eng->channels = eng->decoder.info.channels;
-        if (duration_ms == 0u && eng->sample_rate > 0u) {
+        if (eng->sample_rate > 0u && eng->decoder.info.total_frames > 0u) {
             duration_ms = (uint32_t)((eng->decoder.info.total_frames * 1000ull) /
                                      (uint64_t)eng->sample_rate);
         }

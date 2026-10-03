@@ -14,7 +14,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR, B2 preroll and B3 MP3 seek software verified; remainder pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B4 software verified; remainder pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -168,6 +168,35 @@ Verification on 2026-10-04:
 Rollback is source-only; no persistent data or OTA format changes. Accurate
 end-of-track duration, WAV/FLAC behavior, loop resize and local cue merge remain
 open in package B. This package's host evidence does not imply those gates.
+
+## B4: Separate analysis span from seekable file length
+
+The engine now retains the incoming Rekordbox duration as the PVBR analysis
+time base. It no longer rescales the 400 table entries when a verified MP3
+Xing/VBRI frame count indicates that the audio extends past the analysis.
+The MP3 count is used only after two PVBR offsets resolve to valid MPEG frames,
+fits within the physical file, and yields a duration within twice the analysis
+span. The existing track-length tolerance avoids extending for rounding noise.
+An absent or rejected count leaves the existing analysis-length seek estimate.
+WAV derives its seek length from its validated data chunk; FLAC uses a nonzero
+decoder frame count. Neither requires a PDB duration to be missing.
+
+This changes seek bounds and tail interpolation, not the audible EOF rule or
+the authoritative PCM timeline. Full no-header MP3 tail measurement, precise
+PWV3 span refinement, measured EOF correction and UI duration publication are
+still pending. No persistence, controller ABI, OTA schema or partition changes.
+
+Verification on 2026-10-04:
+
+- Track-length host cases cover a file 5% longer than its analysis: seek
+  positions inside the analysis remain fixed and a tail seek lands past the
+  final table entry. Complete P4 host runner: PASS.
+- ESP-IDF 6.0.2 P4 build: PASS; application 2,509,296 bytes, 1,160,720
+  bytes below the 0x380000 budget; dependency lock unchanged.
+- Deterministic 300-second dual-deck Master Tempo soak: PASS, zero frame
+  drift and clipping. Documentation integrity and diff whitespace: PASS.
+- Actual export with shortened analysis, MP3/WAV/FLAC tail seek and operator
+  listening on JC4880/FLX4: **NOT RUN**.
 
 ## Provenance and rollback
 
