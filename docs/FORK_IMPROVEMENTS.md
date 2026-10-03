@@ -14,7 +14,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR and B2 cue preroll software verified; remainder pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1 PVBR, B2 preroll and B3 MP3 seek software verified; remainder pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -135,6 +135,39 @@ Verification on 2026-10-04:
 Source commit and physical qualification must be recorded before calling this
 hardware accepted. The next package B steps still include exact VBR seek,
 duration authority, loop resize and persistent cue merge.
+
+## B3: MP3 PVBR origin and decoded-frame seek
+
+The MP3 decoder now establishes the ID3v2 payload boundary through the bounded
+cache before using an imported PVBR table. Two table entries must point to
+actual MPEG frames, and every offset must fit after the selected origin. The
+seek locator uses the Xing/VBRI frame count where present, lands before the
+requested frame to refill the MP3 bit reservoir, and discards decoded PCM up
+to the requested position before publishing audio. This exact skip applies to
+user seeks and paused CUE preroll with verified frame geometry. Loop wraps
+retain their existing runway policy pending the loop resize work. Without a
+trusted frame count, PVBR remains a bounded approximate seek. The no-table
+estimate starts after a valid ID3v2 tag.
+
+`audio_track_length` and `audio_seek_skip` are imported from donor `428b97dd`
+under MIT. The broader duration resolution, EOF extension and remote-table
+generation functions in that pure module are not yet wired into playback.
+The original PCM timeline and P4 source/worker ownership remain in place.
+
+Verification on 2026-10-04:
+
+- Imported seek/track-length host suites: PASS, including synthetic ID3,
+  Xing, VBR geometry, byte-origin, frame-skip and truncated inputs.
+- Complete P4 host runner: PASS; ESP-IDF 6.0.2 P4 build: PASS.
+- Application: 2,508,848 bytes, 1,161,168 bytes below the 0x380000 budget;
+  dependency lock unchanged.
+- Deterministic 300-second dual-deck Master Tempo soak: PASS, zero frame
+  drift and clipping.
+- MP3 cue/loop A/B and operator listening on the installed board: **NOT RUN**.
+
+Rollback is source-only; no persistent data or OTA format changes. Accurate
+end-of-track duration, WAV/FLAC behavior, loop resize and local cue merge remain
+open in package B. This package's host evidence does not imply those gates.
 
 ## Provenance and rollback
 

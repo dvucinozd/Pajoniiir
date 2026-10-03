@@ -1655,6 +1655,29 @@ Assert-FileDoesNotContain `
 
 $tests = @(
     @{
+        Name = "audio_seek_skip"
+        Dir = "tests/audio_seek_skip"
+        Target = "test_audio_seek_skip.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_seek_skip.exe", "test_audio_seek_skip.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c"
+        )
+    },
+    @{
+        Name = "audio_track_length"
+        Dir = "tests/audio_track_length"
+        Target = "test_audio_track_length.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_track_length.exe", "test_audio_track_length.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c"
+        )
+    },
+    @{
         Name = "audio_cue_preroll"
         Dir = "tests/audio_cue_preroll"
         Target = "test_audio_cue_preroll.exe"

@@ -44,6 +44,8 @@
 #include "audio_pcm_ring.h"
 #include "audio_pcm_timeline.h"
 #include "audio_cue_preroll.h"
+#include "audio_seek_skip.h"
+#include "audio_track_length.h"
 #include "audio_pvbr_validation.h"
 #include "audio_scratch_buffer.h"
 #include "audio_scratch.h"
@@ -305,6 +307,10 @@ typedef struct {
     uint32_t pvbr[AUDIO_PVBR_LEN];
     bool     has_pvbr;
     uint32_t duration_ms;
+    audio_pvbr_geometry_t pvbr_geom;
+    size_t   mp3_audio_start;
+    bool     pvbr_geometry_exact;
+    uint32_t seek_skip_frames;
 
     /* Detected from first decoded frame */
     uint32_t sample_rate;
@@ -2257,23 +2263,76 @@ static int decode_one_frame(
  * seek_pvbr — fast O(1) seek using the 400-entry PVBR table.
  * Caller holds s_file_mutex.
  */
-static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
+static uint32_t seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    if (eng->duration_ms > 0u && position_ms > eng->duration_ms) {
-        position_ms = eng->duration_ms;
-    }
-    uint32_t idx = (eng->duration_ms > 0u)
-                   ? (uint32_t)(((uint64_t)position_ms *
-                                 (uint64_t)AUDIO_PVBR_LEN) /
-                                (uint64_t)eng->duration_ms)
-                   : 0u;
-    if (idx >= AUDIO_PVBR_LEN) idx = AUDIO_PVBR_LEN - 1u;
-    uint32_t target_byte = eng->pvbr[idx];
-
-    if (target_byte > eng->file_size) target_byte = (uint32_t)eng->file_size;
+    uint32_t target_byte = 0u;
+    uint32_t entry_ms = audio_pvbr_locate(eng->pvbr, AUDIO_PVBR_LEN,
+                                           eng->duration_ms, eng->duration_ms,
+                                           eng->file_size, &eng->pvbr_geom,
+                                           position_ms, &target_byte);
     eng->file_pos = target_byte;
-    ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u",
-             (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte);
+    ESP_LOGI(TAG, "PVBR seek %u ms: byte %u entry %u ms exact=%u",
+             (unsigned)position_ms, (unsigned)target_byte,
+             (unsigned)entry_ms, eng->pvbr_geometry_exact ? 1u : 0u);
+    return entry_ms;
+}
+
+static size_t ae_seek_read(void *ctx, size_t pos, void *dst, size_t len)
+{
+    return audio_fw_preload_read_at((audio_fw_preload_t *)ctx, pos, dst, len);
+}
+
+/* Decode worker, once per load. All file reads go through the bounded cache. */
+static void ae_prepare_pvbr_geometry(audio_engine_state_t *eng, audio_fw_preload_t *fw)
+{
+    if (eng->format != AUDIO_FORMAT_MP3) return;
+    uint8_t head[1024];
+    size_t got = ae_seek_read(fw, 0u, head, eng->file_size < 10u ? eng->file_size : 10u);
+    size_t id3 = audio_id3v2_size(head, got);
+    if (got >= 3u && memcmp(head, "ID3", 3u) == 0 && id3 == 0u) {
+        eng->has_pvbr = false;
+        return;
+    }
+    if (id3 >= eng->file_size) {
+        eng->has_pvbr = false;
+        return;
+    }
+    eng->mp3_audio_start = id3;
+    if (!eng->has_pvbr) return;
+    size_t want = eng->file_size - id3;
+    got = ae_seek_read(fw, id3, head, want < sizeof head ? want : sizeof head);
+    audio_mp3_first_frame_t first = {0};
+    if (!audio_mp3_first_frame(head, got, &first) || !first.hz || !first.frame_samples) {
+        eng->has_pvbr = false;
+        return;
+    }
+    size_t base = audio_pvbr_base(ae_seek_read, fw, eng->pvbr,
+                                  AUDIO_PVBR_LEN, id3, eng->file_size);
+    if (base >= eng->file_size ||
+        !audio_pvbr_is_valid(eng->pvbr, AUDIO_PVBR_LEN, eng->file_size - base)) {
+        eng->has_pvbr = false;
+        return;
+    }
+    const uint32_t probe1 = AUDIO_PVBR_LEN / 4u;
+    const uint32_t probe2 = AUDIO_PVBR_LEN / 2u;
+    if (!audio_mp3_frame_at(ae_seek_read, fw, base + eng->pvbr[probe1],
+                            eng->file_size) ||
+        !audio_mp3_frame_at(ae_seek_read, fw, base + eng->pvbr[probe2],
+                            eng->file_size)) {
+        eng->has_pvbr = false;
+        ESP_LOGW(TAG, "PVBR offsets not aligned to MPEG frames; using fallback");
+        return;
+    }
+    eng->pvbr_geom = (audio_pvbr_geometry_t){
+        .base = base,
+        .frames = first.count ? first.count + 1u : 0u,
+        .frame_samples = first.frame_samples,
+        .hz = first.hz,
+    };
+    eng->pvbr_geometry_exact = first.count > 0u;
+    ESP_LOGI(TAG, "PVBR geometry: base=%u frames=%u rate=%u",
+             (unsigned)base, (unsigned)eng->pvbr_geom.frames,
+             (unsigned)first.hz);
 }
 
 /*
@@ -2288,9 +2347,12 @@ static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
  */
 static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    uint32_t target_byte = (eng->duration_ms > 0 && eng->file_size > 0)
-        ? (uint32_t)(((uint64_t)position_ms * (uint64_t)eng->file_size) / eng->duration_ms)
-        : 0u;
+    const size_t start = eng->mp3_audio_start < eng->file_size
+        ? eng->mp3_audio_start : 0u;
+    uint32_t target_byte = (eng->duration_ms > 0 && eng->file_size > start)
+        ? (uint32_t)(start + ((uint64_t)position_ms *
+                              (uint64_t)(eng->file_size - start)) / eng->duration_ms)
+        : (uint32_t)start;
     if (target_byte > eng->file_size) target_byte = eng->file_size;
 
     eng->file_pos = target_byte;
@@ -2756,6 +2818,8 @@ static void ae_decode_task(void *arg)
     }
     if (!runtime->run) goto cleanup;
 
+    ae_prepare_pvbr_geometry(eng, fw);
+
     if (eng->format == AUDIO_FORMAT_WAV || eng->format == AUDIO_FORMAT_FLAC) {
         const bool is_wav = (eng->format == AUDIO_FORMAT_WAV);
         AE_LOCK();
@@ -2866,13 +2930,19 @@ static void ae_decode_task(void *arg)
                     &preroll, cue_preroll, target_ms, eng->sample_rate, max_pre);
                 eng->timeline_preroll_frames = preroll.frames;
                 atomic_store_bool(&eng->timeline_preroll_pending, preroll.pending);
+                eng->seek_skip_frames = 0u;
                 if (eng->format == AUDIO_FORMAT_WAV) {
                     ae_wav_seek_to_ms(eng, decode_target_ms);
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
                     (void)ae_flac_seek_to_ms(eng, fw, ctx->deck,
                                              decode_target_ms);
                 } else if (eng->has_pvbr) {
-                    seek_pvbr(eng, decode_target_ms);
+                    uint32_t entry_ms = seek_pvbr(eng, decode_target_ms);
+                    if (!loop_seek && eng->pvbr_geometry_exact &&
+                        eng->pvbr_geom.hz == eng->sample_rate) {
+                        eng->seek_skip_frames = audio_seek_skip_frames(
+                            decode_target_ms, entry_ms, eng->sample_rate);
+                    }
                 } else {
                     seek_estimate(eng, decode_target_ms);
                 }
@@ -2962,6 +3032,18 @@ static void ae_decode_task(void *arg)
          * the decoder's own end-of-input signal further down, and borrowing it
          * to mean "publish nothing" would divert a mid-file loop wrap into the
          * EOF wait, which only the pending seek could release. */
+        if (samples > 0 && eng->seek_skip_frames > 0u) {
+            uint32_t drop = audio_seek_skip_take(&eng->seek_skip_frames,
+                                                  (uint32_t)samples);
+            samples -= (int)drop;
+            if (samples > 0) {
+                memmove(decode_pcm, decode_pcm + drop * 2u,
+                        (size_t)samples * 2u * sizeof(decode_pcm[0]));
+            } else {
+                AE_UNLOCK();
+                continue;
+            }
+        }
         int publish_frames = samples;
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
@@ -4188,6 +4270,10 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 #endif
 
     eng->duration_ms = duration_ms;
+    eng->pvbr_geom = (audio_pvbr_geometry_t){0};
+    eng->mp3_audio_start = 0u;
+    eng->pvbr_geometry_exact = false;
+    eng->seek_skip_frames = 0u;
     if (eng->format == AUDIO_FORMAT_MP3 || eng->format == AUDIO_FORMAT_UNKNOWN) {
         eng->sample_rate = 0u;   /* latched on first decoded frame */
         eng->channels    = 2;
