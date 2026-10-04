@@ -1657,6 +1657,15 @@ $djlinkSources = @(Get-ChildItem (Join-Path $RepoRoot 'firmware/common/djlink/sr
     Sort-Object Name | ForEach-Object { $_.FullName })
 $tests = @(
     @{
+        Name = 'djlink_db_client'
+        Dir = 'tests/djlink'
+        Target = 'test_db_client.exe'
+        Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
+            '-I../../firmware/common/djlink/include',
+            '-I../../firmware/common/dj_link_core/include', '-o', 'test_db_client.exe',
+            'test_db_client.c', '../../firmware/common/dj_link_core/dj_link_db.c') + $djlinkSources + @('-lm')
+    }
+    @{
         Name = 'djlink_discovery'
         Dir = 'tests/djlink'
         Target = 'test_discovery.exe'

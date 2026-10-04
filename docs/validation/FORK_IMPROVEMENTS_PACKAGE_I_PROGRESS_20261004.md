@@ -107,3 +107,47 @@ I is still incomplete: single-session/request DBServer TCP browse, bounded 2,000
 row cache, visible-page metadata/folders/playlists and common source/load admission
 are pending. Socket mock success is not JC1060 task timing or actual peer
 interoperability acceptance. J download/cache and K sync remain separate packages.
+
+CI independently passed all eight jobs on pushed I3 `656f982f`:
+[run 37227824038](https://github.com/dvucinozd/Pajoniiir/actions/runs/37227824038).
+This includes both clean ordinary targets, both preview targets and the isolated
+recorder/storage experiments, plus the full host/simulator/sanitizer gate.
+
+## I4a: serialized DBServer client and TCP mock
+
+Imported the donor's heap-free sans-I/O DBServer client with both codec and
+application MIT copyright notices. It owns one session and one request; its
+transport hooks do not perform I/O in the model. Port query, greeting, context
+setup, all-tracks and folder/playlist menus, render batches and visible-row
+metadata are exercised. Blob/path helpers are preserved but remain inactive in
+the firmware; their storage/source integration belongs to J.
+
+Local corrections enforce a 2,000-row hard cap (even if the owner supplies a
+larger limit), exact prefix framing and source/connection generations. Old
+connected/data/closed events cannot alter a restarted session. Setup/request IDs,
+numeric menu counts and render row counts are validated. A premature footer
+fails instead of publishing a completed partial list or metadata record.
+Metadata replies are bounded to 64 fields; malformed UTF-16 surrogates cannot
+consume the following valid character. Folder/playlist requests force source
+order regardless of global sort. The donor IP/player/track FNV persistent-key
+API is excluded; IP/player numbers remain transport locators only.
+
+Verification on 2026-10-04:
+
+- Windows portable client suite PASS: 2,000 rendered rows from a 2,023-row
+  advertisement, byte fragmentation/coalescing, hierarchy/order, visible detail,
+  UTF-16, malformed/short/incomplete replies, source restart, stale TCP callbacks,
+  cancel and timeout.
+- Full P4 host runner PASS (exit 0); `git diff --check` PASS.
+- Eight Linux/WSL suites PASS under ASan/UBSan/leak checking. The new actual
+  localhost TCP mock passes port discovery/setup/fragmented browse, malformed
+  reply, disconnect and silent-peer timeout. Existing UDP/NFS suites remain PASS.
+- JC1060 ESP-IDF 6.0.2 ordinary build and board validator PASS (2,563,120 bytes);
+  dependency locks unchanged. The client compiles but is not yet driven by the
+  JC1060 worker, so this is model/codec verification, not on-device browse.
+
+Remaining I4b: Ethernet-bound nonblocking TCP adapter, owned bounded row cache
+with truncation/progress, live source-epoch validation at result publication and
+Library source/visible-page bridge. Incoming load must enter the existing
+load-lock/admission path; no direct deck mutation or premature network load ack.
+J then supplies verified local downloads; K supplies authoritative-clock sync.

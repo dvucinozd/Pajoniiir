@@ -28,6 +28,10 @@ codec, bounded peer/epoch model, a shared two-player claim coordinator and a
 default-off JC1060 Ethernet worker. UDP sockets require the actual Ethernet
 netif; no Wi-Fi/default-interface fallback exists. Next: serialized DBServer
 browse and its source/UI integration, followed by J-K and L release gates.
+I4a now verifies the serialized DBServer model, 2,000-row cap, exact TCP framing
+and stale connection callbacks, including actual localhost TCP sanitizer mocks.
+Its Ethernet TCP adapter and owned Library browse cache remain I4b; no on-device
+browse or network load is claimed by the model-only step.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator
