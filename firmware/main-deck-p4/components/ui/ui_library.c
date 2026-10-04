@@ -862,6 +862,7 @@ static void ui_library_populate_rows(void)
 static void ui_library_apply_loaded_track(uint8_t deck,
                                           const char *title,
                                           const char *artist,
+                                          const char *key,
                                           uint16_t bpm,
                                           uint32_t duration_ms,
                                           const uint8_t waveform_low[400],
@@ -880,7 +881,7 @@ static void ui_library_apply_loaded_track(uint8_t deck,
     }
 #endif
     if (s_library_config.actions.set_deck_track_info) {
-        s_library_config.actions.set_deck_track_info(deck, title, artist, bpm, duration_ms);
+        s_library_config.actions.set_deck_track_info(deck, title, artist, key, bpm, duration_ms);
     }
     if (s_library_config.actions.set_deck_anlz) {
         s_library_config.actions.set_deck_anlz(deck, meta);
@@ -1270,6 +1271,7 @@ static void ui_poll_track_load_result(void)
         ui_library_apply_loaded_track(deck,
                                       result.item.title,
                                       result.item.artist,
+                                      result.item.key,
                                       bpm,
                                       result.loaded.duration_ms,
                                       result.loaded.waveform_low,
@@ -1366,6 +1368,7 @@ static esp_err_t ui_library_load_selected_deck(uint8_t deck)
     ui_library_apply_loaded_track(deck,
                                   track->title,
                                   track->artist,
+                                  track->key,
                                   track->bpm,
                                   track->duration_ms,
                                   track->waveform_low,
@@ -1968,6 +1971,7 @@ void ui_library_load_initial_track(void)
             ui_library_apply_loaded_track(CTRL_DECK_1,
                                           track0->title,
                                           track0->artist,
+                                          track0->key,
                                           track0->bpm,
                                           track0->duration_ms,
                                           track0->waveform_low,
@@ -1990,6 +1994,7 @@ void ui_library_load_initial_track(void)
             ui_library_apply_loaded_track(CTRL_DECK_2,
                                           track1->title,
                                           track1->artist,
+                                          track1->key,
                                           track1->bpm,
                                           track1->duration_ms,
                                           track1->waveform_low,
@@ -2473,6 +2478,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
         ui_library_apply_loaded_track(deck,
                                       track->title,
                                       track->artist,
+                                      track->key,
                                       track->bpm,
                                       track->duration_ms,
                                       track->waveform_low,

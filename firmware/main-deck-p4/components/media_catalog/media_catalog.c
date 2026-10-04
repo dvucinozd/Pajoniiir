@@ -83,6 +83,7 @@ static void fill_catalog_track(const library_track_t *track,
     copy_str(out_track->title, sizeof(out_track->title), track->title);
     copy_str(out_track->artist, sizeof(out_track->artist), track->artist);
     copy_str(out_track->album, sizeof(out_track->album), track->album);
+    copy_str(out_track->key, sizeof(out_track->key), track->key);
 }
 
 static void fill_loaded_track(const library_track_t *track,

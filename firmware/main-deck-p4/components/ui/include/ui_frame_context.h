@@ -30,6 +30,7 @@ typedef struct {
     bool valid;
     char title[96];
     char artist[64];
+    char key[16];
     uint16_t bpm;
     uint32_t duration_ms;
 } ui_deck_track_info_t;

@@ -220,6 +220,7 @@ static void ui_deck_track_info_clear(uint8_t deck)
 static void ui_deck_track_info_set(uint8_t deck,
                                    const char *title,
                                    const char *artist,
+                                   const char *key,
                                    uint16_t bpm,
                                    uint32_t duration_ms)
 {
@@ -233,6 +234,7 @@ static void ui_deck_track_info_set(uint8_t deck,
                 sizeof(info->artist),
                 artist && artist[0] ? artist : "Unknown Artist");
     info->bpm = bpm;
+    ui_copy_str(info->key, sizeof(info->key), key ? key : "");
     info->duration_ms = duration_ms;
     info->valid = true;
 }
@@ -1500,4 +1502,11 @@ void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, cha
     if (out_duration_ms) {
         *out_duration_ms = s_deck_track_info[idx].duration_ms;
     }
+}
+
+void ui_get_deck_track_key(uint8_t deck, char *out_key, size_t key_max)
+{
+    uint8_t idx = ui_deck_index(deck);
+    ui_copy_str(out_key, key_max,
+                s_deck_track_info[idx].valid ? s_deck_track_info[idx].key : "");
 }

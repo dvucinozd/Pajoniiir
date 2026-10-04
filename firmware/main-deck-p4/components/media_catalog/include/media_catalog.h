@@ -16,6 +16,7 @@ typedef struct {
     char title[96];
     char artist[64];
     char album[64];
+    char key[16];
 } media_catalog_track_t;
 
 typedef struct {

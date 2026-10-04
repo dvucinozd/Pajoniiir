@@ -83,6 +83,7 @@ typedef struct {
     void (*set_deck_track_info)(uint8_t deck,
                                 const char *title,
                                 const char *artist,
+                                const char *key,
                                 uint16_t bpm,
                                 uint32_t duration_ms);
     void (*set_deck_anlz)(uint8_t deck, const anlz_metadata_t *meta);

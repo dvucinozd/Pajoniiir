@@ -223,6 +223,15 @@ int main(int argc, char **argv)
     }
 
     pump(3200);
+    char accepted_key[16];
+    ui_get_deck_track_key(CTRL_DECK_1, accepted_key, sizeof(accepted_key));
+    if (strcmp(accepted_key, "8A") != 0) fail("D1 accepted metadata lost musical key");
+    ui_get_deck_track_key(CTRL_DECK_2, accepted_key, sizeof(accepted_key));
+    if (strcmp(accepted_key, "9A") != 0) fail("D2 accepted key reused D1 metadata");
+    char short_key[2] = {'?', '?'};
+    ui_get_deck_track_key(CTRL_DECK_1, short_key, sizeof(short_key));
+    if (short_key[0] != '8' || short_key[1] != '\0') fail("key copy exceeded caller buffer");
+    ui_get_deck_track_key(CTRL_DECK_1, NULL, 0);
     if (!ui_is_overview_active()) {
         fail("overview is not active after boot splash");
     }
@@ -348,6 +357,8 @@ int main(int argc, char **argv)
      * refuse the playing destination before it replaces its track snapshot. */
     deck_loaded_track_summary_t before = {0}, after = {0};
     const bool had_track = deck_core_get_loaded_track(CTRL_DECK_1, &before);
+    char locked_key[16];
+    ui_get_deck_track_key(CTRL_DECK_1, locked_key, sizeof(locked_key));
     ui_simulator_deck_set_playing(true);
     if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_ERR_INVALID_STATE) {
         fail("load lock accepted a playing destination deck");
@@ -357,6 +368,10 @@ int main(int argc, char **argv)
         fail("rejected load changed the current track");
     }
     ui_simulator_deck_set_playing(false);
+
+    ui_get_deck_track_key(CTRL_DECK_1, accepted_key, sizeof(accepted_key));
+    if (strcmp(accepted_key, locked_key) != 0)
+        fail("rejected load replaced accepted musical key");
 
     if (!click_label("OVERVIEW") || !click_deck(CTRL_DECK_1))
         fail("could not inspect live duration");

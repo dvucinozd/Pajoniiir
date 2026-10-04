@@ -65,6 +65,29 @@ Heap queries are isolated in `audio_engine_memory.c`; the existing prohibition
 against largest-block-based full-track allocation in the playback engine is
 retained unchanged. No memory qualification or new device installation follows.
 
+## Accepted musical-key metadata
+
+`media_catalog_track_t` and `ui_deck_track_info_t` now own a bounded 16-byte
+musical key. The transactional load worker copies it with title/artist; LVGL
+publishes it only through the existing accepted generation/load/session path.
+The simulator's initial and explicit loads use the same metadata action.
+Empty-track clearing clears the key, and rejected LOAD cannot replace it.
+`ui_get_deck_track_key` copies the accepted text with a bounded NUL-terminated
+buffer; non-LVGL callers use the same LVGL-lock contract as track-info reads.
+Musical key is metadata, never a runtime lookup key or persistent identity.
+
+Actual shared UI E2E checks cover distinct D1/D2 keys, caller-buffer truncation
+and unchanged accepted metadata after load-lock rejection. All eleven legacy
+captures and both actual preview runtime layout captures remain unchanged.
+This prepares the product metadata model; visible key placement and the rest
+of the previous-design enhancements remain H work. No screenshot baseline or
+installed firmware is changed.
+
+Accepted-key verification PASS: full P4 host runner, legacy and both runtime
+layout E2E gates without baseline updates, both ordinary ESP-IDF 6.0.2 builds
+(JC4880 2,548,416 bytes; JC1060 2,545,776 bytes), board/project/budget checks,
+unchanged dependency locks, documentation integrity and diff checks.
+
 ## Historical checkpoint: H3 hardware regression and recovery
 
 H3 was pushed as `cf282906ff5ffe2bc045659c59e5d6618e46a094`.

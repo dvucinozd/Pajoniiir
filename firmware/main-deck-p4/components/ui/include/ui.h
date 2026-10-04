@@ -30,6 +30,8 @@ void      ui_lvgl_lock(void);
 void      ui_lvgl_unlock(void);
 
 void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms);
+/* Like track-info, call under the LVGL lock from a non-LVGL task. */
+void ui_get_deck_track_key(uint8_t deck, char *out_key, size_t key_max);
 
 /**
  * Note operator activity for the idle screensaver. Safe to call from any task:
