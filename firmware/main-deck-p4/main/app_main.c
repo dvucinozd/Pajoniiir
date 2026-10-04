@@ -1,6 +1,6 @@
 #include "control_link.h"
 #include "deck_core.h"
-#include "bsp_jc4880.h"
+#include "board_adapter.h"
 #include "library.h"
 #include "library_load_trace.h"
 #include "audio_engine.h"

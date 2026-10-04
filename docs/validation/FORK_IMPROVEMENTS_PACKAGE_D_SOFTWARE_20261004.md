@@ -35,6 +35,9 @@ DDJ-400 JSON only; extended-v2 binary not imported. Production M2.4 unchanged.
 - Web: 63 Node tests and 20 browser tests PASS, v2/v3 golden bytes unchanged.
 - JC4880 ESP-IDF 6.0.2 build PASS, application 2,540,944 bytes below 0x380000.
   Dependency lock unchanged. Final committed-image identity recorded below.
+  Exact code commit `39313aa918b68062333cb8ddb8cfeeb5626a8391`, reconfigured
+  build descriptor `M2.4-37-g39313aa`, project `main-deck-p4`, descriptor magic
+  `0xABCD5432`, 2,540,944 bytes. Local and remote source SHA matched.
 - Simulator PASS: 11 unchanged screenshot baselines at 800x480.
 - Documentation integrity and git diff whitespace checks PASS.
 

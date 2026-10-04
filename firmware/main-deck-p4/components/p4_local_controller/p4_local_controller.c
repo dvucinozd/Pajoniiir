@@ -6,6 +6,7 @@
 
 #include "control_link.h"
 #include "audio_engine.h"
+#include "board_capabilities.h"
 #include "controller_led_runtime.h"
 #include "controller_profile_manager.h"
 #include "controller_profile_runtime.h"
@@ -21,7 +22,7 @@
 #define LOCAL_BOOTSTRAP_RETRY_MS 1000u
 #define LOCAL_MANAGER_LOG_MS 5000u
 #define LOCAL_PROFILE_QUEUE_DEPTH 1u
-#define LOCAL_USB1_ROOT_INDEX 1u
+#define LOCAL_USB1_ROOT_INDEX (board_capabilities_get()->controller_root)
 
 void controller_usb_host_output_gate_set_connected(bool connected);
 

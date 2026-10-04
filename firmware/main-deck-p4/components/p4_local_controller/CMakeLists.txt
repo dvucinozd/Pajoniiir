@@ -4,5 +4,5 @@ idf_component_register(
     REQUIRES control_link usb_host_manager controller_usb_host
              controller_runtime controller_led_runtime
              controller_profile_runtime controller_profile_manager
-             audio_engine log freertos
+             audio_engine board_adapter log freertos
 )

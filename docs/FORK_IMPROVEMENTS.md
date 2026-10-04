@@ -9,6 +9,15 @@ records the pushed checkpoint and hardware gates left unrun.
 
 ## Scope and delivery status
 
+E1 introduces `board_adapter` contracts and immutable board capabilities.
+Shared audio/UI/startup code uses the neutral header; USB controller routing,
+storage routing/recovery and FS PHY selection read board roles. JC4880 keeps
+storage root 0/controller root 1, while donor JC1060 uses storage root 1/
+controller root 0 (FS PHY0). Host tests cover both configurations. This is not
+an enumeration-order heuristic or a claim that JC1060 hardware passed.
+JC4880 IDF 6.0.2 build passes at 2,541,200 bytes; lock unchanged.
+JC1060 entrypoint/BSP, clean build/lock and CI remain pending after E1.
+
 One P4 core must serve JC4880/FLX4 and JC1060/DDJ-400. Ethernet Link belongs
 only to JC1060; recording remains an opt-in experiment. APTA integration is
 outside this branch. These are planned capabilities, not current support claims.
@@ -19,7 +28,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B19 software verified on JC4880; physical acceptance NOT RUN |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Software verified; DDJ-400 hardware acceptance NOT RUN; UAC belongs to F |
-| E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
+| E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1 board adapter implemented; JC1060 target/lock/CI pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Pending |
 | H | Shared dj_ui presentation at 800x480 and 1024x600 | Pending |

@@ -1,0 +1,5 @@
+menu "Pajoniiir board"
+config PAJONIIIR_BOARD_JC1060
+    bool "JC1060P470C_I_W_Y target"
+    default n
+endmenu

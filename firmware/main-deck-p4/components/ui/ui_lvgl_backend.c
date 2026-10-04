@@ -139,7 +139,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
     return ESP_OK;
 }
 #else
-#include "bsp_jc4880.h"
+#include "board_adapter.h"
 #include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_heap_caps.h"

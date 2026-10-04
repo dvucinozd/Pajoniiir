@@ -922,7 +922,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage_shared.c") `
     -LiteralPatterns @(
         ".override_fs_phy_index = true",
-        ".fs_phy_index = 0u",
+        ".fs_phy_index = board_capabilities_get()->fs_phy_index",
         "do not burn USB_PHY_SEL"
     )
 
@@ -2955,6 +2955,28 @@ $tests = @(
             "test_app_settings.c",
             "../../firmware/main-deck-p4/components/app_settings/app_settings.c",
             "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
+        Name = "board_adapter"
+        Dir = "tests/board_adapter"
+        Target = "test_board_capabilities.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST",
+            "-I../../firmware/main-deck-p4/components/board_adapter/include",
+            "-o", "test_board_capabilities.exe", "test_board_capabilities.c",
+            "../../firmware/main-deck-p4/components/board_adapter/board_capabilities.c"
+        )
+    },
+    @{
+        Name = "board_adapter_jc1060"
+        Dir = "tests/board_adapter"
+        Target = "test_board_capabilities_jc1060.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_JC1060",
+            "-I../../firmware/main-deck-p4/components/board_adapter/include",
+            "-o", "test_board_capabilities_jc1060.exe", "test_board_capabilities.c",
+            "../../firmware/main-deck-p4/components/board_adapter/board_capabilities.c"
         )
     },
     @{

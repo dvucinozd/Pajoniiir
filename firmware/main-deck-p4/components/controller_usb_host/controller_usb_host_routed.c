@@ -2,6 +2,7 @@
 /* Production P4 USB1 controller host implementation. */
 #include "controller_usb_host.h"
 #include "controller_midi_out_gate.h"
+#include "board_capabilities.h"
 
 #include "esp_log.h"
 #include "freertos/queue.h"
@@ -21,7 +22,7 @@ static esp_err_t routed_interface_claim(usb_host_client_handle_t client,
     if (info_rc != ESP_OK) {
         return info_rc;
     }
-    if (info.parent.dev_hdl != NULL || info.parent.port_num != 1u) {
+    if (info.parent.dev_hdl != NULL || info.parent.port_num != board_capabilities_get()->controller_root) {
         ESP_LOGW(ROUTED_TAG,
                  "reject MIDI controller outside USB1 direct root: port=%u direct=%u",
                  (unsigned)info.parent.port_num,

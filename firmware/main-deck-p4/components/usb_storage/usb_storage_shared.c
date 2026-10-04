@@ -8,13 +8,14 @@
  * dual-controller manager and restrict storage recovery to USB0.
  */
 #include "usb_host_manager.h"
+#include "board_capabilities.h"
 
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "freertos/task.h"
 #include "usb/usb_host.h"
 
-#define SHARED_STORAGE_ROOT_INDEX 0u
+#define SHARED_STORAGE_ROOT_INDEX (board_capabilities_get()->storage_root)
 
 static bool shared_storage_device_route_allowed(uint8_t address)
 {
@@ -56,7 +57,7 @@ static esp_err_t shared_storage_host_install(const usb_host_config_t *ignored)
          * USB-OTG FS to PHY1 (GPIO26/GPIO27), which is not connected to that
          * receptacle. Select PHY0 in software; do not burn USB_PHY_SEL. */
         .override_fs_phy_index = true,
-        .fs_phy_index = 0u,
+        .fs_phy_index = board_capabilities_get()->fs_phy_index,
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .daemon_stack_size = 4096u,
         .daemon_priority = 4u,

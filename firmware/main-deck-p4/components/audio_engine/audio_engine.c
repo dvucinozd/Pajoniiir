@@ -106,7 +106,7 @@ static const char *TAG = "audio";
 #   include "esp_heap_caps.h"
 #   include "esp_system.h"
 #   include "esp_timer.h"
-#   include "bsp_jc4880.h"
+#   include "board_adapter.h"
 #   include "esp_codec_dev.h"
 #   include "driver/i2s_common.h"
 /* Declarations only — DR_FLAC_IMPLEMENTATION lives in audio_flac_decoder.c. */

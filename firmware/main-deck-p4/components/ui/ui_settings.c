@@ -83,7 +83,7 @@ bool ui_settings_is_active_tab(int active_tab, int settings_tab_index)
 #ifndef WIN32
 #include "app_settings.h"
 #include "audio_engine.h"
-#include "bsp_jc4880.h"
+#include "board_adapter.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "firmware_health.h"

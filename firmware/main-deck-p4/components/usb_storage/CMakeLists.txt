@@ -6,7 +6,7 @@ idf_component_register(
          "usb_media_partition.c" "usb_media_mount.c"
          "usb_dwc_hal_compat.c"
     INCLUDE_DIRS "include"
-    REQUIRES log usb usb_host_msc fatfs media_io_gate hal usb_host_manager
+    REQUIRES log usb usb_host_msc fatfs media_io_gate hal usb_host_manager board_adapter
     WHOLE_ARCHIVE
 )
 
