@@ -192,6 +192,9 @@ jobs:
           fi
           exit $code
 
+      - name: Verify board isolation and embedded identity
+        run: python3 tools/check_board_build.py --build firmware/main-deck-p4/build --project main-deck-p4
+
       - name: Verify committed dependency lock is unchanged
         run: |
           if ! git diff --exit-code -- firmware/main-deck-p4/dependencies.lock; then
@@ -325,9 +328,6 @@ jobs:
 
       - name: Verify board isolation and embedded identity
         run: python3 tools/check_board_build.py --build firmware/main-deck-jc1060/build --project main-deck-jc1060
-
-      - name: Verify board isolation and embedded identity
-        run: python3 tools/check_board_build.py --build firmware/main-deck-p4/build --project main-deck-p4
 
       - name: Verify committed dependency lock is unchanged
         run: |
