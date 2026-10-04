@@ -12,15 +12,26 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if !defined(TRACK_META_CACHE_STANDALONE_TEST)
 static const char *TAG = "track_meta_cache";
+#endif
+#if defined(TRACK_META_CACHE_STANDALONE_TEST)
+static const char *CACHE_MOUNT = "tc";
+static const char *CACHE_PARENT = "tc/meta";
+static const char *CACHE_ROOT = "tc/meta/v4";
+#else
+static const char *CACHE_MOUNT = "/sd";
 static const char *CACHE_PARENT = "/sd/trackcache";
-static const char *CACHE_ROOT = "/sd/trackcache/v3";
+static const char *CACHE_ROOT = "/sd/trackcache/v4";
+#endif
 
 #define TRACK_META_CACHE_MAGIC   0x31434D54u /* "TMC1" */
-#define TRACK_META_CACHE_VERSION 3u
+#define TRACK_META_CACHE_VERSION 4u
 #define TRACK_META_CACHE_FLAGS_LOW  0x01u
 #define TRACK_META_CACHE_FLAGS_VBR  0x02u
 #define TRACK_META_CACHE_FLAGS_HIGH 0x04u
+#define TRACK_META_CACHE_MEMORY_TRUNC 0x01u
+#define TRACK_META_CACHE_COLOR_TRUNC  0x02u
 
 #pragma pack(push, 1)
 typedef struct {
@@ -39,6 +50,10 @@ typedef struct {
     uint8_t flags;
     uint16_t reserved;
     uint32_t waveform_high_len;
+    uint32_t color_preview_len;
+    uint8_t memory_cue_count;
+    uint8_t metadata_flags;
+    uint16_t reserved_v4;
 } track_meta_cache_header_t;
 #pragma pack(pop)
 
@@ -66,12 +81,16 @@ static esp_err_t file_signature(const char *path, uint64_t *out_size, int64_t *o
 static esp_err_t sd_available(void)
 {
     struct stat st;
-    return stat("/sd", &st) == 0 && S_ISDIR(st.st_mode) ? ESP_OK : ESP_ERR_NOT_FOUND;
+    return stat(CACHE_MOUNT, &st) == 0 && S_ISDIR(st.st_mode) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 static esp_err_t mkdir_if_missing(const char *path)
 {
+#if defined(_WIN32)
+    if (mkdir(path) == 0 || errno == EEXIST) {
+#else
     if (mkdir(path, 0775) == 0 || errno == EEXIST) {
+#endif
         return ESP_OK;
     }
     return ESP_FAIL;
@@ -128,7 +147,12 @@ static bool header_matches(const track_meta_cache_header_t *header,
            header->ext_mtime == ext_mtime &&
            header->beat_count <= 0x4000u &&
            header->cue_count <= ANLZ_MAX_CUES &&
-           header->waveform_high_len <= ANLZ_WAVEFORM_HIGH_MAX;
+           header->memory_cue_count <= ANLZ_MAX_MEMORY_CUES &&
+           (header->metadata_flags & ~(TRACK_META_CACHE_MEMORY_TRUNC |
+                                       TRACK_META_CACHE_COLOR_TRUNC)) == 0u &&
+           header->waveform_high_len <= ANLZ_WAVEFORM_HIGH_MAX &&
+           header->color_preview_len <= ANLZ_COLOR_PREVIEW_MAX &&
+           header->color_preview_len % ANLZ_COLOR_PREVIEW_ENTRY == 0u;
 }
 
 static bool read_exact(FILE *fp, void *dst, size_t len)
@@ -236,12 +260,18 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
     out_meta->bpm = header.bpm;
     out_meta->beat_count = header.beat_count;
     out_meta->cue_count = header.cue_count;
+    out_meta->memory_cue_count = header.memory_cue_count;
+    out_meta->memory_cues_truncated =
+        (header.metadata_flags & TRACK_META_CACHE_MEMORY_TRUNC) != 0u;
+    out_meta->color_preview_truncated =
+        (header.metadata_flags & TRACK_META_CACHE_COLOR_TRUNC) != 0u;
     out_meta->has_waveform_low = (header.flags & TRACK_META_CACHE_FLAGS_LOW) != 0;
     out_meta->has_vbr = (header.flags & TRACK_META_CACHE_FLAGS_VBR) != 0;
 
     ok = read_exact(fp, out_meta->waveform_low, sizeof(out_meta->waveform_low)) &&
          read_exact(fp, out_meta->vbr, sizeof(out_meta->vbr)) &&
-         read_exact(fp, out_meta->cues, sizeof(out_meta->cues));
+         read_exact(fp, out_meta->cues, sizeof(out_meta->cues)) &&
+         read_exact(fp, out_meta->memory_cues, sizeof(out_meta->memory_cues));
     if (ok && header.beat_count > 0) {
         out_meta->beats = calloc(header.beat_count, sizeof(anlz_beat_t));
         ok = out_meta->beats && read_exact(fp, out_meta->beats,
@@ -259,10 +289,17 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
             ok = fseek(fp, (long)header.waveform_high_len, SEEK_CUR) == 0;
         }
     }
+    if (ok && header.color_preview_len > 0u) {
+        out_meta->color_preview = malloc(header.color_preview_len);
+        ok = out_meta->color_preview &&
+             read_exact(fp, out_meta->color_preview, header.color_preview_len);
+        if (ok) out_meta->color_preview_len = header.color_preview_len;
+    }
 
     fclose(fp);
     if (!ok) {
         anlz_free(out_meta);
+        memset(out_meta, 0, sizeof(*out_meta));
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "cache hit: track_key=%lu", (unsigned long)track_key);
@@ -299,8 +336,12 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
     }
     if ((meta->beat_count > 0 && !meta->beats) ||
         (meta->waveform_high_len > 0 && !meta->waveform_high) ||
+        (meta->color_preview_len > 0 && !meta->color_preview) ||
         meta->cue_count > ANLZ_MAX_CUES ||
-        meta->waveform_high_len > ANLZ_WAVEFORM_HIGH_MAX) {
+        meta->memory_cue_count > ANLZ_MAX_MEMORY_CUES ||
+        meta->waveform_high_len > ANLZ_WAVEFORM_HIGH_MAX ||
+        meta->color_preview_len > ANLZ_COLOR_PREVIEW_MAX ||
+        meta->color_preview_len % ANLZ_COLOR_PREVIEW_ENTRY != 0u) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -350,10 +391,15 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         .bpm = meta->bpm,
         .beat_count = meta->beat_count,
         .cue_count = meta->cue_count,
+        .memory_cue_count = meta->memory_cue_count,
+        .metadata_flags =
+            (meta->memory_cues_truncated ? TRACK_META_CACHE_MEMORY_TRUNC : 0u) |
+            (meta->color_preview_truncated ? TRACK_META_CACHE_COLOR_TRUNC : 0u),
         .flags = (meta->has_waveform_low ? TRACK_META_CACHE_FLAGS_LOW : 0u) |
                  (meta->has_vbr ? TRACK_META_CACHE_FLAGS_VBR : 0u) |
                  (meta->waveform_high && meta->waveform_high_len > 0 ? TRACK_META_CACHE_FLAGS_HIGH : 0u),
         .waveform_high_len = meta->waveform_high && meta->waveform_high_len > 0 ? meta->waveform_high_len : 0,
+        .color_preview_len = meta->color_preview_len,
     };
     memcpy(header.persistent_id, persistent_id->bytes, sizeof(header.persistent_id));
 
@@ -371,6 +417,7 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_CUES, track_key);
         ok = write_exact(fp, meta->cues, sizeof(meta->cues));
     }
+    if (ok) ok = write_exact(fp, meta->memory_cues, sizeof(meta->memory_cues));
     if (ok) {
         library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_BEATS, track_key);
         ok = write_exact(fp, meta->beats,
@@ -380,6 +427,7 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_HIGH, track_key);
         ok = write_exact(fp, meta->waveform_high, header.waveform_high_len);
     }
+    if (ok) ok = write_exact(fp, meta->color_preview, header.color_preview_len);
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_CLOSE, track_key);
     fclose(fp);
 

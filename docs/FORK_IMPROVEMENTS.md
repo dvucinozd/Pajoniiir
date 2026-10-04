@@ -17,7 +17,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B7 software verified; local cue merge, transport and remaining duration work pending |
-| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C4 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
+| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
@@ -363,6 +363,18 @@ decode, touch fluidity and dual-deck playback on JC4880: **NOT RUN**.
 
 Package C is **software verified for the current JC4880 target**. JC1060 UI
 and physical acceptance belong to later packages and remain **NOT RUN**.
+
+## C5: Versioned metadata cache preserves PWV4 and memory cues
+
+The existing SD track metadata cache omitted both optional PWV4 bytes and the
+new memory cue list. A warm cache hit therefore produced different UI/cue
+metadata from a cold parse. Cache format v4 includes bounded color data,
+memory cue records and their truncation flags. It validates counts and lengths
+before allocation; v3 entries are ignored and a fresh parse writes v4. A host
+round-trip exercises hot cues, same-timestamp memory point/loop, PWV4 bytes,
+waveform detail and source-file signature invalidation. Exact firmware build,
+host and simulator gates remain required. SD media/cache behavior on hardware:
+**NOT RUN**.
 
 ## Provenance and rollback
 

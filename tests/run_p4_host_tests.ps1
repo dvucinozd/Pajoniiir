@@ -2840,6 +2840,23 @@ $tests = @(
         )
     },
     @{
+        Name = "track_meta_cache"
+        Dir = "tests/track_meta_cache"
+        Target = "test_track_meta_cache.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-DTRACK_META_CACHE_STANDALONE_TEST",
+            "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "-o", "test_track_meta_cache.exe",
+            "test_track_meta_cache.c",
+            "../../firmware/main-deck-p4/components/library/track_meta_cache.c"
+        )
+    },
+    @{
         Name = "library_anlz"
         # PDB backend gating is now exercised by the bounded-page parser suite;
         # catalog publication copies parsed rows without incidental gate checks.
