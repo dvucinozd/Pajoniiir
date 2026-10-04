@@ -33,6 +33,43 @@ typedef enum {
     AUDIO_TRACK_LENGTH_DECODE,    /* decoder ran past the length, extended (v272) */
 } audio_track_length_source_t;
 
+/* Decoder output counted from a known file start, independently of seek/UI
+ * position. A discontinuity or rate change withdraws measurement authority. */
+typedef struct {
+    uint64_t frames;
+    uint32_t hz;
+    bool anchored;
+} audio_track_decode_length_t;
+
+static inline void audio_track_decode_length_begin(audio_track_decode_length_t *m)
+{
+    *m = (audio_track_decode_length_t){.anchored = true};
+}
+
+static inline void audio_track_decode_length_invalidate(audio_track_decode_length_t *m)
+{
+    m->anchored = false;
+}
+
+static inline uint32_t audio_track_decode_length_ms(const audio_track_decode_length_t *m)
+{
+    if (!m->anchored || !m->hz ||
+        m->frames > (uint64_t)UINT32_MAX * m->hz / 1000u) return 0u;
+    return (uint32_t)(m->frames * 1000u / m->hz);
+}
+
+static inline void audio_track_decode_length_add(audio_track_decode_length_t *m,
+                                                 uint32_t frames, uint32_t hz)
+{
+    if (!m->anchored || frames == 0u) return;
+    if (!hz || (m->hz && hz != m->hz) || UINT64_MAX - m->frames < frames) {
+        m->anchored = false;
+        return;
+    }
+    m->hz = hz;
+    m->frames += frames;
+}
+
 /*
  * v272 read "Xing 181080 ms, decoded end 185250 ms" (Nerdy Roller) as a lying
  * header. v273: it was not. Decoding the file gives exactly the Xing length;

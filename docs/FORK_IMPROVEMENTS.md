@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B16 implemented; controller profile binding and MP3 EOF measurement pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B17 implemented; controller profile binding and exact duration after unanchored MP3 seeks remain open |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -608,6 +608,44 @@ P4 build and documentation integrity pass. The image is 2,536,304 bytes against
 the unchanged `0x380000` budget; the dependency lock is unchanged. These are
 software results; heap/stack and audio timing qualification on hardware remain
 **NOT RUN**.
+
+## B17: Sequential MP3 decoder EOF measurement
+
+Each loaded audio session counts MP3 decoder output frames independently of
+the UI position, seek base and analysis span. While decoding continuously from
+the known file start, the best known playback length grows if the decoded
+audio passes the metadata duration. At natural file EOF it becomes the measured
+frame duration, including correction of overlong metadata. The analysis span
+remains fixed and the existing output-drain policy still owns transport finish.
+No audio is cut off at the analysis end and this measurement does not seek or
+move the audible timeline. This integration is original code around the
+previously imported `428b97dd` (MIT) track-length module.
+
+A seek withdraws measurement authority immediately. The decode worker also
+invalidates it on nonzero loop/user repositioning; a real zero restart begins
+a new count from the audio start rather than the first legacy PVBR entry.
+Rate changes and counter overflow invalidate the count. A media read failure
+does not publish measured EOF. Unanchored seeks retain existing duration
+fallback; exact duration for such a session would require a separately bounded
+frame index/scan and is not claimed here. Controller jog-mode profile bindings
+remain package D work, so package B is not declared complete.
+
+Tests decode synthetic silent CBR and varying-bitrate MP3 with no Xing/VBRI,
+with/without ID3v2, and trailing non-audio data. Both shorter and longer
+metadata spans converge to the actual output WAV frame count. A partial count
+followed by seek cannot overwrite fallback length. Pure tests cover reset,
+discontinuity, sample-rate change and overflow. The PC export helper now skips
+non-audio decoder iterations until real EOF rather than stopping at the first
+zero-output iteration. Persistent formats, partitions, profile ABI and OTA
+are unchanged; source rollback restores the preceding duration behavior.
+Physical end-of-track, scratch, MAIN/cue, read-fault and exact-image soak gates
+remain **NOT RUN**.
+
+Full P4 host runner, eleven unchanged simulator screenshots, the 300-second
+deterministic dual-deck Master Tempo host soak, ESP-IDF 6.0.2 P4 build and
+documentation integrity pass. The application is 2,536,944 bytes within the
+unchanged `0x380000` budget, with no dependency-lock change. Host soak results
+do not qualify P4 CPU/audio deadlines or audible hardware performance.
 
 ## Provenance and rollback
 

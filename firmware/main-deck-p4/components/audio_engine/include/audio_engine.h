@@ -383,6 +383,8 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
 #if defined(AUDIO_ENGINE_PC_TEST)
 typedef void (*audio_engine_limiter_publish_test_hook_t)(void);
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
+/* Advances the real decoder without rewinding; -1 means EOF/invalid deck. */
+int audio_engine_test_decode_frame(uint8_t deck);
 bool audio_engine_test_snapshot_beat_fx_time_command(
     uint8_t deck,
     audio_delay_fx_config_t *out_config);

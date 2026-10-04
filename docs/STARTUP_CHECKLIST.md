@@ -62,6 +62,11 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   export with whole-second PDB rounding. Check zoom/preview alignment and tail
   playback; missing or capped PWV3 must retain the fallback. Physical acceptance:
   **NOT RUN**.
+- [ ] B17: play CBR/VBR MP3 without Xing/VBRI from the beginning through the
+  final audio tail, with both short and long analysis spans. Check EOF drain,
+  remaining time, rewind and seek/loop cancellation of duration measurement.
+  Read faults must not publish a successful measured EOF. Physical/listening
+  acceptance: **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

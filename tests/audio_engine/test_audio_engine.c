@@ -1533,6 +1533,64 @@ static void test_deck_loops_are_independent(void)
            "invalid deck loop read returns INVALID_ARG");
 }
 
+static void test_mp3_measured_eof_without_xing(void)
+{
+    const char *path = "measured_eof.mp3";
+    const char *wav = "measured_eof.wav";
+    EXPECT(audio_engine_init() == ESP_OK, "MP3 EOF resets engine");
+    for (unsigned variant = 0u; variant < 2u; ++variant) {
+        FILE *fp = fopen(path, "wb");
+        EXPECT(fp != NULL, "MP3 EOF fixture opens");
+        if (!fp) return;
+        /* Valid silent Layer III frames with no Xing/VBRI. The second fixture
+         * varies bitrate and carries both an ID3v2 prefix and trailing junk. */
+        if (variant) {
+            const unsigned char id3[10] = {'I','D','3',4,0,0,0,0,0,16};
+            fwrite(id3, 1u, sizeof(id3), fp);
+            for (unsigned i = 0u; i < 16u; ++i) fputc(0, fp);
+        }
+        for (unsigned i = 0u; i < 80u; ++i) {
+            unsigned char frame[522] = {0xff, 0xfb, 0x90, 0x00};
+            size_t size = 417u; /* 128 kbps / 44.1 kHz */
+            if (variant && (i & 1u)) { frame[2] = 0xa0; size = 522u; }
+            fwrite(frame, 1u, size, fp);
+        }
+        if (variant) for (unsigned i = 0u; i < 32u; ++i) fputc(0, fp);
+        fclose(fp);
+        uint32_t metadata_ms = variant ? 10000u : 100u;
+        EXPECT(audio_engine_deck_load(0, path, NULL, metadata_ms) == ESP_OK,
+               "MP3 EOF loads inaccurate metadata duration");
+        EXPECT(audio_engine_decode_to_wav(wav, 0u) == ESP_OK,
+               "MP3 EOF decodes full fixture");
+        uint32_t hz = 0u, bytes = 0u;
+        uint16_t channels = 0u;
+        EXPECT(wav_is_valid(wav, &hz, &channels, &bytes), "MP3 EOF output WAV valid");
+        EXPECT(hz == 44100u && channels == 2u && bytes > 0u, "MP3 EOF output has audio frames");
+        audio_engine_deck_status_t status = {0};
+        EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK, "MP3 EOF status readable");
+        uint32_t measured = hz ? (uint32_t)((uint64_t)bytes * 1000u / (hz * 4u)) : 0u;
+        EXPECT(measured > 2000u && measured < 2200u, "MP3 EOF fixture length is independent of metadata");
+        EXPECT(status.duration_ms == measured, "MP3 EOF duration matches actual output frame count");
+        EXPECT(status.analysis_span_ms == metadata_ms, "MP3 EOF preserves original analysis span");
+        EXPECT(audio_engine_deck_stop(0) == ESP_OK, "MP3 EOF retires session");
+        if (variant) {
+            EXPECT(audio_engine_deck_load(0, path, NULL, 10000u) == ESP_OK,
+                   "MP3 EOF replacement starts a new measurement");
+            EXPECT(audio_engine_test_decode_frame(0) > 0, "MP3 EOF starts partial measurement");
+            EXPECT(audio_engine_deck_seek(0, 1000u) == ESP_OK, "MP3 EOF seek withdraws measurement authority");
+            unsigned steps = 0u;
+            while (steps++ < 200u && audio_engine_test_decode_frame(0) >= 0) {}
+            EXPECT(steps < 200u, "MP3 EOF discontinuous decode terminates");
+            EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK &&
+                   status.duration_ms == 10000u,
+                   "MP3 EOF after seek retains fallback instead of publishing a partial count");
+            EXPECT(audio_engine_deck_stop(0) == ESP_OK, "MP3 EOF discontinuous session retires");
+        }
+        remove(wav);
+    }
+    remove(path);
+}
+
 /* ── Test 10: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
@@ -1606,6 +1664,7 @@ int main(int argc, char *argv[])
     test_missing_timeline_keeps_ring_playback_and_disables_scratch();
     test_wav_load_populates_deck_metadata();
     test_duration_status_keeps_analysis_and_session_separate();
+    test_mp3_measured_eof_without_xing();
     test_wav_decode_to_wav_preserves_pcm();
     test_pfl_state_api();
     test_cue_mode_api();

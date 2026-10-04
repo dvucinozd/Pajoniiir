@@ -575,8 +575,35 @@ static void test_runtime_extension(void)
     assert(audio_track_length_at_eof(LIE_SPAN_MS, LIE_SPAN_MS, LIE_REAL_MS, false) == LIE_REAL_MS);
 }
 
+static void test_decoder_length_authority(void)
+{
+    audio_track_decode_length_t m;
+    audio_track_decode_length_begin(&m);
+    assert(audio_track_decode_length_ms(&m) == 0u);
+    audio_track_decode_length_add(&m, 44100u, 44100u);
+    assert(audio_track_decode_length_ms(&m) == 1000u);
+    audio_track_decode_length_add(&m, 22050u, 44100u);
+    assert(audio_track_decode_length_ms(&m) == 1500u);
+    audio_track_decode_length_invalidate(&m); /* seek, loop or read fault */
+    audio_track_decode_length_add(&m, 44100u, 44100u);
+    assert(audio_track_decode_length_ms(&m) == 0u);
+    audio_track_decode_length_begin(&m); /* actual rewind, not estimated seek */
+    audio_track_decode_length_add(&m, 48000u, 48000u);
+    assert(audio_track_decode_length_ms(&m) == 1000u);
+    audio_track_decode_length_add(&m, 44100u, 44100u);
+    assert(audio_track_decode_length_ms(&m) == 0u); /* mixed sample rate */
+    audio_track_decode_length_begin(&m);
+    audio_track_decode_length_add(&m, 1u, 0u);
+    assert(audio_track_decode_length_ms(&m) == 0u);
+    m = (audio_track_decode_length_t){.frames = UINT64_MAX, .hz = 44100u, .anchored = true};
+    assert(audio_track_decode_length_ms(&m) == 0u);
+    audio_track_decode_length_add(&m, 1u, 44100u);
+    assert(!m.anchored);
+}
+
 int main(void)
 {
+    test_decoder_length_authority();
     test_header_duration();
     test_hw_table_extrapolates_to_eof();
     test_resolve();

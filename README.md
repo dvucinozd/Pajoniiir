@@ -16,7 +16,7 @@ MAIN/cue smoke passed; physical non-FLX4 qualification remains open.
 an isolated development branch. Packages A and C are software verified on the
 current P4 target; package B has verified B1-B12 steps and a VINYL/CDJ core
 extension and touch selector (B13a-B13b), plus session-bound UI/search duration (B14-B15)
-and validated PWV3 analysis timing (B16),
+validated PWV3 analysis timing (B16) and sequential MP3 EOF measurement (B17),
 with open work. JC1060,
 DDJ-400 and Pro DJ Link are planned;
 their hardware acceptance has not run.

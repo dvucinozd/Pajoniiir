@@ -312,6 +312,7 @@ typedef struct {
     uint32_t analysis_span_ms;
     /* Best known file length, used for seek bounds and tail extrapolation. */
     uint32_t duration_ms;
+    audio_track_decode_length_t mp3_decode_length;
     /* Captured by the LOAD owner; status readers never wait on a loader join. */
     uint32_t loaded_session_generation;
     audio_pvbr_geometry_t pvbr_geom;
@@ -2146,6 +2147,12 @@ static int ae_flac_decode_one_frame(audio_engine_state_t *eng,
  * Internal helpers
  * ═════════════════════════════════════════════════════════════════════════ */
 
+static void ae_mp3_measure_eof(audio_engine_state_t *eng)
+{
+    uint32_t measured_ms = audio_track_decode_length_ms(&eng->mp3_decode_length);
+    if (measured_ms > 0u) eng->duration_ms = measured_ms;
+}
+
 /*
  * decode_one_frame — read + decode one MP3 frame from a deck engine.
  *
@@ -2197,7 +2204,10 @@ static int decode_one_frame(
 
     if (!fw || !fw->load_done || atomic_load_bool(&eng->eof) ||
         eng->file_pos >= eng->file_size) {
-        if (eng->file_pos >= eng->file_size) atomic_store_bool(&eng->eof, true);
+        if (eng->file_pos >= eng->file_size && !atomic_load_bool(&eng->eof)) {
+            ae_mp3_measure_eof(eng);
+            atomic_store_bool(&eng->eof, true);
+        }
         return 0;
     }
 
@@ -2237,6 +2247,8 @@ static int decode_one_frame(
     long pos_before = ftell(eng->fp);
     size_t got = fread(input, 1u, sizeof(input), eng->fp);
     if (got == 0u) {
+        if (!ferror(eng->fp)) ae_mp3_measure_eof(eng);
+        else audio_track_decode_length_invalidate(&eng->mp3_decode_length);
         atomic_store_bool(&eng->eof, true);
         return 0;
     }
@@ -2257,6 +2269,11 @@ static int decode_one_frame(
                  info.hz, info.channels, info.bitrate_kbps);
     }
 #endif
+
+    audio_track_decode_length_add(&eng->mp3_decode_length,
+                                  (uint32_t)samples, (uint32_t)info.hz);
+    uint32_t decoded_ms = audio_track_decode_length_ms(&eng->mp3_decode_length);
+    if (decoded_ms > eng->duration_ms) eng->duration_ms = decoded_ms;
 
     if (info.channels == 1) {
         for (int i = samples - 1; i >= 0; --i) {
@@ -3015,6 +3032,10 @@ static void ae_decode_task(void *arg)
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
                     (void)ae_flac_seek_to_ms(eng, fw, ctx->deck,
                                              decode_target_ms);
+                } else if (decode_target_ms == 0u) {
+                    /* Restart from the actual audio start even if a legacy
+                     * PVBR first entry already points into the file. */
+                    seek_estimate(eng, 0u);
                 } else if (eng->has_pvbr) {
                     uint32_t entry_ms = seek_pvbr(eng, decode_target_ms);
                     if (seek_reason != AE_SEEK_REASON_LOOP &&
@@ -3025,6 +3046,12 @@ static void ae_decode_task(void *arg)
                     }
                 } else {
                     seek_estimate(eng, decode_target_ms);
+                }
+                if (eng->format != AUDIO_FORMAT_WAV && eng->format != AUDIO_FORMAT_FLAC) {
+                    if (decode_target_ms == 0u && eng->file_pos <= eng->mp3_audio_start)
+                        audio_track_decode_length_begin(&eng->mp3_decode_length);
+                    else
+                        audio_track_decode_length_invalidate(&eng->mp3_decode_length);
                 }
                 eng->seek_base_ms      = decode_target_ms;
                 eng->frames_since_seek = 0u;
@@ -4360,6 +4387,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 #endif
 
     eng->duration_ms = duration_ms;
+    audio_track_decode_length_begin(&eng->mp3_decode_length);
     eng->pvbr_geom = (audio_pvbr_geometry_t){0};
     eng->mp3_audio_start = 0u;
     eng->pvbr_geometry_exact = false;
@@ -4746,6 +4774,7 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
     eng->seek_target_ms = position_ms;
     eng->seek_reason    = (uint8_t)reason;
     eng->seek_requested = true;
+    audio_track_decode_length_invalidate(&eng->mp3_decode_length);
     atomic_store_bool(&eng->eof, false); /* also wakes decode thread if at EOF */
     atomic_store_bool(&eng->playback_finished, false);
     eng->output_base_ms = position_ms;
@@ -6433,12 +6462,19 @@ static void wav_write_header(FILE      *wav,
     fwrite(&pcm_bytes,   4, 1, wav);
 }
 
-/*
- * audio_engine_decode_to_wav — decode the loaded track to a WAV file.
- *
- * @param wav_path        Output path (will be created/truncated).
- * @param max_duration_ms Stop after this many ms of audio (0 = entire track).
- */
+int audio_engine_test_decode_frame(uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return -1;
+    int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+    AE_LOCK();
+    audio_engine_state_t *eng = &s_engines[deck];
+    int n = eng->loaded ? decode_one_frame(eng, pcm) : 0;
+    bool done = !eng->loaded || atomic_load_bool(&eng->eof);
+    AE_UNLOCK();
+    return done ? -1 : n;
+}
+
+/* Decode the loaded track to a WAV file. max_duration_ms = 0 exports it all. */
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms)
 {
     audio_engine_state_t *eng = &s_engines[AE_DECK_0];
@@ -6472,6 +6508,8 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
     eng->frames_since_seek = 0u;
     atomic_store_bool(&eng->eof, false);
 
+    audio_track_decode_length_begin(&eng->mp3_decode_length);
+
     int16_t  pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
     uint32_t pcm_bytes   = 0u;
     uint32_t sample_rate = 0u;
@@ -6484,7 +6522,8 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
         bool eof = atomic_load_bool(&eng->eof);
         AE_UNLOCK();
 
-        if (eof || samples <= 0) break;
+        if (eof) break;
+        if (samples <= 0) continue;
 
         /* Latch format on first real audio frame */
         if (sample_rate == 0u && eng->sample_rate > 0u) {
