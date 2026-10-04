@@ -24,6 +24,12 @@ evidence does not qualify DDJ-400 sound or FLX4 hardware regression.
 
 ## Production release
 
+[Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
+adds an explicit recorder experiment and default-off SD idle workaround.
+Ordinary release builds remain recorder-free and retain original SD idle wait.
+Software tests/builds do not establish SD performance, power-loss durability
+or audible acceptance; all physical G gates are NOT RUN.
+
 The isolated fork-improvements branch has software-verified packages A, B and
 C on JC4880. [Package B closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
 records B1-B19 and all physical gates as NOT RUN. This is development evidence,

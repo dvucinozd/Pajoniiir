@@ -4,6 +4,12 @@ Status: **M2.4 released; M2.5 USB recovery and additional-controller work**.
 
 ## Current baseline
 
+[Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
+provides isolated SD idle/DMA A/B experiments, bounded diagnostics and recorder
+fault/ownership tests. Regular builds keep recorder and SD wait experiments off.
+Card latency, fault injection and MAIN/cue listening remain NOT RUN; acceptance
+requires exact-image measurements. H is the next presentation package.
+
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5
 `05296b8` and does not merge the separate APTA branch or change M2.4 production.

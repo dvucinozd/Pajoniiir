@@ -17,6 +17,14 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md):
+  all card/recording/audio gates NOT RUN. Record board, card model/capacity and
+  exact image; compare idle-on/off and JC1060 internal/PSRAM+bounce builds.
+  Test full card, removal, power loss, STOP timeout and `.part` recovery;
+  capture SD/gate/fsync, heap/stack and strict audio/USB counters with listening.
+  Keep recorder and SD workaround off in ordinary releases. Ignore COM devices
+  from other projects; future installation uses authorized OTA only.
+
 - [ ] [Package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md):
   JC1060 bring-up is NOT RUN. Verify panel/revision, flash/PSRAM, USB roles,
   touch/render, SD and Ethernet. Do not enable PCM5102A: pins overlap Ethernet.

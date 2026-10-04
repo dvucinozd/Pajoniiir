@@ -1972,11 +1972,87 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_recorder_sink"
+        Dir = "tests/audio_recorder_sink"
+        Target = "test_audio_recorder_sink.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-D_POSIX_C_SOURCE=200809L", "-DSD_IO_GATE_STANDALONE_TEST",
+            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/audio_recorder",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include", "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "test_audio_recorder_sink.c", "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_wav.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c",
+            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c", "-o", "test_audio_recorder_sink.exe"
+        )
+    },
+    @{
+        Name = "sd_dma"
+        Dir = "tests/sd_dma"
+        Target = "test_sd_dma.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-Istubs", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/board_adapter/include",
+            "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
+            "test_sd_dma.c", "../../firmware/main-deck-p4/components/board_adapter/board_sd_dma.c",
+            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_transfer_stats.c",
+            "-o", "test_sd_dma.exe"
+        )
+    },
+    @{
+        Name = "sd_idle_wrapper_on"
+        Dir = "tests/sd_idle_wait"
+        Target = "test_sd_idle_wrapper_on.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-DCONFIG_PAJONIIIR_SD_IDLE_WAIT=1",
+            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
+            "test_sd_idle_wrapper.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait.c",
+            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_on.exe"
+        )
+    },
+    @{
+        Name = "sd_idle_wrapper_off"
+        Dir = "tests/sd_idle_wait"
+        Target = "test_sd_idle_wrapper_off.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-DCONFIG_PAJONIIIR_SD_IDLE_WAIT=0",
+            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
+            "test_sd_idle_wrapper.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait.c",
+            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_off.exe"
+        )
+    },
+    @{
+        Name = "sd_idle_wait"
+        Dir = "tests/sd_idle_wait"
+        Target = "test_sd_idle_wait.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror",
+            "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
+            "test_sd_idle_wait.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c",
+            "-o", "test_sd_idle_wait.exe"
+        )
+    },
+    @{
+        Name = "audio_recorder_runtime"
+        Dir = "tests/audio_recorder_runtime"
+        Target = "test_audio_recorder_runtime.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-DSD_IO_GATE_STANDALONE_TEST",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/audio_recorder",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "test_audio_recorder_runtime.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_ring.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c",
+            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c",
+            "-o", "test_audio_recorder_runtime.exe"
+        )
+    },
+    @{
         Name = "sd_io_gate"
         Dir = "tests/sd_io_gate"
         Target = "test_sd_io_gate.exe"
         Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99", "-pthread",
             "-DSD_IO_GATE_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
             "-o", "test_sd_io_gate.exe",
@@ -3451,9 +3527,9 @@ Assert-FileContains `
     -LiteralPatterns @("# CONFIG_AUDIO_RECORDER_ENABLED is not set")
 
 Assert-FileContains `
-    -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
+    -Name "p4 recorder requires an explicit storage experiment" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
-    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
+    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED AND", "CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD", "PAJONIIIR_STORAGE_EXPERIMENT", "release enablement remains blocked")
 
 Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `

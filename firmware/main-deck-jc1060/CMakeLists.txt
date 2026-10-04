@@ -34,7 +34,7 @@ set(PAJONIIIR_SHARED_COMPONENTS
     controller_led_runtime controller_profile controller_profile_manager
     controller_profile_runtime controller_runtime controller_usb_audio controller_usb_host
     deck_core fatfs hot_cue_store library media_catalog media_identity media_io_gate
-    p4_local_controller p4_ota p4_ota_pull p4_ota_pull_core sd_io_gate service_log ui
+    p4_local_controller p4_ota p4_ota_pull p4_ota_pull_core sd_io_gate sd_idle_wait service_log ui
     usb_host_manager usb_storage web_server wifi_link wifi_transition_lease)
 set(EXTRA_COMPONENT_DIRS)
 foreach(component IN LISTS PAJONIIIR_SHARED_COMPONENTS)
@@ -44,6 +44,12 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
     "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest")
+if(PAJONIIIR_STORAGE_EXPERIMENT)
+    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.storage_experiment")
+    if(PAJONIIIR_STORAGE_VARIANT)
+        list(APPEND SDKCONFIG_DEFAULTS "${PAJONIIIR_STORAGE_VARIANT}")
+    endif()
+endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(main-deck-jc1060)
 if(NOT CONFIG_PAJONIIIR_BOARD_JC1060)

@@ -1,0 +1,10 @@
+SD idle compatibility component
+Copyright 2025-2026 p3a Contributors
+Apache-2.0; see LICENSE.
+
+Adapted from kayrozen/Pajoniiir commit
+428b97dd4a175f03d3a172c8db9c4d5ed94195fb, firmware v323.
+Donor component originally adapted the p3a yielding SDMMC wait for IDF 6.0.2.
+Pajoniiir changes: shared board component, optional default-off configuration,
+callback-testable polling, bounded counters and sector transfer diagnostics.
+Donor timing claims are not hardware acceptance for this project.

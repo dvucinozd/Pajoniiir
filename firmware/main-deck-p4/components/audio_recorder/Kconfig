@@ -1,5 +1,9 @@
 menu "Audio Recorder (P4 master output)"
 
+config AUDIO_RECORDER_EXPERIMENTAL_BUILD
+    bool "Opt in to experimental storage/recorder firmware"
+    default n
+
 config AUDIO_RECORDER_ENABLED
     bool "Enable the master-output microSD recorder"
     default n

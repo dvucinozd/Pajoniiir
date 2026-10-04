@@ -17,6 +17,14 @@ with physical acceptance pending; the production baseline above is unchanged.
 
 ## High-Level Flow
 
+Development package G preserves the FAT and media locks, adding a long-operation
+reservation shared by REC and future download workers. START/STOP serialize;
+producer admission closes on loss, and timeout retains writer-owned resources.
+The producer performs no filesystem work. SD idle yielding is a default-off
+IDF 6.0.2 experiment; JC1060 PSRAM USB DMA requires internal SD bounce for both
+read/write. Saturating SD transfer/gate snapshots are optional Web status fields.
+See [G bounds and physical gates](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
+
 Development package E adds `main-deck-jc1060` with an explicit shared-component
 list and a thin wrapper around common P4 startup. `board_adapter` owns immutable
 capabilities and shared touch/codec/SD peripherals; display BSP and Ethernet

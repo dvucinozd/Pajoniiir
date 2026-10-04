@@ -32,6 +32,12 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
     "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest")
 
+if(PAJONIIIR_STORAGE_EXPERIMENT)
+    set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.storage_experiment")
+    if(PAJONIIIR_STORAGE_VARIANT)
+        list(APPEND SDKCONFIG_DEFAULTS "${PAJONIIIR_STORAGE_VARIANT}")
+    endif()
+endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(main-deck-p4)
 

@@ -46,6 +46,12 @@ function Read-TargetBuild {
         throw "Missing build metadata: $descriptionPath"
     }
     $description = Get-Content -LiteralPath $descriptionPath -Raw | ConvertFrom-Json
+    $configPath = Join-Path $buildDir "config/sdkconfig.h"
+    if (-not (Test-Path -LiteralPath $configPath)) { throw "Missing build configuration: $configPath" }
+    $configText = Get-Content -LiteralPath $configPath -Raw
+    if ($configText -match '(?m)^#define CONFIG_(AUDIO_RECORDER_ENABLED|AUDIO_RECORDER_EXPERIMENTAL_BUILD|PAJONIIIR_SD_IDLE_WAIT) 1\r?$') {
+        throw "Storage experiment images cannot be packaged as a production OTA release"
+    }
     if ($description.project_name -ne $ExpectedProject) {
         throw "Wrong project in ${descriptionPath}: $($description.project_name)"
     }

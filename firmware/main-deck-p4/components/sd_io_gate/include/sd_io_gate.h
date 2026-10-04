@@ -37,7 +37,17 @@ typedef enum {
     SD_IO_CLASS_FREE_SPACE,       /* free-space / status query */
     SD_IO_CLASS_PROFILE_UPLOAD,   /* large web controller-profile upload */
     SD_IO_CLASS_LOG_DOWNLOAD,     /* full diagnostic-log stream */
+    SD_IO_CLASS_TRACK_DOWNLOAD,   /* remote audio/cache writer */
 } sd_io_class_t;
+
+typedef enum { SD_ACTIVITY_NONE, SD_ACTIVITY_RECORDER, SD_ACTIVITY_DOWNLOAD } sd_io_activity_t;
+/* Atomic reservation spans STARTING/RECORDING/STOP cleanup or the entire
+ * download transaction. Acquiring the FAT mutex is not an activity reservation. */
+bool sd_io_gate_reserve(sd_io_activity_t activity);
+void sd_io_gate_release(sd_io_activity_t activity);
+sd_io_activity_t sd_io_gate_activity(void);
+typedef struct { uint32_t waits, timeouts, max_wait_us, max_hold_us; } sd_io_gate_stats_t;
+void sd_io_gate_get_stats(sd_io_gate_stats_t *out);
 
 /* Create the arbiter mutex (idempotent). */
 esp_err_t sd_io_gate_init(void);

@@ -34,6 +34,32 @@ $Python = Resolve-OtaSigningPython
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) `
     ("pajoniiir-ota-publish-test-" + [guid]::NewGuid().ToString("N"))
 try {
+    # Execute the actual packaging reader without running signing/publication.
+    $tokens = $null; $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $RepoRoot 'tools/package_ota_release.ps1'), [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw 'Packaging script parse failure' }
+    $reader = $ast.Find({ param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Read-TargetBuild'
+    }, $true)
+    $definition = [scriptblock]::Create($reader.Extent.Text)
+    $buildFixture = Join-Path $tempRoot 'firmware/main-deck-p4/build_test'
+    New-Item -ItemType Directory -Path (Join-Path $buildFixture 'config') -Force | Out-Null
+    '{"project_name":"main-deck-p4","app_bin":"missing.bin"}' |
+        Set-Content -LiteralPath (Join-Path $buildFixture 'project_description.json')
+    foreach ($flag in @('AUDIO_RECORDER_ENABLED','AUDIO_RECORDER_EXPERIMENTAL_BUILD','PAJONIIIR_SD_IDLE_WAIT')) {
+        "#define CONFIG_$flag 1" | Set-Content -LiteralPath (Join-Path $buildFixture 'config/sdkconfig.h')
+        $rejected = $false
+        try {
+            & { param($RepoRoot,$definition)
+                $BuildName = 'build_test'; . $definition
+                Read-TargetBuild -RelativeProjectDir 'firmware/main-deck-p4' -ExpectedProject 'main-deck-p4' -ExpectedChipId 0x12 -SlotSize 0x380000
+            } $tempRoot $definition | Out-Null
+        } catch {
+            $rejected = $_.Exception.Message -match 'Storage experiment images cannot be packaged'
+        }
+        if (-not $rejected) { throw "Production packager accepted CONFIG_$flag" }
+    }
     $releaseDir = Join-Path $tempRoot "directory-name-must-not-be-the-release"
     New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
     $privateKey = Join-Path $tempRoot "private.pem"

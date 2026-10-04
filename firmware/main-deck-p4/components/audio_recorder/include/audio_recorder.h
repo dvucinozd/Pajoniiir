@@ -57,6 +57,7 @@ typedef struct {
      * a long fwrite call for entirely different fixes. */
     uint32_t gate_wait_max_us; /* worst wait for the shared SD gate */
     uint32_t fwrite_max_us;    /* worst raw fwrite once the gate was held */
+    uint32_t fsync_max_us;     /* flush + sync, worker context only */
     esp_err_t last_error;      /* last error that stopped/failed a session */
 } audio_recorder_status_t;
 

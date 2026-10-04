@@ -6,7 +6,7 @@ import struct
 import re
 
 
-def verify(build: Path, project: str) -> None:
+def verify(build: Path, project: str, experimental_recorder: bool = False) -> None:
     description = json.loads((build / "project_description.json").read_text())
     assert description["project_name"] == project, "wrong configured project"
     assert description["target"] == "esp32p4", "wrong silicon target"
@@ -17,6 +17,16 @@ def verify(build: Path, project: str) -> None:
     assert ("board_ethernet" in components) == jc1060, "wrong Ethernet transport"
     assert {"board_adapter", "audio_engine", "deck_core", "library", "ui"} <= components
     config = (build / "config/sdkconfig.h").read_text()
+    recorder = "#define CONFIG_AUDIO_RECORDER_ENABLED 1" in config
+    experiment = "#define CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD 1" in config
+    assert recorder == experiment == experimental_recorder, "experimental recorder in wrong build class"
+    if not experimental_recorder:
+        assert "#define CONFIG_PAJONIIIR_SD_IDLE_WAIT 1" not in config, "unqualified SD experiment in ordinary build"
+    psram_dma = "#define CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM 1" in config
+    if psram_dma:
+        assert experimental_recorder, "PSRAM DMA is an unqualified storage experiment"
+        assert jc1060, "JC4880 USB DMA policy must stay internal"
+        assert "#define CONFIG_PAJONIIIR_SD_INTERNAL_BOUNCE 1" in config, "PSRAM USB DMA requires internal SD bounce"
     assert ("#define CONFIG_PAJONIIIR_BOARD_JC1060 1" in config) == jc1060
     if jc1060:
         assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" not in config, "Ethernet pin conflict"
@@ -39,5 +49,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--project", choices=["main-deck-p4", "main-deck-jc1060"], required=True)
+    parser.add_argument("--experimental-recorder", action="store_true")
     args = parser.parse_args()
-    verify(args.build, args.project)
+    verify(args.build, args.project, args.experimental_recorder)

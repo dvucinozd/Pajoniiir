@@ -1,0 +1,9 @@
+menu "Pajoniiir storage compatibility"
+config PAJONIIIR_SD_IDLE_WAIT
+    bool "Experimental yielding SDMMC idle wait (IDF 6.0.2)"
+    default n
+    help
+        One CMD13 per tick instead of a command storm. Keep off in ordinary
+        builds until SD latency and audio/USB A/B hardware acceptance passes.
+        SPI uses the original implementation. An IDF upgrade requires review.
+endmenu

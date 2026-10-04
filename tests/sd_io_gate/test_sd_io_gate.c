@@ -8,6 +8,21 @@
 #include "sd_io_gate.h"
 
 #include <stdio.h>
+#include <pthread.h>
+#include <stdint.h>
+static unsigned owners, collisions;
+static void *reservation_worker(void *arg)
+{
+    sd_io_activity_t activity = (sd_io_activity_t)(uintptr_t)arg;
+    for (unsigned i = 0; i < 10000; ++i) {
+        while (!sd_io_gate_reserve(activity)) {}
+        if (__atomic_add_fetch(&owners, 1u, __ATOMIC_SEQ_CST) != 1u)
+            __atomic_add_fetch(&collisions, 1u, __ATOMIC_RELAXED);
+        __atomic_sub_fetch(&owners, 1u, __ATOMIC_SEQ_CST);
+        sd_io_gate_release(activity);
+    }
+    return NULL;
+}
 
 static int s_failures = 0;
 
@@ -74,6 +89,23 @@ static void test_recorder_flag(void)
 
 int main(void)
 {
+    CHECK(!sd_io_gate_reserve(SD_ACTIVITY_NONE));
+    CHECK(sd_io_gate_reserve(SD_ACTIVITY_DOWNLOAD));
+    CHECK(!sd_io_gate_reserve(SD_ACTIVITY_RECORDER));
+    sd_io_gate_release(SD_ACTIVITY_RECORDER);
+    CHECK(sd_io_gate_activity() == SD_ACTIVITY_DOWNLOAD);
+    sd_io_gate_release(SD_ACTIVITY_DOWNLOAD);
+    CHECK(sd_io_gate_reserve(SD_ACTIVITY_RECORDER));
+    CHECK(sd_io_gate_recorder_active());
+    CHECK(!sd_io_gate_admit(SD_IO_CLASS_TRACK_DOWNLOAD, true));
+    CHECK(!sd_io_gate_reserve(SD_ACTIVITY_DOWNLOAD));
+    sd_io_gate_release(SD_ACTIVITY_RECORDER);
+    CHECK(sd_io_gate_activity() == SD_ACTIVITY_NONE);
+    pthread_t recorder, download;
+    CHECK(pthread_create(&recorder, NULL, reservation_worker, (void *)(uintptr_t)SD_ACTIVITY_RECORDER) == 0);
+    CHECK(pthread_create(&download, NULL, reservation_worker, (void *)(uintptr_t)SD_ACTIVITY_DOWNLOAD) == 0);
+    CHECK(pthread_join(recorder, NULL) == 0 && pthread_join(download, NULL) == 0);
+    CHECK(!owners && !collisions && sd_io_gate_activity() == SD_ACTIVITY_NONE);
     printf("=== sd_io_gate tests ===\n");
     test_admit_idle();
     test_admit_recording();

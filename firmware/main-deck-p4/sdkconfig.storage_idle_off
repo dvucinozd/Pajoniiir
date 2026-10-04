@@ -1,0 +1,2 @@
+# Only delta against storage_experiment: retain original SD idle wait.
+# CONFIG_PAJONIIIR_SD_IDLE_WAIT is not set

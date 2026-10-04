@@ -29,6 +29,10 @@ new layouts and Link await H/I.
 adds bounded UAC1 16/24-bit formats and USB-paced MAIN/cue routing. JC1060
 uses USB output; JC4880 retains PCM5102A by default. Hardware audio/reconnect
 acceptance remains NOT RUN.
+[Package G](docs/validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
+adds isolated SDMMC A/B builds, SD/gate diagnostics and a fail-closed experimental
+recorder. Recorder and SD workaround remain disabled in ordinary builds;
+physical card latency, power-loss and audio acceptance are NOT RUN.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

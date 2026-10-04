@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_idf_version.h"
+#include "board_sd_dma.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -485,6 +486,12 @@ esp_err_t bsp_sd_init(void)
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.slot = SDMMC_HOST_SLOT_0;          // JC4880 SD pins GPIO39-44 are wired to P4 SDMMC slot 0
     host.max_freq_khz = SDMMC_FREQ_DEFAULT;   // conservative 20 MHz bring-up speed
+#if CONFIG_PAJONIIIR_SD_INTERNAL_BOUNCE
+    if (board_sd_dma_configure(&host, true) != ESP_OK) {
+        ESP_LOGE(TAG, "SD internal bounce allocation failed; /sd remains unavailable");
+        return ESP_OK; /* Keep USB playback; do not mount with unsafe policy. */
+    }
+#endif
 #if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && \
     ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
     host.init = bsp_sdmmc_host_already_initialized;

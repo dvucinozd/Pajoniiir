@@ -19,6 +19,8 @@
 #include "library_validation_gate.h"
 #include "audio_load_validation_gate.h"
 #include "sd_io_gate.h"
+#include "sd_idle_wait.h"
+#include "sd_transfer_stats.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
 #endif
@@ -1018,7 +1020,7 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      "\"bytes_written\":%llu,\"frames_written\":%llu,"
                      "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
                      "\"write_max_us\":%u,\"writes_over_100ms\":%u,"
-                     "\"gate_wait_max_us\":%u,\"fwrite_max_us\":%u,"
+                     "\"gate_wait_max_us\":%u,\"fwrite_max_us\":%u,\"fsync_max_us\":%u,"
                      "\"last_error\":%d}",
                      recording_state_name(st.state), (unsigned)st.sample_rate,
                      (unsigned)st.ring_used, (unsigned)st.ring_capacity,
@@ -1029,7 +1031,7 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      (unsigned)st.push_count, (unsigned)st.push_max_us,
                      (unsigned)st.push_over_100us,
                      (unsigned)st.write_max_us, (unsigned)st.writes_over_100ms,
-                     (unsigned)st.gate_wait_max_us, (unsigned)st.fwrite_max_us,
+                     (unsigned)st.gate_wait_max_us, (unsigned)st.fwrite_max_us, (unsigned)st.fsync_max_us,
                      (int)st.last_error);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -1616,11 +1618,20 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 
     controller_usb_audio_stream_stats_t uac_format;
     controller_usb_audio_stream_get_stats(&uac_format);
+    sd_idle_wait_stats_t sd_wait;
+    sd_transfer_stats_t sd_transfer;
+    sd_io_gate_stats_t sd_gate;
+    sd_idle_wait_get_stats(&sd_wait);
+    sd_transfer_get_stats(&sd_transfer);
+    sd_io_gate_get_stats(&sd_gate);
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
         "{"
         "\"main_sink\":\"%s\","
+        "\"sd_metrics\":{\"idle_waits\":%u,\"idle_polls\":%u,\"idle_timeouts\":%u,\"idle_errors\":%u,\"idle_max_us\":%u,"
+        "\"reads\":%u,\"writes\":%u,\"transfer_errors\":%u,\"read_max_us\":%u,\"write_max_us\":%u,"
+        "\"gate_waits\":%u,\"gate_timeouts\":%u,\"gate_wait_max_us\":%u,\"gate_hold_max_us\":%u,\"activity\":%u},"
         "\"uac_format\":{\"sample_rate\":%u,\"bits\":%u,\"consumer_paced\":%s,\"queued_us\":%u},"
         "\"deck1\":{"
         "\"title\":\"%s\","
@@ -1738,6 +1749,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "}"
         "}",
         audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
+        sd_wait.waits, sd_wait.polls, sd_wait.timeouts, sd_wait.errors, sd_wait.max_wait_us,
+        sd_transfer.reads, sd_transfer.writes, sd_transfer.errors, sd_transfer.read_max_us, sd_transfer.write_max_us,
+        sd_gate.waits, sd_gate.timeouts, sd_gate.max_wait_us, sd_gate.max_hold_us, (unsigned)sd_io_gate_activity(),
         (unsigned)uac_format.sample_rate, (unsigned)uac_format.bits_per_sample,
         uac_format.consumer_paced ? "true" : "false",
         uac_format.sample_rate ? (unsigned)((uint64_t)uac_format.ring_queued_frames * 1000000u / uac_format.sample_rate) : 0u,

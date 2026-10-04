@@ -1,9 +1,10 @@
-# The recorder remains compiled out of release firmware until the independent
-# STOP/finalize ownership audit and fault-injection plan are completed. Keep the
+# The recorder remains compiled out of release firmware until physical SD
+# fault-injection and audio acceptance are completed. Keep the
 # guard here, next to the component, so an accidental sdkconfig change cannot
 # silently ship the unfinished path.
-if(CONFIG_AUDIO_RECORDER_ENABLED)
-    message(FATAL_ERROR "Recorder is release-disabled pending physical SD fault-injection acceptance")
+if(CONFIG_AUDIO_RECORDER_ENABLED AND
+   (NOT CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD OR NOT PAJONIIIR_STORAGE_EXPERIMENT))
+    message(FATAL_ERROR "Recorder requires an explicit storage experiment build; release enablement remains blocked")
 endif()
 
 idf_component_register(SRCS "audio_recorder_wav.c"

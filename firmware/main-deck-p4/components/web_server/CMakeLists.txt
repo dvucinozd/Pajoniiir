@@ -2,7 +2,7 @@ set(WEB_SERVER_REQUIRES
     p4_ota_pull_core app_settings "audio_engine" "control_link" "ui"
     "media_catalog" "library" "esp_http_server" "esp_netif" "mdns" "deck_core"
     "controller_profile_manager" "p4_ota" "ota_manifest" "service_log"
-    "sd_io_gate" "audio_recorder" usb_host_manager controller_usb_host
+    "sd_io_gate" "sd_idle_wait" "audio_recorder" usb_host_manager controller_usb_host
     p4_local_controller usb_storage espcoredump controller_usb_audio)
 
 idf_component_register(SRCS "web_server.c" "dns_server.c" "dns_reply.c"

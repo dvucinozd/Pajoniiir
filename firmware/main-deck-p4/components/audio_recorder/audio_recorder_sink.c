@@ -17,6 +17,17 @@
 /* Write-cost split, writer-task owned. Reset by audio_recorder_sink_open(). */
 static uint32_t s_gate_wait_max_us = 0u;
 static uint32_t s_fwrite_max_us    = 0u;
+static _Atomic uint32_t s_fsync_max_us;
+uint32_t audio_recorder_sink_fsync_max_us(void) { return s_fsync_max_us; }
+static bool sync_file(FILE *fp)
+{
+    int64_t started = esp_timer_get_time();
+    bool ok = fflush(fp) == 0 && fsync(fileno(fp)) == 0;
+    int64_t duration = esp_timer_get_time() - started;
+    uint32_t us = duration <= 0 ? 0u : ((uint64_t)duration > UINT32_MAX ? UINT32_MAX : (uint32_t)duration);
+    if (us > s_fsync_max_us) s_fsync_max_us = us;
+    return ok;
+}
 
 void audio_recorder_sink_write_cost(uint32_t *out_gate_max_us,
                                     uint32_t *out_fwrite_max_us)
@@ -110,6 +121,7 @@ esp_err_t audio_recorder_sink_open(audio_recorder_sink_t *s, uint32_t sample_rat
 {
     s_gate_wait_max_us = 0u;
     s_fwrite_max_us = 0u;
+    s_fsync_max_us = 0u;
     if (!s || sample_rate == 0u) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -192,10 +204,9 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
      * the card were pulled and read elsewhere without this board ever booting
      * again, and finalize() still writes a correct header on the normal path. */
     sd_io_gate_begin();
-    int flush_rc = fflush(s->fp);
-    int sync_rc = flush_rc == 0 ? fsync(fileno(s->fp)) : -1;
+    bool synced = sync_file(s->fp);
     sd_io_gate_end();
-    return (flush_rc == 0 && sync_rc == 0) ? ESP_OK : ESP_FAIL;
+    return synced ? ESP_OK : ESP_FAIL;
 }
 
 typedef struct {
@@ -213,7 +224,7 @@ static bool recorder_finalize_patch(void *opaque)
 static bool recorder_finalize_sync(void *opaque)
 {
     recorder_finalize_ctx_t *ctx = (recorder_finalize_ctx_t *)opaque;
-    return fflush(ctx->sink->fp) == 0 && fsync(fileno(ctx->sink->fp)) == 0;
+    return sync_file(ctx->sink->fp);
 }
 
 static bool recorder_finalize_close(void *opaque)
@@ -299,53 +310,64 @@ static bool ends_with(const char *s, const char *suffix)
 }
 
 /* Recover a single orphan .wav.part. The caller holds sd_io_gate. */
-static void recover_one(const char *path)
+static bool recover_one(const char *path)
 {
     struct stat st;
     if (stat(path, &st) != 0) {
-        return;
+        return false;
     }
     uint32_t data_bytes = 0u;
     if (!audio_recorder_wav_recover_data_bytes((uint64_t)st.st_size, &data_bytes)) {
         remove(path);   /* no complete frame -> drop the empty placeholder */
-        return;
+        return false;
     }
 
     FILE *f = fopen(path, "r+b");
     if (!f) {
-        return;
+        return false;
     }
     uint8_t hdr[AUDIO_RECORDER_WAV_HEADER_BYTES];
     if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr) ||
         memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
         fclose(f);   /* not one of our placeholders; leave it alone */
-        return;
+        return false;
     }
-    audio_recorder_wav_patch_sizes(hdr, data_bytes);
-    fflush(f);
-    if (fseek(f, 0, SEEK_SET) == 0) {
-        (void)fwrite(hdr, 1, sizeof(hdr), f);
+    /* Reject foreign/corrupt PCM headers before rebuilding sizes. */
+    if (memcmp(hdr + 12, "fmt ", 4) != 0 || memcmp(hdr + 36, "data", 4) != 0 ||
+        hdr[16] != 16 || hdr[17] || hdr[18] || hdr[19] ||
+        hdr[20] != 1 || hdr[21] != 0 || hdr[22] != 2 || hdr[23] != 0 ||
+        hdr[32] != 4 || hdr[33] != 0 || hdr[34] != 16 || hdr[35] != 0) {
+        fclose(f); return false;
     }
-    fflush(f);
-    (void)ftruncate(fileno(f), (off_t)(AUDIO_RECORDER_WAV_HEADER_BYTES + data_bytes));
-    fsync(fileno(f));
-    fclose(f);
-
-    /* Publish as *.recovered.wav (never overwrite an existing final .wav). */
-    char final_path[AUDIO_RECORDER_SINK_PATH_MAX];
+    uint32_t rate = (uint32_t)hdr[24] | (uint32_t)hdr[25] << 8 |
+                    (uint32_t)hdr[26] << 16 | (uint32_t)hdr[27] << 24;
     const char *suffix = ".wav.part";
-    size_t plen = strlen(path);
-    size_t slen = strlen(suffix);
-    if (ends_with(path, suffix) &&
-        (plen - slen) + strlen(".recovered.wav") < sizeof(final_path)) {
-        memcpy(final_path, path, plen - slen);
-        final_path[plen - slen] = '\0';
-        strncat(final_path, ".recovered.wav",
-                sizeof(final_path) - strlen(final_path) - 1u);
-        if (rename(path, final_path) == 0) {
-            ESP_LOGI(TAG, "recovered %s (%u B)", final_path, (unsigned)data_bytes);
-        }
+    size_t plen = strlen(path), slen = strlen(suffix);
+    recorder_finalize_ctx_t ctx = {0};
+    if (!rate || !ends_with(path, suffix) ||
+        plen - slen + strlen(".recovered.wav") >= sizeof(ctx.final_path)) {
+        fclose(f); return false;
     }
+    memcpy(ctx.final_path, path, plen - slen);
+    strcat(ctx.final_path, ".recovered.wav");
+    if (stat(ctx.final_path, &st) == 0 || fflush(f) != 0 ||
+        ftruncate(fileno(f), (off_t)(AUDIO_RECORDER_WAV_HEADER_BYTES + data_bytes)) != 0) {
+        fclose(f); return false; /* No overwrite or publication after IO failure. */
+    }
+    audio_recorder_sink_t recovered = {
+        .fp = f, .sample_rate = rate, .data_bytes = data_bytes, .is_open = true
+    };
+    if (strlen(path) >= sizeof(recovered.part_path)) { fclose(f); return false; }
+    strcpy(recovered.part_path, path);
+    ctx.sink = &recovered;
+    audio_recorder_finalize_result_t result = audio_recorder_finalize_run(
+        &ctx, recorder_finalize_patch, recorder_finalize_sync,
+        recorder_finalize_close, recorder_finalize_publish, true);
+    if (result.published)
+        ESP_LOGI(TAG, "recovered %s (%u B)", ctx.final_path, (unsigned)data_bytes);
+    else
+        ESP_LOGW(TAG, "recovery failed; partial retained: %s", path);
+    return result.published;
 }
 
 esp_err_t audio_recorder_sink_recover_orphans(void)
@@ -370,9 +392,9 @@ esp_err_t audio_recorder_sink_recover_orphans(void)
             continue;
         }
         sd_io_gate_begin();
-        recover_one(path);
+        bool published = recover_one(path);
         sd_io_gate_end();
-        recovered++;
+        if (published) recovered++;
     }
     closedir(d);
     if (recovered > 0) {

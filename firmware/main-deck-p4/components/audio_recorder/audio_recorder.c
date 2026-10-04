@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #include <string.h>
 
@@ -51,6 +52,7 @@ static int64_t               s_last_checkpoint_us = 0;
 static TaskHandle_t       s_writer = NULL;   /* marker only; never dereferenced after exit */
 static EventGroupHandle_t s_writer_exited = NULL;
 static bool               s_overflow = false;
+static SemaphoreHandle_t s_control_lock;
 static audio_recorder_stop_gate_t s_producer_gate;
 
 /* Consumer-owned accumulators (writer task only). */
@@ -60,21 +62,18 @@ static uint32_t  s_push_over_100us = 0u;
 /* microSD write cost, writer-task owned. */
 static uint32_t  s_write_max_us = 0u;
 static uint32_t  s_writes_over_100ms = 0u;
-static uint32_t  s_reported_drops = 0u;
 /* Stall-burst coalescing. Stalls arrive in runs of a dozen or more; one journal
  * record per run keeps the timeline without feeding card traffic back into the
  * stall it is describing. */
 #define STALL_BURST_QUIET_US   2000000   /* run considered over after this gap */
-#define DROP_REPORT_MIN_GAP_US 2000000
 static uint32_t s_stall_burst_count = 0u;
 static uint32_t s_stall_burst_worst_us = 0u;
 static uint32_t s_stall_burst_ring = 0u;
 static int64_t  s_stall_burst_started_us = 0;
 static int64_t  s_last_stall_us = 0;
-static int64_t  s_last_drop_report_us = 0;
 static uint64_t  s_bytes_written = 0u;
 static uint64_t  s_frames_written = 0u;
-static esp_err_t s_last_error = ESP_OK;
+static _Atomic esp_err_t s_last_error = ESP_OK;
 
 static inline audio_recorder_state_t load_state(void)
 {
@@ -144,30 +143,22 @@ static void writer_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        /* A full ring means the card stalled longer than the buffer covers. That
-         * is a lost stretch of audio, not a reason to end the session: killing
-         * it here turned one stall into a finalize-and-reopen cycle whose own
-         * microSD work then stalled playback again, and a 25 min soak lost two
-         * recordings that way. Drop, account, and keep going — the WAV loses the
-         * dropped span, so the file ends up shorter than the wall-clock take. */
+        /* A missing block invalidates the take. Retain the partial until STOP
+         * joins ownership. Never publish a shortened take as successful. */
         if (__atomic_exchange_n(&s_overflow, false, __ATOMIC_ACQ_REL)) {
-            uint32_t lost = s_ring.dropped_blocks;
-            int64_t now_us = esp_timer_get_time();
-            if (lost != s_reported_drops &&
-                (s_last_drop_report_us == 0 ||
-                 now_us - s_last_drop_report_us >= DROP_REPORT_MIN_GAP_US)) {
-                /* Same reasoning as the stall burst: during an overrun this
-                 * fired on every writer iteration, adding card traffic to a
-                 * card that was already the reason for the overrun. */
-                service_log_event(SERVICE_LOG_RECORDING_DROPPED, SERVICE_LOG_WARN,
-                                  3u, lost - s_reported_drops, lost,
-                                  s_write_max_us, 0u, "ring full; card stalled");
-                s_reported_drops = lost;
-                s_last_drop_report_us = now_us;
-            }
+            s_last_error = ESP_ERR_NO_MEM;
+            audio_recorder_stop_gate_close(&s_producer_gate);
+            store_state(AUDIO_RECORDER_ERROR);
+            service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                              3u, s_ring.dropped_blocks, s_write_max_us, 0u, 0u,
+                              "ring overflow; partial take retained");
+            break;
         }
-
         audio_recorder_state_t st = load_state();
+        if (st == AUDIO_RECORDER_STARTING) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue; /* START owns the ring until task creation has succeeded. */
+        }
         if (st != AUDIO_RECORDER_RECORDING && st != AUDIO_RECORDER_STOPPING) {
             break;
         }
@@ -269,6 +260,9 @@ static void writer_task(void *arg)
 
 esp_err_t audio_recorder_init(void)
 {
+    if (s_writer_exited) return ESP_OK;
+    if (!s_control_lock) s_control_lock = xSemaphoreCreateMutex();
+    if (!s_control_lock) return ESP_ERR_NO_MEM;
     if (!s_writer_exited) {
         s_writer_exited = xEventGroupCreate();
         if (!s_writer_exited) {
@@ -285,7 +279,7 @@ esp_err_t audio_recorder_init(void)
     return ESP_OK;
 }
 
-esp_err_t audio_recorder_start(uint32_t sample_rate)
+static esp_err_t recorder_start_locked(uint32_t sample_rate)
 {
     if (!s_writer_exited) {
         esp_err_t rc = audio_recorder_init();
@@ -376,13 +370,11 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     s_push_over_100us = 0u;
     s_write_max_us = 0u;
     s_writes_over_100ms = 0u;
-    s_reported_drops = 0u;
     s_stall_burst_count = 0u;
     s_stall_burst_worst_us = 0u;
     s_stall_burst_ring = 0u;
     s_stall_burst_started_us = 0;
     s_last_stall_us = 0;
-    s_last_drop_report_us = 0;
     s_last_error = ESP_OK;
     s_last_checkpoint_us = esp_timer_get_time();
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
@@ -394,8 +386,6 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         store_state(AUDIO_RECORDER_STOPPED);
         return ESP_ERR_INVALID_STATE;
     }
-    store_state(AUDIO_RECORDER_RECORDING);
-
     if (xTaskCreate(writer_task, "rec_writer", AUDIO_RECORDER_WRITER_STACK,
                     NULL, AUDIO_RECORDER_WRITER_PRIO, &s_writer) != pdPASS) {
         ESP_LOGE(TAG, "writer task create failed");
@@ -409,6 +399,7 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         return ESP_ERR_NO_MEM;
     }
 
+    store_state(AUDIO_RECORDER_RECORDING);
     sd_io_gate_set_recorder_active(true);
     service_log_event(SERVICE_LOG_RECORDING_STARTED, SERVICE_LOG_INFO,
                       4u, sample_rate, capacity, (uint32_t)(free_bytes >> 20),
@@ -419,7 +410,7 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     return ESP_OK;
 }
 
-esp_err_t audio_recorder_stop(void)
+static esp_err_t recorder_stop_locked(void)
 {
     audio_recorder_state_t st = load_state();
     if (st == AUDIO_RECORDER_STOPPED && !s_slots) {
@@ -434,15 +425,24 @@ esp_err_t audio_recorder_stop(void)
      * This prevents the old empty-ring race where one final master block could
      * arrive after the writer had already exited. */
     audio_recorder_stop_gate_close(&s_producer_gate);
+    const TickType_t started = xTaskGetTickCount();
     while (!audio_recorder_stop_gate_is_quiescent(&s_producer_gate)) {
+        if ((TickType_t)(xTaskGetTickCount() - started) >= pdMS_TO_TICKS(5000)) {
+            s_last_error = ESP_ERR_TIMEOUT; store_state(AUDIO_RECORDER_ERROR);
+            return ESP_ERR_TIMEOUT; /* Ownership and reservation retained. */
+        }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     if (st == AUDIO_RECORDER_RECORDING || st == AUDIO_RECORDER_STARTING) {
         store_state(AUDIO_RECORDER_STOPPING);
     }
     if (s_writer) {
-        xEventGroupWaitBits(s_writer_exited, WRITER_EXITED_BIT,
-                            pdFALSE, pdTRUE, portMAX_DELAY);
+        EventBits_t bits = xEventGroupWaitBits(s_writer_exited, WRITER_EXITED_BIT,
+                            pdFALSE, pdTRUE, pdMS_TO_TICKS(5000));
+        if (!(bits & WRITER_EXITED_BIT)) {
+            s_last_error = ESP_ERR_TIMEOUT; store_state(AUDIO_RECORDER_ERROR);
+            return ESP_ERR_TIMEOUT; /* Never free a writer-owned ring. */
+        }
         s_writer = NULL;
     }
 
@@ -479,6 +479,30 @@ esp_err_t audio_recorder_stop(void)
     return s_last_error;
 }
 
+/* START/STOP serialize; the reservation includes failed-writer cleanup. */
+esp_err_t audio_recorder_start(uint32_t sample_rate)
+{
+    esp_err_t rc = audio_recorder_init();
+    if (rc != ESP_OK) return rc;
+    if (xSemaphoreTake(s_control_lock, 0) != pdTRUE) return ESP_ERR_INVALID_STATE;
+    if (!sd_io_gate_reserve(SD_ACTIVITY_RECORDER)) {
+        xSemaphoreGive(s_control_lock); return ESP_ERR_INVALID_STATE;
+    }
+    rc = recorder_start_locked(sample_rate);
+    if (rc != ESP_OK) { s_last_error = rc; sd_io_gate_release(SD_ACTIVITY_RECORDER); }
+    xSemaphoreGive(s_control_lock);
+    return rc;
+}
+esp_err_t audio_recorder_stop(void)
+{
+    if (!s_control_lock) return ESP_OK;
+    if (xSemaphoreTake(s_control_lock, 0) != pdTRUE) return ESP_ERR_INVALID_STATE;
+    esp_err_t rc = recorder_stop_locked();
+    if (!s_slots && !s_writer) sd_io_gate_release(SD_ACTIVITY_RECORDER);
+    xSemaphoreGive(s_control_lock);
+    return rc;
+}
+
 bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
                                 uint32_t sample_rate)
 {
@@ -488,7 +512,6 @@ bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
     }
     int64_t t0 = esp_timer_get_time();
     bool ok = audio_recorder_ring_push(&s_ring, stereo, (uint32_t)frames, sample_rate);
-    audio_recorder_stop_gate_leave(&s_producer_gate);
     uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - t0);
 
     /* Producer-owned counters: only the audio output task updates them. */
@@ -502,7 +525,9 @@ bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
 
     if (!ok) {
         __atomic_store_n(&s_overflow, true, __ATOMIC_RELEASE);
+        audio_recorder_stop_gate_close(&s_producer_gate);
     }
+    audio_recorder_stop_gate_leave(&s_producer_gate);
     return ok;
 }
 
@@ -527,6 +552,7 @@ esp_err_t audio_recorder_get_status(audio_recorder_status_t *out)
     out->write_max_us = s_write_max_us;
     out->writes_over_100ms = s_writes_over_100ms;
     audio_recorder_sink_write_cost(&out->gate_wait_max_us, &out->fwrite_max_us);
+    out->fsync_max_us = audio_recorder_sink_fsync_max_us();
     out->last_error = s_last_error;
     return ESP_OK;
 }

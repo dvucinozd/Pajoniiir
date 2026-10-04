@@ -23,6 +23,7 @@ extern "C" {
 
 #define AUDIO_RECORDER_SINK_DIR      "/sd/recordings"
 #define AUDIO_RECORDER_SINK_PATH_MAX 96u
+uint32_t audio_recorder_sink_fsync_max_us(void);
 
 /* Data-byte cap per segment (1 GiB), safely below the 4 GiB RIFF/FAT ceiling. */
 #define AUDIO_RECORDER_SEGMENT_DATA_MAX (1024ull * 1024ull * 1024ull)

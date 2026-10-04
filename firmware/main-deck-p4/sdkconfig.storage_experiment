@@ -1,0 +1,4 @@
+# Explicit opt-in only; never part of regular defaults or production packaging.
+CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD=y
+CONFIG_AUDIO_RECORDER_ENABLED=y
+CONFIG_PAJONIIIR_SD_IDLE_WAIT=y
