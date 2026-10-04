@@ -46,15 +46,30 @@ Local correction checks PASS: full P4 host runner, new allocator suite (failure
 ownership/no fallback/monitoring), unchanged eleven legacy simulator captures,
 both ESP-IDF 6.0.2 preview builds and board checks, unchanged dependency locks
 and documentation integrity. Images are 2,596,432 and 2,593,904 bytes. The
-allocator's archive anchor is verified by successful firmware linking; clean
-CI remains pending for this correction.
+allocator's archive anchor is verified by successful firmware linking.
+Correction `f430b4878c6ac9d71c8be35af53a389147d53eb4` is pushed; all eight jobs
+passed in [run 37209618960](https://github.com/dvucinozd/Pajoniiir/actions/runs/37209618960).
 
 The exact prior image `M2.4-7-gb8d9cb7` and rel-001 signatures were independently
 verified and copied to `D:\\Documents\\.codex-reviews\\Pajoniiir-recovery-M2.4-7-gb8d9cb7`.
 Image SHA-256: `0e9caf717808adbe2be526a10f59ddf768c1119eb2c914ccfe6b4fae15005d6c`.
 OTA recovery is unavailable while AP is down. One-time wired recovery was
-explicitly authorized for Pajoniiir only; physical connection/port identity
-and recovery remain pending. Do not enumerate or touch unrelated COM devices.
+explicitly authorized for Pajoniiir only. The operator identified COM15;
+esptool confirmed ESP32-P4 revision v1.3, native USB Serial/JTAG. Read-back
+partition table matches the existing 16 MiB layout. OTA selection records
+77/78 were VALID; the selected slot was ota_1 at `0x820000`.
+Only that application slot was written with the verified previous image.
+Bootloader, partition table, OTA selection and NVS were untouched. esptool
+verified the write; a full 2,505,392-byte flash read-back matched the expected
+SHA-256 above. Hardware reset was issued; no unrelated COM device was touched.
+
+The operator then reported normal recovery. Read-only HTTP checks confirm
+`M2.4-7-gb8d9cb7`, ota_1, OTA service idle/empty error, working AP/API,
+USB host ready and USB0 storage mounted (mount result ESP_OK). A later idle
+snapshot has 106,175 internal bytes free; this is a recovery snapshot, not a
+qualified minimum under playback load. FLX4 was absent
+in the first post-recovery snapshot; its physical reconnection and control/UAC
+acceptance remain pending. No listening or long-soak claim follows from recovery.
 Public production, tags and channels are unchanged.
 
 ## H3 Hot Cues integration (software checkpoint)
