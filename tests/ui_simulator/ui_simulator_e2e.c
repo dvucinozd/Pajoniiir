@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "ui.h"
 #include "ui_library.h"
+#include "hot_cue_store.h"
 #include "ui_artwork_thumb.h"
 #include "artwork_fixture.h"
 #include "splash_screen.h"
@@ -398,6 +399,49 @@ int main(int argc, char **argv)
         fail("touch LOAD did not open the selected folder");
     if (!click_label("BACK") || !click_label("BACK"))
         fail("touch playlist navigation did not restore all tracks");
+    if (!click_label("HOT CUES") || !click_deck(CTRL_DECK_2) ||
+        !click_label("DELETE: OFF")) fail("explicit cue delete mode missing");
+    lv_obj_t *cue_a = find_visible_label(lv_screen_active(), "CUE A");
+    uint32_t delete_position = deck_core_get_deck_state(CTRL_DECK_2).position_ms;
+    if (!cue_a) fail("cue A delete target missing");
+    else {
+        lv_obj_t *card = lv_obj_get_parent(cue_a);
+        lv_obj_send_event(card, LV_EVENT_PRESSED, NULL);
+        lv_obj_send_event(card, LV_EVENT_RELEASED, NULL);
+        pump(64);
+    }
+    hot_cue_store_blob_t deleted = {0};
+    if (hot_cue_store_load(&d2_touch.persistent_id, &deleted) != ESP_OK ||
+        !(deleted.override_mask & 1u) || (deleted.valid_mask & 1u))
+        fail("touch delete did not persist a source cue tombstone");
+    if (deck_core_get_deck_state(CTRL_DECK_2).position_ms != delete_position)
+        fail("delete mode triggered audible cue/seek before deleting");
+    if (!click_deck(CTRL_DECK_1) ||
+        !find_visible_label(lv_screen_active(), "DELETE: OFF"))
+        fail("delete mode survived target change");
+    if (!click_deck(CTRL_DECK_2)) fail("restore target selection failed");
+    lv_obj_t *restore_label = find_visible_label(lv_screen_active(), "HOLD RESTORE");
+    lv_obj_t *restore = restore_label ? lv_obj_get_parent(restore_label) : NULL;
+    if (!restore) fail("restore control missing");
+    else {
+        lv_obj_send_event(restore, LV_EVENT_CLICKED, NULL);
+        hot_cue_store_load(&d2_touch.persistent_id, &deleted);
+        if (!(deleted.override_mask & 1u)) fail("ordinary click restored source cues");
+        lv_obj_send_event(restore, LV_EVENT_PRESSED, NULL);
+        click_label("SETTINGS");
+        lv_obj_send_event(restore, LV_EVENT_LONG_PRESSED, NULL);
+        hot_cue_store_load(&d2_touch.persistent_id, &deleted);
+        if (!(deleted.override_mask & 1u)) fail("stale hold restored cues after tab change");
+        click_label("HOT CUES");
+        lv_obj_send_event(restore, LV_EVENT_PRESSED, NULL);
+        lv_obj_send_event(restore, LV_EVENT_LONG_PRESSED, NULL);
+        lv_obj_send_event(restore, LV_EVENT_RELEASED, NULL);
+        pump(64);
+        esp_err_t restored = hot_cue_store_load(&d2_touch.persistent_id, &deleted);
+        if (restored != ESP_ERR_NOT_FOUND &&
+            (restored != ESP_OK || deleted.override_mask))
+            fail("explicit hold did not reset local cue overrides");
+    }
 #endif
 
     if (s_failures != 0) {

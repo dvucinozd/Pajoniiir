@@ -123,6 +123,8 @@ static struct {
     lv_obj_t *tgt_btn[DJ_DECKS], *hc_card[DJ_HOTCUES], *hc_name[DJ_HOTCUES], *hc_val[DJ_HOTCUES];
     uint8_t target;
     bool hc_held[DJ_HOTCUES];
+    bool hc_delete, restore_held;
+    uint8_t restore_deck;
     uint8_t hc_held_deck[DJ_HOTCUES];
     bool pad_held[DJ_DECKS][DJ_HOTCUES], cue_held[DJ_DECKS];
     lv_obj_t *bright, *bright_lbl, *wl_sw, *wl_lbl;
@@ -298,8 +300,13 @@ static lv_color_t tone_col(dj_tone_t t)
 static void apply_tone(dj_field_t f, dj_tone_t t)
 {
     lv_color_t c = tone_col(t);
-    lv_obj_set_style_text_color(g.f_lbl[f], c, 0);
-    if (g.f_box[f]) lv_obj_set_style_border_color(g.f_box[f], t == DJ_TONE_NORMAL ? C_BORDER2 : c, 0);
+    if (!lv_color_eq(lv_obj_get_style_text_color(g.f_lbl[f], 0), c))
+        lv_obj_set_style_text_color(g.f_lbl[f], c, 0);
+    if (g.f_box[f]) {
+        lv_color_t border = t == DJ_TONE_NORMAL ? C_BORDER2 : c;
+        if (!lv_color_eq(lv_obj_get_style_border_color(g.f_box[f], 0), border))
+            lv_obj_set_style_border_color(g.f_box[f], border, 0);
+    }
 }
 
 static void field_txt(lv_obj_t *p, dj_field_t f, const lv_font_t *font, int32_t x, int32_t y, int32_t w,
@@ -844,6 +851,10 @@ static void hc_click(lv_event_t *e)
     if (pad >= DJ_HOTCUES) return;
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_PRESSED) {
+        if (g.hc_delete) {
+            if (g.cb.on_hotcue_delete) g.cb.on_hotcue_delete(g.target, pad);
+            return;
+        }
         g.hc_held[pad] = true;
         g.hc_held_deck[pad] = g.target;
         if (g.cb.on_hotcue) g.cb.on_hotcue(g.target, pad, true);
@@ -856,6 +867,7 @@ static void hc_click(lv_event_t *e)
 
 static void release_touch_holds(void)
 {
+    g.restore_held = false;
     for (uint8_t deck = 0; deck < DJ_DECKS; ++deck) {
         if (g.cue_held[deck]) {
             g.cue_held[deck] = false;
@@ -876,8 +888,7 @@ static void release_touch_holds(void)
 
 static void tgt_click(lv_event_t *e)
 {
-    g.target = (uint8_t)IDX(e);
-    refresh_hc();
+    dj_ui_set_target((uint8_t)IDX(e));
     if (g.cb.on_target) g.cb.on_target(g.target);
 }
 
@@ -934,7 +945,33 @@ static void seek_click(lv_event_t *e)
     g.cb.on_seek((uint8_t)(v / 2), (uint32_t)LV_CLAMP(0, ms, (int64_t)d->len_ms), (dj_wave_t)(v % 2));
 }
 
-static void field_click(lv_event_t *e) { if (g.cb.on_field) g.cb.on_field((dj_field_t)IDX(e)); }
+static void field_click(lv_event_t *e)
+{
+    dj_field_t field = (dj_field_t)IDX(e);
+    if (field == DJ_F_HC_CUES) {
+        release_touch_holds();
+        g.hc_delete = !g.hc_delete;
+        dj_ui_set_field(field, g.hc_delete ? "DELETE: ON" : "DELETE: OFF",
+                        g.hc_delete ? DJ_TONE_WARN : DJ_TONE_NORMAL);
+    } else if (g.cb.on_field) g.cb.on_field(field);
+}
+
+static void restore_cues_hold(lv_event_t *e)
+{
+    switch (lv_event_get_code(e)) {
+    case LV_EVENT_PRESSED:
+        g.restore_held = true; g.restore_deck = g.target; break;
+    case LV_EVENT_LONG_PRESSED:
+        if (g.restore_held && g.cb.on_restore_cues) {
+            g.restore_held = false;
+            g.cb.on_restore_cues(g.restore_deck);
+        }
+        break;
+    case LV_EVENT_RELEASED: case LV_EVENT_PRESS_LOST:
+        g.restore_held = false; break;
+    default: break;
+    }
+}
 static void src_click(lv_event_t *e) { (void)e; if (g.cb.on_lib_source) g.cb.on_lib_source(); }
 static void pl_click(lv_event_t *e) { (void)e; if (g.cb.on_lib_playlists) g.cb.on_lib_playlists(); }
 static void rec_click(lv_event_t *e) { (void)e; if (g.cb.on_record) g.cb.on_record(); }
@@ -1277,6 +1314,7 @@ static void build_library(lv_obj_t *pg)
 
 static void build_hotcues(lv_obj_t *pg)
 {
+    field_txt(pg, DJ_F_HC_MEMORY, F12, 8, 14, 200, "MEMORY: 0", DJ_TONE_MUTED);
     cap(pg, "TARGET", 414, 13);
     g.tgt_btn[0] = btn(pg, 478, 2, 64, 36, "D1", F14, C_PANEL, C_INK, C_LINE, tgt_click, UD(0));
     g.tgt_btn[1] = btn(pg, 546, 2, 64, 36, "D2", F14, C_PANEL, C_INK, C_LINE, tgt_click, UD(1));
@@ -1300,10 +1338,19 @@ static void build_hotcues(lv_obj_t *pg)
     lv_obj_t *sb = box(pg, 0, 490, 1008, 56, C_PANEL, C_LINE);
     cap(sb, "HOT CUE STATUS", 12, 20);
     lv_obj_t *row = flex_row(sb, 150, 0, 840, 54);
-    chip(row, DJ_F_HC_CUES, "CUE A-H", DJ_TONE_OK);
-    chip(row, DJ_F_HC_LOOPS, "LOOP CUES", DJ_TONE_WARN);
-    chip(row, DJ_F_HC_ANLZ, "ANLZ DATA", DJ_TONE_INFO);
-    chip(row, DJ_F_HC_TARGET, "D1/D2 TARGET", DJ_TONE_NORMAL);
+    chip(row, DJ_F_HC_CUES, "DELETE: OFF", DJ_TONE_NORMAL);
+    chip(row, DJ_F_HC_LOOPS, "CUES: 0 LOOPS: 0", DJ_TONE_WARN);
+    chip(row, DJ_F_HC_ANLZ, "HOLD RESTORE", DJ_TONE_INFO);
+    chip(row, DJ_F_HC_TARGET, "D1 JOG: VINYL", DJ_TONE_NORMAL);
+    tappable(DJ_F_HC_CUES); tappable(DJ_F_HC_TARGET);
+    lv_obj_t *restore = g.f_box[DJ_F_HC_ANLZ];
+    lv_obj_add_flag(restore, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(restore, restore_cues_hold, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(restore, restore_cues_hold, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(restore, restore_cues_hold, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(restore, restore_cues_hold, LV_EVENT_PRESS_LOST, NULL);
+    for (dj_field_t f = DJ_F_HC_CUES; f <= DJ_F_HC_TARGET; ++f)
+        lv_obj_set_style_pad_ver(g.f_box[f], 14, 0);
 }
 
 static void build_settings(lv_obj_t *pg)
@@ -1587,10 +1634,14 @@ static void compact_layout(void)
         lv_obj_set_pos(g.hc_card[k], (k % 4) * 198, 52 + (k / 4) * 156);
         lv_obj_set_size(g.hc_card[k], 190, 148);
     }
-    lv_obj_t *hc_status = lv_obj_get_parent(g.f_lbl[DJ_F_HC_CUES]);
-    lv_obj_set_width(hc_status, 630);
-    lv_obj_set_pos(lv_obj_get_parent(hc_status), 0, 370);
-    lv_obj_set_width(lv_obj_get_parent(hc_status), 784);
+    lv_obj_t *hc_row = lv_obj_get_parent(g.f_box[DJ_F_HC_CUES]);
+    lv_obj_t *hc_status = lv_obj_get_parent(hc_row);
+    lv_obj_set_pos(hc_status, 0, 370); lv_obj_set_size(hc_status, 784, 44);
+    lv_obj_set_pos(hc_row, 8, 0); lv_obj_set_size(hc_row, 768, 44);
+    for (uint32_t k = 0; k < lv_obj_get_child_count(hc_status); ++k) {
+        lv_obj_t *o = lv_obj_get_child(hc_status, (int32_t)k);
+        if (lv_obj_check_type(o, &lv_label_class)) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void dj_ui_set_features(bool ethernet, bool recorder)
@@ -1679,10 +1730,36 @@ void dj_ui_set_callbacks(const dj_ui_callbacks_t *cb)
     else memset(&g.cb, 0, sizeof g.cb);
 }
 
+void dj_ui_cancel_track_holds(uint8_t deck)
+{
+    if (deck >= DJ_DECKS) return;
+    if (g.restore_held && g.restore_deck == deck) g.restore_held = false;
+    if (g.cue_held[deck]) {
+        g.cue_held[deck] = false;
+        if (g.cb.on_cue) g.cb.on_cue(deck, false);
+    }
+    for (uint8_t pad = 0; pad < DJ_HOTCUES; ++pad) {
+        if (g.pad_held[deck][pad]) {
+            g.pad_held[deck][pad] = false;
+            if (g.cb.on_hotcue) g.cb.on_hotcue(deck, pad, false);
+        }
+        if (g.hc_held[pad] && g.hc_held_deck[pad] == deck) {
+            g.hc_held[pad] = false;
+            if (g.cb.on_hotcue) g.cb.on_hotcue(deck, pad, false);
+        }
+    }
+    if (g.target == deck) {
+        g.hc_delete = false;
+        dj_ui_set_field(DJ_F_HC_CUES, "DELETE: OFF", DJ_TONE_NORMAL);
+    }
+}
+
 void dj_ui_show_tab(dj_tab_t tab)
 {
     if ((unsigned)tab > DJ_TAB_SETTINGS) return;
     release_touch_holds();
+    g.hc_delete = false;
+    dj_ui_set_field(DJ_F_HC_CUES, "DELETE: OFF", DJ_TONE_NORMAL);
     for (int i = 0; i < 4; i++) {
         if (i == (int)tab) {
             lv_obj_remove_flag(g.page[i], LV_OBJ_FLAG_HIDDEN);
@@ -1931,6 +2008,8 @@ void dj_ui_set_vu(uint8_t deck, uint8_t level)
 void dj_ui_set_target(uint8_t deck)
 {
     if (deck >= DJ_DECKS || g.target == deck) return;
+    g.hc_delete = false;
+    dj_ui_set_field(DJ_F_HC_CUES, "DELETE: OFF", DJ_TONE_NORMAL);
     g.target = deck;
     refresh_hc();
 }
@@ -1981,7 +2060,7 @@ void dj_ui_wave_set_marks(uint8_t deck, dj_wave_t wave, uint8_t marks)
 
 void dj_ui_wave_set_window_ms(uint8_t deck, uint32_t window_ms)
 {
-    if (deck >= DJ_DECKS || window_ms == 0) return;
+    if (deck >= DJ_DECKS || window_ms == 0 || g.deck[deck].window_ms == window_ms) return;
     g.deck[deck].window_ms = window_ms;
     surf_dirty(&g.deck[deck], DJ_WAVE_ZOOM);
 }

@@ -36,7 +36,7 @@ typedef enum {
     DJ_F_MIX_TEMPO,                   /* "TEMPO: +/-10%", cycles 6/10/16 (v275) */
     DJ_F_LOAD_LOCK,                   /* "LOAD LOCK: OFF" / "LOAD LOCK: ON" (v293) */
     DJ_F_LINK_SYNC,                   /* "LINK SYNC: OFF" / "LINK SYNC: ON" (v304) */
-    DJ_F_HC_CUES, DJ_F_HC_LOOPS, DJ_F_HC_ANLZ, DJ_F_HC_TARGET,
+    DJ_F_HC_CUES, DJ_F_HC_LOOPS, DJ_F_HC_ANLZ, DJ_F_HC_TARGET, DJ_F_HC_MEMORY,
     DJ_F_LINK_STATUS,                 /* "DJ LINK: ON P4 - CDJ-3000 #1 174.2 BPM ON AIR" */
     DJ_F_REC_STATUS, DJ_F_REC_DEST,   /* "REC 01:23  12 MB", "-> /sd/recordings" */
     DJ_F_COUNT
@@ -101,6 +101,8 @@ enum {
 typedef struct {
     void (*on_tab)(dj_tab_t tab);
     void (*on_hotcue)(uint8_t deck, uint8_t index, bool pressed);
+    void (*on_hotcue_delete)(uint8_t deck, uint8_t index);
+    void (*on_restore_cues)(uint8_t deck);             /* explicit long hold */
     void (*on_fx_beat)(uint8_t index);                  /* 0..3 = 1/4, 1/2, 1, 2 */
     void (*on_fx_toggle)(void);
     void (*on_fx_select)(void);                         /* effect name tapped: next effect */
@@ -130,6 +132,7 @@ typedef struct {
 
 void dj_ui_create(lv_obj_t *parent);                    /* e.g. lv_screen_active() */
 void dj_ui_set_callbacks(const dj_ui_callbacks_t *cb);
+void dj_ui_cancel_track_holds(uint8_t deck);             /* accepted load/source epoch changed */
 void dj_ui_set_features(bool ethernet, bool recorder);
 void dj_ui_show_tab(dj_tab_t tab);
 

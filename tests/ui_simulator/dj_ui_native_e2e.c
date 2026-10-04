@@ -22,6 +22,7 @@
 static uint32_t s_framebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 static lv_display_t *s_display;
 static int s_failures;
+static unsigned s_flushes;
 static void fail(const char *message);
 static ui_artwork_thumb_work_t s_art_work;
 static ui_artwork_thumb_t s_art_result;
@@ -51,6 +52,7 @@ static void flush_cb(lv_display_t *display, const lv_area_t *area,
 {
     (void)area;
     (void)pixels;
+    ++s_flushes;
     lv_display_flush_ready(display);
 }
 
@@ -163,6 +165,8 @@ static bool save_ppm(const char *output_dir, const char *name)
 
 static unsigned plays, cues_pressed, cues_released, pads_pressed, pads_released, wakes;
 static bool loaded = true;
+static unsigned track_generation = 1, restores;
+static void on_restore(uint8_t deck) { (void)deck; ++restores; }
 static void on_play(uint8_t deck) { plays |= 1u << deck; }
 static void on_cue(uint8_t deck, bool pressed) { (void)deck; if (pressed) ++cues_pressed; else ++cues_released; }
 static void on_pad(uint8_t deck, uint8_t pad, bool pressed)
@@ -174,7 +178,7 @@ static void on_wake(void) { ++wakes; }
 /* The presentation test supplies snapshots, not an emulated decoder or device. */
 bool deck_core_get_loaded_track(uint8_t deck, deck_loaded_track_summary_t *out)
 {
-    *out = (deck_loaded_track_summary_t){.valid=loaded,.generation=loaded ? 1 : 2,
+    *out = (deck_loaded_track_summary_t){.valid=loaded,.generation=track_generation,
                                        .track_key=deck ? 1003u : 1001u};
     return true;
 }
@@ -217,7 +221,7 @@ int main(int argc, char **argv)
     lv_display_set_buffers(s_display, s_framebuffer, NULL, sizeof s_framebuffer, LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(s_display, flush_cb);
     dj_ui_callbacks_t cb = {.on_play=on_play,.on_cue=on_cue,
-        .on_hotcue=on_pad,.on_wake=on_wake};
+        .on_hotcue=on_pad,.on_restore_cues=on_restore,.on_wake=on_wake};
     ui_dj_bridge_init(lv_screen_active(), &cb, DISPLAY_WIDTH == 1024, false);
     ui_frame_context_t frame = {0};
     ui_deck_track_info_t info[2] = {
@@ -237,9 +241,13 @@ int main(int argc, char **argv)
         dj_ui_set_hotcue(d,0,true,30000,0);
     }
     ui_dj_bridge_update(&frame);
+    pump(64);
+    unsigned flushes = s_flushes;
     ui_dj_bridge_stats_t before[2], after[2];
     for (uint8_t d=0;d<2;++d) ui_dj_bridge_get_stats(d,&before[d]);
     ui_dj_bridge_update(&frame);
+    pump(64);
+    if (s_flushes != flushes) fail("unchanged frame invalidated the LVGL presentation");
     for (uint8_t d=0;d<2;++d) {
         ui_dj_bridge_get_stats(d,&after[d]);
         if (!before[d].surface_bytes || !before[d].cache_full_updates ||
@@ -264,6 +272,17 @@ int main(int argc, char **argv)
     pump(64); save_ppm(argv[1],"dj_library");
     if(!click_label("HOT CUES")) fail("hotcue navigation");
     save_ppm(argv[1],"dj_hotcues");
+    lv_obj_t *restore = find_visible_label(lv_screen_active(), "HOLD RESTORE");
+    if (!restore) fail("native restore control missing");
+    else {
+        restore = lv_obj_get_parent(restore);
+        lv_obj_send_event(restore, LV_EVENT_PRESSED, NULL);
+        ++track_generation;
+        ui_dj_bridge_update(&frame);
+        lv_obj_send_event(restore, LV_EVENT_LONG_PRESSED, NULL);
+        lv_obj_send_event(restore, LV_EVENT_RELEASED, NULL);
+        if (restores) fail("old track hold restored newly loaded track cues");
+    }
     lv_obj_t *hc = find_visible_label(lv_screen_active(), "CUE A");
     if (!hc) fail("Hot Cues surface missing");
     else {

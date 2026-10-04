@@ -6,7 +6,42 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 MIT provenance is retained in `components/ui/DJ_UI_NOTICE.md`.
 Production M2.4 and the separate APTA branch are unchanged.
 
-## Current checkpoint: H2 Library integration
+## Current checkpoint: H3 Hot Cues integration
+
+H2 is pushed as `ae2a9b0257629bfcc1fc9b347263cde1f02b5b7a`.
+All eight clean CI jobs passed in
+[run 37206006959](https://github.com/dvucinozd/Pajoniiir/actions/runs/37206006959).
+
+The actual Hot Cues screen now uses dj_ui. Pad hold/release, target selection,
+VINYL/CDJ jog mode and explicit source restore enter the existing deck-core
+semantic path. Delete mode is explicit: pressing a pad deletes via the shifted
+HOT_CUE action, with no initial cue/seek preview. Target/tab/accepted-track
+changes reset delete mode. Restore requires a long hold; short clicks, lost
+presses, tab changes and an accepted track-generation change cannot restore the
+wrong track. Hold cancellation is per deck so replacing D2 does not release
+an unrelated D1 touch hold. No persistent format changes are introduced.
+
+The display shows effective cue/loop counts and memory-cue count/truncation.
+Compact bottom controls now move their actual status-container parent, fixing
+the prototype's offscreen group. Both layouts retain large native cue pads.
+Settings remains legacy in actual firmware. Duplicate legacy allocations,
+key metadata, complete Settings binding, final touch/layout polish and default
+enablement remain pending. H is not software-closed.
+
+New actual-runtime tests exercise persistent deletion, no seek before delete,
+mode reset on target change, explicit restore and stale hold cancellation.
+Native tests cover accepted-generation cancellation and verify that an unchanged
+frame adds neither rendered waveform columns nor LVGL display flushes. Window
+and tone setters avoid redundant invalidation; empty deck clearing is performed
+once per transition. These are host/rendering results, not P4 fluidity evidence.
+
+H3 local verification: full P4 host runner and five screenshot gates PASS;
+ESP-IDF 6.0.2 preview builds, board isolation and `0x380000` budget checks PASS.
+Images: JC4880 2,596,432 bytes; JC1060 2,593,904 bytes. Locks remain unchanged.
+Documentation and staged whitespace checks pass before push. Clean H3 CI and
+all physical gates remain pending at this checkpoint.
+
+## H2 Library integration (previous checkpoint)
 
 H1 is pushed as `3e4e816016819affec4ce12c8414ea847c1c41a5`.
 All eight clean CI jobs passed in

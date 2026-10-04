@@ -479,7 +479,7 @@ static void ui_switch_tab(int target_idx)
     s_active_tab = target_idx;
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_container) {
-        if (target_idx == UI_TAB_OVERVIEW || target_idx == UI_TAB_LIBRARY) {
+        if (target_idx != UI_TAB_SETTINGS) {
             lv_obj_add_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
             dj_ui_show_tab((dj_tab_t)target_idx);
@@ -598,6 +598,26 @@ static void ui_dj_hotcue(uint8_t deck, uint8_t pad, bool pressed)
     ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
         CTRL_ID_DECK2_PAD_ACTION),
         CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, false, pressed));
+}
+static void ui_dj_hotcue_delete(uint8_t deck, uint8_t pad)
+{
+    if (deck >= DJ_DECKS || pad >= DJ_HOTCUES) return;
+    uint8_t id = ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION, CTRL_ID_DECK2_PAD_ACTION);
+    ui_dj_button(deck, id, CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, true, true));
+    ui_dj_button(deck, id, CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, true, false));
+}
+static void ui_dj_restore_cues(uint8_t deck)
+{
+    if (deck >= DJ_DECKS) return;
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION, CTRL_ID_DECK2_EXT_ACTION),
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true));
+}
+static void ui_dj_field(dj_field_t field)
+{
+    if (field == DJ_F_HC_TARGET || field == DJ_F_MIX_JOG) {
+        uint8_t deck = ui_controls_active_deck(&s_controls);
+        ui_performance_set_jog_mode(deck, !deck_core_get_deck_state(deck).jog_cdj_mode);
+    }
 }
 static void ui_dj_seek(uint8_t deck, uint32_t position, dj_wave_t wave)
 {
@@ -1121,6 +1141,8 @@ esp_err_t ui_init(void) {
         .on_tab=ui_dj_tab, .on_play=ui_dj_play, .on_cue=ui_dj_cue,
         .on_master_tempo=ui_overview_action_toggle_master_tempo,
         .on_sync=ui_dj_sync, .on_hotcue=ui_dj_hotcue,
+        .on_hotcue_delete=ui_dj_hotcue_delete, .on_restore_cues=ui_dj_restore_cues,
+        .on_field=ui_dj_field,
         .on_seek=ui_dj_seek, .on_target=ui_set_performance_deck,
         .on_wake=ui_dj_wake,
         .on_fx_toggle=ui_dj_fx_toggle, .on_fx_select=ui_dj_fx_select,

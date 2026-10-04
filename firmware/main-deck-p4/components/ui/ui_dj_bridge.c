@@ -9,6 +9,7 @@
 #include "ui_position_interpolator.h"
 #include "ui_overview_window.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef ESP_PLATFORM
@@ -34,7 +35,9 @@ typedef struct {
     uint16_t bpm;
     int zoom_width, zoom_height, mini_width, mini_height;
     bool metadata_valid;
+    bool empty_shown;
     uint32_t cue_revision;
+    uint8_t cue_count, loop_count;
     anlz_metadata_t render_meta;
     ui_position_interpolator_t position;
 } bridge_deck_t;
@@ -175,10 +178,13 @@ static void cue_update(uint8_t d, const anlz_metadata_t *meta,
     /* Match the existing performance view's fail-closed edit-store behavior. */
     if (result != ESP_OK && result != ESP_ERR_NOT_FOUND) source.valid_mask = 0;
     hot_cue_store_merge(&source, result == ESP_OK ? &local : NULL, &effective);
+    decks[d].cue_count = decks[d].loop_count = 0;
     for (uint8_t i = 0; i < DJ_HOTCUES; ++i) {
         bool valid = (effective.valid_mask & (1u << i)) != 0;
         dj_ui_set_hotcue(d, i, valid, effective.slots[i].pos_ms, i);
         dj_ui_set_hotcue_loop(d, i, valid && effective.slots[i].type == HOT_CUE_STORE_TYPE_LOOP);
+        if (valid) ++decks[d].cue_count;
+        if (valid && effective.slots[i].type == HOT_CUE_STORE_TYPE_LOOP) ++decks[d].loop_count;
     }
 }
 
@@ -192,41 +198,49 @@ void ui_dj_bridge_update(const ui_frame_context_t *f)
         if (!track.valid || !f->deck_duration_ms[d]) {
             /* A stale leased analysis snapshot may outlive UNLOAD. Never
              * republish its pixels or cues for an empty deck. */
-            dj_ui_set_track(d, "No Track", "", "", 0, 0, 0);
-            dj_ui_set_bpm(d, 0, 0);
-            dj_ui_set_key(d, "--");
-            dj_ui_set_position(d, 0);
-            dj_ui_set_transport(d, false, true);
-            dj_ui_set_tempo(d, 0);
-            dj_ui_set_master_tempo(d, false);
-            dj_ui_set_sync(d, DJ_SYNC_OFF);
-            dj_ui_set_vu(d, 0);
-            dj_ui_set_beat(d, false, 0, false);
-            dj_ui_set_cue_point(d, false, 0);
-            dj_ui_set_loop(d, false, 0, 0);
-            dj_ui_set_loop_armed(d, false, 0);
-            dj_ui_set_memory_cues(d, NULL, 0);
-            for (uint8_t i = 0; i < DJ_HOTCUES; ++i) {
-                dj_ui_set_hotcue(d, i, false, 0, i);
-                dj_ui_set_hotcue_loop(d, i, false);
+            if (!s->empty_shown) {
+                dj_ui_cancel_track_holds(d);
+                dj_ui_set_track(d, "No Track", "", "", 0, 0, 0);
+                dj_ui_set_bpm(d, 0, 0);
+                dj_ui_set_key(d, "--");
+                dj_ui_set_position(d, 0);
+                dj_ui_set_transport(d, false, true);
+                dj_ui_set_tempo(d, 0);
+                dj_ui_set_master_tempo(d, false);
+                dj_ui_set_sync(d, DJ_SYNC_OFF);
+                dj_ui_set_vu(d, 0);
+                dj_ui_set_beat(d, false, 0, false);
+                dj_ui_set_cue_point(d, false, 0);
+                dj_ui_set_loop(d, false, 0, 0);
+                dj_ui_set_loop_armed(d, false, 0);
+                dj_ui_set_memory_cues(d, NULL, 0);
+                for (uint8_t i = 0; i < DJ_HOTCUES; ++i) {
+                    dj_ui_set_hotcue(d, i, false, 0, i);
+                    dj_ui_set_hotcue_loop(d, i, false);
+                }
+                dj_ui_wave_set_strip(d, NULL, 0, 0);
+                dj_ui_wave_set_image(d, DJ_WAVE_MINI, NULL, 0);
+                dj_ui_set_artwork_pixels(d, NULL);
+                if (f->active_tab != DJ_TAB_LIBRARY)
+                    dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
+                s->metadata_valid = false;
+                s->cue_count = s->loop_count = 0;
+                s->cache.valid = false;
+                ui_position_interpolator_init(&s->position);
+                s->empty_shown = true;
             }
-            dj_ui_wave_set_strip(d, NULL, 0, 0);
-            dj_ui_wave_set_image(d, DJ_WAVE_MINI, NULL, 0);
-            dj_ui_set_artwork_pixels(d, NULL);
-            if (f->active_tab != DJ_TAB_LIBRARY)
-                dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
-            s->metadata_valid = false;
-            s->cache.valid = false;
-            ui_position_interpolator_init(&s->position);
             continue;
         }
+        s->empty_shown = false;
         uint32_t version = anlz_snapshot_version(f->deck_anlz[d]);
         bool changed = !s->metadata_valid || s->snapshot_version != version ||
             s->track_generation != track.generation ||
             s->duration != f->deck_duration_ms[d] || s->bpm != f->deck_bpm[d];
         if (changed) {
-            if (!s->metadata_valid || s->track_generation != track.generation)
+            if (!s->metadata_valid || s->track_generation != track.generation) {
+                dj_ui_cancel_track_holds(d);
                 ui_position_interpolator_init(&s->position);
+            }
             metadata_update(d, s, f, &track);
             s->cache.valid = false;
             s->snapshot_version = version;
@@ -315,6 +329,20 @@ void ui_dj_bridge_update(const ui_frame_context_t *f)
         dj_ui_set_artwork_pixels(d, art);
     }
     dj_ui_set_target(f->active_deck);
+    char cue_text[48];
+    uint8_t active = f->active_deck < DJ_DECKS ? f->active_deck : 0;
+    snprintf(cue_text, sizeof cue_text, "CUES: %u LOOPS: %u",
+             decks[active].cue_count, decks[active].loop_count);
+    dj_ui_set_field(DJ_F_HC_LOOPS, cue_text, DJ_TONE_NORMAL);
+    snprintf(cue_text, sizeof cue_text, "D%u JOG: %s", (unsigned)active + 1u,
+             f->deck_state[active].jog_cdj_mode ? "CDJ" : "VINYL");
+    dj_ui_set_field(DJ_F_HC_TARGET, cue_text, DJ_TONE_NORMAL);
+    const anlz_metadata_t *active_meta = decks[active].metadata_valid ? f->deck_meta[active] : NULL;
+    snprintf(cue_text, sizeof cue_text, "MEMORY: %u%s",
+             active_meta ? active_meta->memory_cue_count : 0u,
+             active_meta && active_meta->memory_cues_truncated ? " (TRUNCATED)" : "");
+    dj_ui_set_field(DJ_F_HC_MEMORY, cue_text,
+                    active_meta && active_meta->memory_cues_truncated ? DJ_TONE_WARN : DJ_TONE_MUTED);
     ui_beat_fx_overview_text_t fx_text;
     ui_beat_fx_format_overview(&f->beat_fx_state, &fx_text);
     uint8_t target = f->beat_fx_state.target == CTRL_BEAT_FX_TARGET_BOTH ? 0 :
