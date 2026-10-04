@@ -8,6 +8,7 @@
 #include "dj_ui.h"
 #include "ui_dj_bridge.h"
 #include "ui_artwork_thumb.h"
+#include "ui_artwork.h"
 #include "artwork_fixture.h"
 
 
@@ -182,6 +183,8 @@ bool deck_core_get_loaded_track(uint8_t deck, deck_loaded_track_summary_t *out)
                                        .track_key=deck ? 1003u : 1001u};
     return true;
 }
+const uint16_t *ui_library_deck_artwork(uint8_t deck)
+{return loaded?ui_artwork_get(deck?1003u:1001u,UI_ARTWORK_DECK):NULL;}
 bool deck_core_get_load_lock(void) { return true; }
 uint32_t deck_core_hot_cue_revision(void) { return 0; }
 bool deck_core_load_allowed(uint8_t deck) { return deck != 1; }

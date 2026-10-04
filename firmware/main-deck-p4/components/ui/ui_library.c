@@ -182,6 +182,9 @@ static ui_library_row_text_t s_dj_rows[UI_LIBRARY_PAGE_ROWS];
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "media_catalog.h"
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#include "dj_link_download.h"
+#endif
 #include "service_log.h"
 
 #define UI_TRACK_LOAD_STACK (16 * 1024)
@@ -218,6 +221,7 @@ static size_t s_browse_track_count;
 static uint32_t s_browse_generation;
 static uint32_t s_page_track_keys[UI_LIBRARY_PAGE_ROWS];
 static bool ui_library_track_load_busy(void);
+static void ui_library_set_load_busy(bool busy,const char *hint);
 #ifdef UI_LIBRARY_LINK
 static bool s_link_source;
 static uint8_t s_link_peer, s_link_slot;
@@ -314,6 +318,10 @@ static const anlz_metadata_t *ui_library_clone_loaded_anlz(anlz_metadata_t *snap
 static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
 static bool s_loaded_media_valid[DECK_CORE_DECK_COUNT];
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+static bool s_remote_load_active;
+static uint32_t s_download_done,s_download_total;
+#endif
 static QueueHandle_t s_track_load_result_q = NULL;
 static ui_event_counter_t s_usb_removed_events;
 static uint32_t s_usb_removed_applied;
@@ -326,6 +334,8 @@ typedef struct {
     uint32_t load_id;
     uint32_t audio_session_generation;
     bool deck_reset;
+    anlz_metadata_t *remote_meta;
+    ui_artwork_thumb_t *remote_art;
     media_catalog_track_t item;
     media_loaded_track_t loaded;
     esp_err_t rc;
@@ -341,6 +351,10 @@ typedef struct {
     uint32_t generation;
     uint32_t track_key;
     uint32_t load_id;
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    dj_link_remote_track_t remote;
+    media_persistent_id_t pins[2];
+#endif
 } ui_track_load_request_t;
 
 #endif
@@ -357,6 +371,15 @@ static void ui_track_load_set_status(ui_track_load_result_t *result,
 }
 #endif
 
+const uint16_t *ui_library_deck_artwork(uint8_t deck)
+{
+    if(deck>=DECK_CORE_DECK_COUNT || !s_deck_loaded_track_valid[deck])return NULL;
+#ifndef WIN32
+    if(s_loaded_media_valid[deck] && s_loaded_media[deck].source==MEDIA_SOURCE_DJ_LINK)
+        return ui_artwork_get_identity(s_loaded_media[deck].track_key,&s_loaded_media[deck].persistent_id,UI_ARTWORK_DECK);
+#endif
+    return ui_artwork_get(s_deck_loaded_track_key[deck],UI_ARTWORK_DECK);
+}
 static bool ui_library_try_begin_track_load(void)
 {
 #ifndef WIN32
@@ -413,7 +436,12 @@ static void ui_library_finish_track_load_id(uint32_t load_id)
 {
 #ifndef WIN32
     portENTER_CRITICAL(&s_track_load_lock);
-    (void)ui_load_gate_finish(&s_track_load_gate, load_id);
+    bool finished=ui_load_gate_finish(&s_track_load_gate, load_id);
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    if (finished) s_remote_load_active=false;
+#else
+    (void)finished;
+#endif
     portEXIT_CRITICAL(&s_track_load_lock);
 #else
     (void)ui_load_gate_finish(&s_track_load_gate, load_id);
@@ -679,7 +707,16 @@ static bool ui_library_load_allowed(uint8_t deck)
     return deck_core_load_allowed(deck);
 }
 #ifdef UI_LIBRARY_LINK
-static esp_err_t ui_library_remote_load_admission(uint8_t deck)
+static esp_err_t ui_library_remote_load_admission(uint8_t deck,uint8_t peer,
+    uint64_t epoch,uint8_t slot,const dj_link_peer_track_t *track);
+#ifdef UI_LINK_SIMULATOR
+static esp_err_t ui_library_simulated_remote_load(uint8_t deck,uint8_t peer,uint64_t epoch,uint8_t slot,const dj_link_peer_track_t *track);
+#endif
+#ifndef WIN32
+static esp_err_t ui_submit_track_load_request(ui_track_load_request_t *req);
+#endif
+static esp_err_t ui_library_remote_load_admission(uint8_t deck,uint8_t peer,
+    uint64_t epoch,uint8_t slot,const dj_link_peer_track_t *track)
 {
     if (deck>=DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
     if (!ui_library_load_allowed(deck)) {
@@ -688,10 +725,26 @@ static esp_err_t ui_library_remote_load_admission(uint8_t deck)
     if (ui_library_track_load_busy()) {
         ui_library_status_hold("LOAD BUSY",COL_AMBER,1200); return ESP_ERR_INVALID_STATE;
     }
-    /* J supplies a verified local artifact to the existing worker. Until then
-     * all remote audio loads are unsupported, preserving both loaded decks. */
+#ifndef WIN32
+    if (!track || !track->rekordbox_id || !ui_library_try_begin_track_load()) return ESP_ERR_INVALID_STATE;
+    ui_track_load_request_t *req=calloc(1,sizeof(*req));
+    if (!req) {ui_library_finish_track_load();return ESP_ERR_NO_MEM;}
+    req->index=-1;req->deck=deck;req->generation=(uint32_t)epoch;
+    req->load_id=ui_library_active_track_load_id();
+    req->remote=(dj_link_remote_track_t){.peer=peer,.slot=slot,.source_epoch=epoch,.track=*track};
+    for(unsigned d=0;d<2;++d) if(s_loaded_media_valid[d])req->pins[d]=s_loaded_media[d].persistent_id;
+    s_remote_load_active=true;s_download_done=s_download_total=0;
+    ui_library_set_load_busy(true,"DOWNLOADING");
+    return ui_submit_track_load_request(req);
+#else
+#ifdef UI_LINK_SIMULATOR
+    return ui_library_simulated_remote_load(deck,peer,epoch,slot,track);
+#else
+    (void)peer;(void)epoch;(void)slot;(void)track;
     ui_library_status_hold("AUDIO DOWNLOAD UNAVAILABLE",COL_AMBER,2000);
     return ESP_ERR_NOT_SUPPORTED;
+#endif
+#endif
 }
 #endif
 
@@ -1122,6 +1175,23 @@ static void ui_library_release_deck_audio_session(uint8_t deck,
     }
 }
 
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+static bool ui_remote_load_current(void *ctx)
+{
+    return ui_library_track_load_is_current(((ui_track_load_request_t *)ctx)->load_id);
+}
+static void ui_remote_load_progress(void *ctx,uint32_t done,uint32_t total)
+{
+    if (!ui_remote_load_current(ctx))return;
+    __atomic_store_n(&s_download_done,done,__ATOMIC_RELAXED);
+    __atomic_store_n(&s_download_total,total,__ATOMIC_RELAXED);
+}
+#endif
+static void ui_track_load_meta_free(ui_track_load_result_t *result)
+{
+    free(result->remote_art);result->remote_art=NULL;
+    if (result->remote_meta) {anlz_free(result->remote_meta);free(result->remote_meta);result->remote_meta=NULL;}
+}
 static void ui_track_load_worker(void *arg)
 {
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
@@ -1138,6 +1208,19 @@ static void ui_track_load_worker(void *arg)
     result->generation = req.generation;
     result->track_key = req.track_key;
     result->load_id = req.load_id;
+    bool remote=false;
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    remote=req.remote.peer!=0;
+    if (remote) {
+        result->remote_meta=heap_caps_calloc(1,sizeof(anlz_metadata_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        const dj_link_download_io_t io={.ctx=&req,.current=ui_remote_load_current,.progress=ui_remote_load_progress};
+        result->rc=result->remote_meta ? dj_link_download_prepare(&req.remote,req.pins,&io,
+            &result->item,&result->loaded,result->remote_meta) : ESP_ERR_NO_MEM;
+        result->track_key=result->loaded.track_key;
+        if(result->rc==ESP_OK && result->loaded.artwork_path[0])
+            result->remote_art=ui_artwork_decode_sd(result->loaded.artwork_path);
+    } else
+#endif
     result->rc = media_catalog_load_by_identity(req.track_key,
                                                  req.generation,
                                                  &result->item,
@@ -1155,13 +1238,14 @@ static void ui_track_load_worker(void *arg)
         result->rc = ESP_ERR_INVALID_STATE;
         ui_track_load_set_status(result, "LOAD LOCK", "LOAD LOCK");
     } else {
+        if (remote) result->generation=media_catalog_generation();
         if (req.deck == CTRL_DECK_1) {
             (void)audio_engine_deck_clear_loop(req.deck);
         }
         deck_core_reset_deck(req.deck);
         result->deck_reset = true;
         esp_err_t clear_rc =
-            deck_core_clear_loaded_track(req.deck, req.generation);
+            deck_core_clear_loaded_track(req.deck, result->generation);
         result->rc = clear_rc;
         if (clear_rc == ESP_OK) {
             result->rc = audio_engine_deck_load_session(
@@ -1193,7 +1277,7 @@ static void ui_track_load_worker(void *arg)
                     audio_err);
             }
             if (result->rc == ESP_OK &&
-                (media_catalog_generation() != req.generation ||
+                ((!remote && media_catalog_generation() != req.generation) ||
                  !ui_library_track_load_is_current(req.load_id))) {
                 /* USB removal/catalog replacement can race the actual audio
                  * load after identity resolution. Retire that just-created
@@ -1238,7 +1322,7 @@ static void ui_track_load_worker(void *arg)
     vTaskDeleteWithCaps(NULL);
 }
 
-static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t generation, uint8_t deck)
+static esp_err_t ui_submit_track_load_request(ui_track_load_request_t *req)
 {
     if (!s_track_load_result_q) {
         s_track_load_result_q = xQueueCreate(8, sizeof(ui_track_load_result_t));
@@ -1247,23 +1331,16 @@ static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t ge
         ui_library_status_hold("NO QUEUE", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO QUEUE");
         ui_library_finish_track_load();
+        free(req);
         return ESP_ERR_NO_MEM;
     }
 
-    xQueueReset(s_track_load_result_q);
-
-    ui_track_load_request_t *req = malloc(sizeof(*req));
     if (!req) {
         ui_library_status_hold("NO MEM", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO MEM");
         ui_library_finish_track_load();
         return ESP_ERR_NO_MEM;
     }
-    req->index = index;
-    req->deck = deck;
-    req->generation = generation;
-    req->track_key = track_key;
-    req->load_id = ui_library_active_track_load_id();
 
     /* Keep the 16 KiB completion stack out of scarce internal RAM. LOAD starts
      * the audio loader, decoder and shared output tasks before this worker
@@ -1287,6 +1364,15 @@ static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t ge
     }
     return ESP_OK;
 }
+static esp_err_t ui_submit_track_load(int index,uint32_t track_key,uint32_t generation,uint8_t deck)
+{
+    ui_track_load_request_t *req=calloc(1,sizeof(*req));
+    if (req) {
+        req->index=index;req->deck=deck;req->generation=generation;
+        req->track_key=track_key;req->load_id=ui_library_active_track_load_id();
+    }
+    return ui_submit_track_load_request(req);
+}
 
 static void ui_apply_usb_removed(void)
 {
@@ -1297,11 +1383,14 @@ static void ui_apply_usb_removed(void)
     /* Cancel the worker without releasing its single-flight slot. The worker
      * must publish/retire its exact audio session before a reconnect can start
      * another LOAD, preventing two workers from reordering deck-core writes. */
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    if (!s_remote_load_active)
+#endif
     ui_library_invalidate_track_load();
     ui_library_invalidate_page_cache();
     bool removed_loaded = false;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        if (s_loaded_media_valid[deck]) {
+        if (s_loaded_media_valid[deck] && s_loaded_media[deck].source==MEDIA_SOURCE_USB) {
             s_loaded_media_valid[deck] = false;
             s_deck_loaded_track_valid[deck] = false;
             s_deck_loaded_track_key[deck] = 0;
@@ -1331,6 +1420,9 @@ static void ui_apply_usb_removed(void)
         }
         ui_library_status_hold("USB REMOVED", COL_AMBER, 2500);
     }
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    if (!s_remote_load_active)
+#endif
     ui_library_set_load_busy(false, "USB REMOVED");
 }
 
@@ -1347,9 +1439,11 @@ static void ui_poll_track_load_result(void)
             ui_library_release_deck_audio_session(
                 result.deck, result.audio_session_generation);
             ui_library_finish_track_load_id(result.load_id);
+            ui_track_load_meta_free(&result);
             continue;
         }
-        bool stale = result.generation != media_catalog_generation();
+        bool stale = result.loaded.source!=MEDIA_SOURCE_DJ_LINK &&
+            result.generation != media_catalog_generation();
         if (stale) {
             if (result.deck_reset) {
                 /* The worker may have completed audio_engine_deck_load() before
@@ -1369,6 +1463,7 @@ static void ui_poll_track_load_result(void)
             ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
             ui_library_set_load_busy(false, "LIBRARY CHANGED");
             ui_library_finish_track_load_id(result.load_id);
+            ui_track_load_meta_free(&result);
             continue;
         }
 
@@ -1386,14 +1481,18 @@ static void ui_poll_track_load_result(void)
                                    3500);
             ui_library_set_load_busy(false, display);
             ui_library_finish_track_load_id(result.load_id);
+            ui_track_load_meta_free(&result);
             continue;
         }
 
-        library_set_selected_track_index(result.index);
+        if (result.index>=0) library_set_selected_track_index(result.index);
+        if(result.loaded.source==MEDIA_SOURCE_DJ_LINK)result.generation=media_catalog_generation();
         uint8_t deck = ui_library_deck_index(result.deck);
         const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
         anlz_metadata_t meta_snapshot;
-        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
+        const anlz_metadata_t *meta = result.remote_meta;
+        memset(&meta_snapshot,0,sizeof(meta_snapshot));
+        if (!meta) meta=ui_library_clone_loaded_anlz(&meta_snapshot);
         esp_err_t publish_rc = deck_core_publish_loaded_track_session(
             deck,
             result.generation,
@@ -1409,10 +1508,12 @@ static void ui_poll_track_load_result(void)
             ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
             ui_library_set_load_busy(false, "LIBRARY CHANGED");
             ui_library_finish_track_load_id(result.load_id);
+            ui_track_load_meta_free(&result);
             continue;
         }
 
         s_loaded_media[deck] = result.loaded;
+        if(result.remote_art)ui_artwork_publish_identity(result.loaded.track_key,&result.loaded.persistent_id,result.remote_art);
         s_deck_audio_session[deck] = result.audio_session_generation;
         s_loaded_media_valid[deck] = true;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
@@ -1437,6 +1538,7 @@ static void ui_poll_track_load_result(void)
                                       result.loaded.has_waveform != 0,
                                       meta);
         anlz_free(&meta_snapshot);
+        ui_track_load_meta_free(&result);
 
         ESP_LOGI(TAG, "Audio: loaded deck %u: %s (autoplay off)",
                  (unsigned)result.deck + 1u, result.loaded.audio_path);
@@ -1483,6 +1585,31 @@ static esp_err_t ui_library_publish_simulated_track(
 }
 #endif
 
+#ifdef UI_LINK_SIMULATOR
+/* Presentation boundary mock returns an owned, prepared local artifact. The
+ * real NFS/cache transactions have independent socket/sanitizer tests. */
+extern esp_err_t ui_link_mock_download(uint8_t peer,uint64_t epoch,uint8_t slot,
+    const dj_link_peer_track_t *track,library_track_t *out);
+static esp_err_t ui_library_simulated_remote_load(uint8_t deck,uint8_t peer,uint64_t epoch,uint8_t slot,const dj_link_peer_track_t *track)
+{
+    library_track_t prepared={0};
+    esp_err_t rc=ui_link_mock_download(peer,epoch,slot,track,&prepared);
+    if(rc!=ESP_OK) {
+        ui_library_status_hold(rc==ESP_ERR_NOT_SUPPORTED?"AUDIO DOWNLOAD UNAVAILABLE":"DOWNLOAD CANCELLED",COL_AMBER,2000);
+        return rc;
+    }
+    if(!ui_library_try_begin_track_load())return ESP_ERR_INVALID_STATE;
+    anlz_metadata_t meta={0};
+    rc=ui_library_publish_simulated_track(deck,&prepared,&meta);
+    if(rc==ESP_OK) {
+        s_deck_loaded_track_key[deck]=prepared.track_id;s_deck_loaded_track_valid[deck]=true;
+        ui_library_apply_loaded_track(deck,prepared.title,prepared.artist,prepared.key,
+            prepared.bpm,prepared.duration_ms,prepared.waveform_low,false,&meta);
+        ui_library_status_hold("TRACK LOADED",COL_GREEN,2000);
+    }
+    ui_library_finish_track_load();return rc;
+}
+#endif
 static esp_err_t ui_library_load_selected_deck(uint8_t deck)
 {
     if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
@@ -1492,7 +1619,7 @@ static esp_err_t ui_library_load_selected_deck(uint8_t deck)
         if (at<0 || at>=UI_LIBRARY_PAGE_ROWS || s_link_status.state!=DJ_LINK_BROWSE_READY) return ESP_ERR_NOT_FOUND;
         if (s_link_rows[at].kind!=DJ_LINK_PEER_ROW_TRACK)
             return ui_library_browse_open_selected() ? ESP_OK : ESP_ERR_INVALID_STATE;
-        return ui_library_remote_load_admission(deck);
+        return ui_library_remote_load_admission(deck,s_link_peer,s_link_epoch,s_link_slot,&s_link_rows[at]);
     }
 #endif
     if (s_browse_mode == UI_BROWSE_NODES)
@@ -2367,6 +2494,17 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 
 void ui_library_update(const ui_frame_context_t *ctx)
 {
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+    if(s_remote_load_active && ui_library_track_load_busy()) {
+        uint32_t total=__atomic_load_n(&s_download_total,__ATOMIC_RELAXED);
+        uint32_t done=__atomic_load_n(&s_download_done,__ATOMIC_RELAXED);
+        char text[40];
+        if(total)snprintf(text,sizeof(text),"DOWNLOAD %u%% (%u/%u KiB)",
+            (unsigned)((uint64_t)done*100/total),(unsigned)(done/1024),(unsigned)(total/1024));
+        else snprintf(text,sizeof(text),"RESOLVING SOURCE");
+        ui_library_set_load_busy(true,text);
+    }
+#endif
     int active_tab = ctx ? ctx->active_tab : 0;
     s_active_tab = active_tab;
 #ifndef UI_LIBRARY_HOST_TEST
@@ -2400,7 +2538,8 @@ void ui_library_update(const ui_frame_context_t *ctx)
     if (dj_link_service_take_load(&incoming)) {
         /* Same LVGL owner, stopped-only lock and single-flight admission as
          * touch/MIDI. No source switch, deck mutation or premature ACK. */
-        (void)ui_library_remote_load_admission(incoming.deck);
+        dj_link_peer_track_t track={.rekordbox_id=incoming.track_id,.audio=DJ_LINK_PEER_AUDIO_NFS};
+        (void)ui_library_remote_load_admission(incoming.deck,incoming.source,incoming.source_epoch,incoming.slot,&track);
     }
 #endif
     const uint32_t refresh_requested =
@@ -2600,6 +2739,9 @@ void ui_library_toggle_playlists(void) { ui_library_browse_button_cb(NULL); }
 void ui_library_cycle_source(void)
 {
 #ifdef UI_LIBRARY_LINK
+#ifndef WIN32
+    if (s_remote_load_active) ui_library_invalidate_track_load();
+#endif
     /* Explicitly cycle LOCAL -> peer USB/SD or rekordbox -> LOCAL. Keep local
      * selection/navigation untouched while browsing another source. */
     static dj_link_discovery_t *peers;

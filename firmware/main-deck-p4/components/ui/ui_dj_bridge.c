@@ -1,5 +1,6 @@
 #include "ui_dj_bridge.h"
 #include "ui_artwork.h"
+#include "ui_library.h"
 #include "ui_overview_wave_cache.h"
 #include "ui_overview_renderer.h"
 #include "ui_waveform_model.h"
@@ -325,7 +326,7 @@ void ui_dj_bridge_update(const ui_frame_context_t *f)
              * dereference them outside this leased frame. */
         }
         const uint16_t *art = track.valid
-            ? ui_artwork_get(track.track_key, UI_ARTWORK_DECK) : NULL;
+            ? ui_library_deck_artwork(d) : NULL;
         dj_ui_set_artwork_pixels(d, art);
     }
     dj_ui_set_target(f->active_deck);

@@ -58,6 +58,7 @@ prelude = r'''
 #define ESP_OK 0
 #define ESP_ERR_TIMEOUT 0x107
 #define ESP_ERR_NO_MEM 0x101
+#define ESP_ERR_INVALID_STATE 0x103
 #define pdTRUE 1
 #define pdMS_TO_TICKS(n) (n)
 static bool lock_available = true;
@@ -70,7 +71,7 @@ static unsigned lock_depth;
 typedef int esp_err_t;
 typedef int *SemaphoreHandle_t;
 typedef struct {
-    bool playing, paused, playback_finished, loading, eof, decoder_open;
+    bool loaded, playing, paused, playback_finished, loading, eof, decoder_open;
     bool timeline_preroll_pending;
     uint32_t timeline_preroll_frames;
     bool flac_ready, flac_recovery_pending;
@@ -82,7 +83,7 @@ typedef struct {
     char last_error_text[32];
     size_t file_size, file_pos;
 } audio_engine_state_t;
-typedef struct { void *source; void *buf; } audio_fw_preload_t;
+typedef struct { void *source; void *buf; char path[272]; } audio_fw_preload_t;
 typedef int drflac;
 static audio_engine_state_t s_engines[2];
 static audio_fw_runtime_t s_fw_runtimes[2];
@@ -107,8 +108,13 @@ static void audio_fw_task_context_reset(int *ctx) { *ctx = 0; }
 static void audio_decoder_close(int *ctx) { (void)ctx; }
 static void drflac_close(drflac *ctx) { (void)ctx; }
 static void esp_codec_dev_close(void *ctx) { (void)ctx; }
-static void media_io_gate_begin(void) {}
-static void media_io_gate_end(void) {}
+static unsigned usb_gate, sd_gate;
+static void media_io_gate_begin(void) {++usb_gate;}
+static void media_io_gate_end(void) {assert(usb_gate);--usb_gate;}
+static bool sd_gate_available = true;
+static bool sd_io_gate_try_begin(unsigned ms) {assert(ms==50);if(!sd_gate_available)return false;++sd_gate;return true;}
+static void sd_io_gate_begin(void) {++sd_gate;}
+static void sd_io_gate_end(void) {assert(sd_gate);--sd_gate;}
 static void heap_caps_free(void *p) { ++freed; free(p); }
 static void audio_fw_preload_begin_load(audio_fw_preload_t *fw) {
     memset(fw, 0, sizeof(*fw));
@@ -123,8 +129,14 @@ static void deck_pcm_reset(uint8_t deck) { (void)deck; }
 static unsigned deck_pcm_used(uint8_t deck) { (void)deck; return 0; }
 static void audio_resampler_reset(int *resampler) { *resampler = 0; }
 static void audio_scratch_buffer_reset(int *buf) { *buf = 0; }
-static bool any_deck_loaded(void) { return false; }
-static esp_err_t audio_output_service_stop(void) { return ESP_OK; }
+static unsigned output_stops, advanced[2], lifecycle_depth;
+static bool s_lifecycle_loads_blocked;
+static void lifecycle_admission_lock(void) {}
+static void lifecycle_admission_unlock(void) {}
+static void lifecycle_deck_lock(uint8_t d) {(void)d;++lifecycle_depth;}
+static void lifecycle_deck_unlock(uint8_t d) {(void)d;assert(lifecycle_depth);--lifecycle_depth;}
+static uint32_t lifecycle_advance_generation(uint8_t d) {return ++advanced[d];}
+static esp_err_t audio_output_service_stop(void) {++output_stops;return ESP_OK;}
 static bool s_scratch_abort_seek_requested[2], s_scratch_capture_freeze[2];
 static uint32_t s_scratch_abort_seek_target_ms[2];
 static int s_scratch_engine[2], s_scratch_handoff[2];
@@ -186,6 +198,26 @@ static void finish_stop(void) {
     assert(audio_engine_stop_for_deck(0) == ESP_OK);
 }
 int main(void) {
+    audio_fw_preload_t source_file={0};
+    strcpy(source_file.path,"/sd/djlcache/track.MP3");
+    assert(ae_source_gate_begin(&source_file) && sd_gate==1 && !usb_gate);
+    ae_source_gate_end(&source_file);
+    sd_gate_available=false;assert(!ae_source_gate_begin(&source_file) && !sd_gate);sd_gate_available=true;
+    source_file.source=tmpfile();assert(source_file.source);
+    ae_source_close(&source_file,(FILE *)source_file.source);assert(!sd_gate && !usb_gate);
+    strcpy(source_file.path,"/usb/track.MP3");
+    assert(ae_source_gate_begin(&source_file) && usb_gate==1 && !sd_gate);ae_source_gate_end(&source_file);
+    strcpy(s_fw_preloads[0].path,"/sd/cache/track.MP3");
+    strcpy(s_fw_preloads[1].path,"/usb/track.MP3");
+    s_engines[0].loaded=s_engines[0].playing=s_engines[1].loaded=true;
+    bool acquired=false;
+    assert(suspend_loads_and_stop_selected(&acquired,true)==ESP_OK && acquired);
+    assert(s_engines[0].loaded && s_engines[0].playing && !s_engines[1].loaded);
+    assert(!advanced[0] && advanced[1]==1 && !output_stops && !lifecycle_depth);
+    s_lifecycle_loads_blocked=false;s_engines[0].loaded=false;s_engines[0].loading=true;
+    assert(suspend_loads_and_stop_selected(&acquired,true)==ESP_OK);
+    assert(s_engines[0].loading && !advanced[0] && !output_stops);
+    s_lifecycle_loads_blocked=false;s_engines[0].loading=false;s_engines[0].playing=false;
     owned_session();
     tokens = 1;
     assert(audio_engine_stop_for_deck(0) == ESP_ERR_TIMEOUT);
@@ -228,8 +260,14 @@ int main(void) {
 }
 '''
 
-code = prelude + block("static bool audio_wait_worker_exit(void *ctx)\n")
+code = prelude + block("static bool ae_source_sd(const audio_fw_preload_t *fw)\n")
+code += block("static bool ae_source_gate_begin(audio_fw_preload_t *fw)\n")
+code += block("static void ae_source_gate_end(audio_fw_preload_t *fw)\n")
+code += block("static void ae_source_close(audio_fw_preload_t *fw,FILE *fp)\n")
+code += block("static bool audio_wait_worker_exit(void *ctx)\n")
+code += block("static bool any_deck_loaded(void)\n")
 code += block("static esp_err_t audio_engine_stop_for_deck(uint8_t deck)\n{")
+code += block("static esp_err_t suspend_loads_and_stop_selected(bool *out_acquired,bool usb_only)\n")
 code += block("static void complete_eof_drain_if_ready(uint8_t deck)\n")
 code += "\nstatic void output_scratch_abort(void) { for (unsigned d = 0; d < 2; ++d) {\n"
 code += block("if (atomic_load_bool(&s_scratch_abort_seek_requested[d]))")

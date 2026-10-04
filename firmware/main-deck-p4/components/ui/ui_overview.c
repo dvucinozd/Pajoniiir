@@ -24,6 +24,7 @@
 #include "ui_waveform_model.h"
 #include "splash_screen.h"
 #include "ui_artwork.h"
+#include "ui_library.h"
 #include "ui_artwork_thumb.h"
 #include "hot_cue_store.h"
 #include <limits.h>
@@ -2503,7 +2504,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
     ui_label_set_text_if_changed(panel->label_status, status_text);
     deck_loaded_track_summary_t track = {0};
     const uint16_t *pixels = deck_core_get_loaded_track(deck, &track)
-        ? ui_artwork_get(track.track_key, UI_ARTWORK_DECK) : NULL;
+        ? ui_library_deck_artwork(deck) : NULL;
     if (pixels && panel->artwork_pixels) {
         if (memcmp(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size)) {
             memcpy(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size);

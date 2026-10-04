@@ -379,6 +379,8 @@ typedef struct {
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
 esp_err_t audio_engine_stop_all(void);
 esp_err_t audio_engine_suspend_loads_and_stop_all(void);
+esp_err_t audio_engine_suspend_usb_loads_and_stop(void);
+bool audio_engine_deck_is_sd(uint8_t deck);
 void audio_engine_resume_loads(void);
 #if defined(AUDIO_ENGINE_PC_TEST)
 typedef void (*audio_engine_lifecycle_test_hook_t)(uint8_t deck);

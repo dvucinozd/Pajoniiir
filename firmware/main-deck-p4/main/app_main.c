@@ -317,14 +317,18 @@ static void on_usb_storage_event(bool mounted)
     } else {
         ESP_LOGW(TAG, "USB drive removed");
         service_log_note(SERVICE_LOG_USB_UNMOUNTED, SERVICE_LOG_INFO, "drive removed");
-        esp_err_t stop_rc = audio_engine_suspend_loads_and_stop_all();
+        esp_err_t stop_rc = audio_engine_suspend_usb_loads_and_stop();
         bool owns_load_barrier = stop_rc == ESP_OK;
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
         library_clear();
-        esp_err_t clear_rc =
-            deck_core_clear_loaded_tracks(library_generation());
+        esp_err_t clear_rc=ESP_OK;
+        for(uint8_t deck=0;deck<DECK_CORE_DECK_COUNT;++deck) {
+            if(audio_engine_deck_is_sd(deck))continue;
+            esp_err_t rc=deck_core_clear_loaded_track(deck,library_generation());
+            if(rc!=ESP_OK)clear_rc=rc;
+        }
         if (clear_rc != ESP_OK) {
             ESP_LOGW(TAG, "deck loaded-track clear on USB removal: %s",
                      esp_err_to_name(clear_rc));

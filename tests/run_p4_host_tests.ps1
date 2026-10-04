@@ -1656,6 +1656,33 @@ Assert-FileDoesNotContain `
 $djlinkSources = @(Get-ChildItem (Join-Path $RepoRoot 'firmware/common/djlink/src') -Filter *.c |
     Sort-Object Name | ForEach-Object { $_.FullName })
 $tests = @(
+    foreach ($assetSuite in @('test_pdb', 'test_link_anlz')) {
+        @{
+            Name = "djlink_$assetSuite"
+            Dir = 'tests/djlink'
+            Target = "$assetSuite.exe"
+            Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
+                '-DANLZ_STANDALONE_TEST', '-DREKORDBOX_PDB_STANDALONE_TEST',
+                '-I../../firmware/common/dj_link_core/include',
+                '-I../../firmware/main-deck-p4/components/library/include',
+                '-o', "$assetSuite.exe", "$assetSuite.c",
+                '../../firmware/common/dj_link_core/dj_link_pdb.c',
+                '../../firmware/common/dj_link_core/dj_link_anlz.c',
+                '../../firmware/main-deck-p4/components/library/rekordbox_pdb.c',
+                '../../firmware/main-deck-p4/components/library/rekordbox_anlz.c')
+        }
+    }
+    @{
+        Name = 'djlink_cache'
+        Dir = 'tests/djlink'
+        Target = 'test_cache.exe'
+        Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
+            '-I../../firmware/common/dj_link_core/include',
+            '-I../../firmware/main-deck-p4/components/media_identity/include',
+            '-o', 'test_cache.exe', 'test_cache.c',
+            '../../firmware/common/dj_link_core/dj_link_cache.c',
+            '../../firmware/main-deck-p4/components/media_identity/media_identity.c')
+    }
     @{
         Name = 'djlink_browse'
         Dir = 'tests/djlink'
@@ -3739,6 +3766,9 @@ Assert-FileContains `
 if (-not $pythonSource) { throw "Python is required for firmware lifecycle regression" }
 Invoke-Step -Name "run firmware lifecycle regression" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/audio_fw_runtime/test_firmware_lifecycle.py")
+Invoke-Step -Name "run firmware artwork identity ownership regression" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/djlink/test_artwork_identity.py")
 
 # Resolve the current PowerShell executable for both Windows PowerShell and pwsh.
 $HostShell = (Get-Process -Id $PID).Path

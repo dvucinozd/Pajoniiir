@@ -25,6 +25,80 @@ static SemaphoreHandle_t s_browse_lock;
 static dj_link_browse_t *s_browse;
 static dj_link_peer_track_t *s_rows;
 static dj_link_tcp_t s_tcp;
+static uint32_t now_ms(void);
+static struct {
+    bool active, sent, done, answered;
+    uint32_t id;
+    uint16_t request;
+    uint8_t *dst;
+    size_t cap,len;
+} s_asset; /* protected by browse lock; buffer owned by waiting load worker */
+static void asset_path(void *ctx,uint32_t id,const char *path)
+{
+    (void)ctx;
+    if (!s_asset.active || s_asset.request || s_asset.id!=id) return;
+    size_t n=strlen(path);
+    s_asset.answered=n>0 && n<s_asset.cap;
+    if (s_asset.answered) {memcpy(s_asset.dst,path,n+1);s_asset.len=n;}
+    s_asset.done=true;
+}
+static void asset_blob(void *ctx,uint32_t id,uint16_t request,size_t len,bool answered)
+{
+    (void)ctx;
+    if (!s_asset.active || s_asset.id!=id || s_asset.request!=request) return;
+    s_asset.len=len;s_asset.answered=answered;s_asset.done=true;
+}
+bool dj_link_service_source(uint8_t peer,uint64_t epoch,dj_link_peer_t *out)
+{
+    if (!out || !s_snapshot_lock || xSemaphoreTake(s_snapshot_lock,pdMS_TO_TICKS(20))!=pdTRUE) return false;
+    bool found=false;
+    if (dj_link_discovery_number(s_snapshot,0)) for (unsigned i=0;i<DJ_LINK_PEERS;++i) {
+        const dj_link_peer_t *p=&s_snapshot->peers[i];
+        if (p->present && p->number==peer && p->source_epoch==epoch) {*out=*p;found=true;break;}
+    }
+    xSemaphoreGive(s_snapshot_lock);return found;
+}
+esp_err_t dj_link_service_read_asset(uint8_t peer,uint64_t epoch,uint8_t slot,
+    uint32_t id,uint16_t request,void *dst,size_t cap,size_t *len,
+    bool (*current)(void *),void *ctx)
+{
+    if (!dst || !cap || !len || !id || !s_browse_lock) return ESP_ERR_INVALID_ARG;
+    *len=0;
+    dj_link_peer_t source;
+    if (!dj_link_service_source(peer,epoch,&source)) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(s_browse_lock,pdMS_TO_TICKS(40))!=pdTRUE) return ESP_ERR_TIMEOUT;
+    if (s_asset.active) {xSemaphoreGive(s_browse_lock);return ESP_ERR_INVALID_STATE;}
+    /* Incoming requests may address a source other than the visible menu.
+     * Reuse the sole session rather than opening a second dbserver client. */
+    if (s_browse->status.peer_number!=peer || s_browse->status.source_epoch!=epoch ||
+        s_browse->status.slot!=slot || s_browse->db.phase==DJ_LINK_DB_FAILED ||
+        s_browse->db.phase==DJ_LINK_DB_IDLE) {
+        xSemaphoreTake(s_snapshot_lock,portMAX_DELAY);
+        dj_link_browse_start(s_browse,s_snapshot,peer,epoch,slot,DJ_LINK_DB_MENU_ALL_TRACKS,0,now_ms());
+        xSemaphoreGive(s_snapshot_lock);
+    }
+    s_asset.active=true;s_asset.sent=s_asset.done=s_asset.answered=false;
+    s_asset.id=id;s_asset.request=request;s_asset.dst=dst;s_asset.cap=cap;s_asset.len=0;
+    xSemaphoreGive(s_browse_lock);
+    uint32_t start=now_ms();esp_err_t rc=ESP_ERR_TIMEOUT;
+    while ((uint32_t)(now_ms()-start)<30000 && (!current || current(ctx))) {
+        if (xSemaphoreTake(s_browse_lock,pdMS_TO_TICKS(20))==pdTRUE) {
+            if (s_asset.done) {rc=s_asset.answered?ESP_OK:ESP_ERR_NOT_FOUND;*len=s_asset.len;}
+            else if (s_browse->db.phase==DJ_LINK_DB_FAILED ||
+                     s_browse->status.state==DJ_LINK_BROWSE_UNAVAILABLE) rc=ESP_ERR_INVALID_STATE;
+            xSemaphoreGive(s_browse_lock);
+            if (rc!=ESP_ERR_TIMEOUT) break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    /* Must finish detaching before caller may free its destination. */
+    xSemaphoreTake(s_browse_lock,portMAX_DELAY);
+    dj_link_db_cancel_blob(&s_browse->db);
+    if (!request) {s_browse->db.path_id=0;}
+    memset(&s_asset,0,sizeof(s_asset));
+    xSemaphoreGive(s_browse_lock);
+    return current && !current(ctx) ? ESP_ERR_INVALID_STATE : rc;
+}
 typedef struct {
     uint64_t id, epoch;
     uint32_t menu_id;
@@ -180,6 +254,7 @@ static void worker(void *unused)
         xSemaphoreTake(s_browse_lock,portMAX_DELAY);
         browse_command_t command;
         if (xQueueReceive(s_commands,&command,0)==pdTRUE) {
+            if (s_asset.active) {s_asset.done=true;s_asset.answered=false;}
             if (!command.peer) dj_link_browse_cancel(s_browse);
             else {
                 if (!dj_link_browse_start(s_browse,s_model,command.peer,command.epoch,
@@ -190,6 +265,14 @@ static void worker(void *unused)
                 }
                 s_browse->status.request_id=command.id;
             }
+        }
+        if (s_asset.active && !s_asset.sent && !s_asset.done &&
+            s_browse->db.phase!=DJ_LINK_DB_FAILED && s_browse->db.phase!=DJ_LINK_DB_IDLE) {
+            s_asset.sent=s_asset.request
+                ? dj_link_db_want_blob(&s_browse->db,s_asset.request,s_asset.id,
+                    s_asset.dst,s_asset.cap,now_ms())
+                : dj_link_db_want_path(&s_browse->db,s_asset.id,now_ms());
+            if (!s_asset.sent) s_asset.done=true;
         }
         /* Invalidate before delivering socket bytes and before publishing rows. */
         if (dj_link_browse_validate(s_browse,s_model)) dj_link_tcp_poll(&s_tcp,now_ms());
@@ -214,7 +297,7 @@ esp_err_t dj_link_service_init(void)
     if (!s_model || !s_snapshot || !s_snapshot_lock || !s_browse || !s_rows ||
         !s_browse_lock || !s_commands || !s_loads) goto fail;
     dj_link_db_io_t io = {.connect=dj_link_tcp_connect,.send=dj_link_tcp_send,
-        .close=dj_link_tcp_close,.ctx=&s_tcp};
+        .close=dj_link_tcp_close,.path=asset_path,.blob=asset_blob,.ctx=&s_tcp};
     dj_link_browse_init(s_browse,s_rows,&io); dj_link_tcp_init(&s_tcp,&s_browse->db);
     dj_link_discovery_init(s_model); *s_snapshot = *s_model;
     if (xTaskCreatePinnedToCoreWithCaps(worker, "dj_link_eth", 6144, NULL, 2, &s_task, 0,

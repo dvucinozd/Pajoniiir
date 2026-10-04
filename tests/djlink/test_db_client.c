@@ -14,7 +14,15 @@ typedef struct {
     dj_link_peer_track_t last_row;
     bool want_detail;
     unsigned detail_rows;
+    unsigned blobs;
+    size_t blob_len;
+    bool blob_answered;
 } mock_t;
+static void blob(void *ctx,uint32_t id,uint16_t request,size_t len,bool answered)
+{
+    mock_t *m=ctx;assert(id==7 && request==DJLINK_DB_TYPE_BEATGRID_REQUEST);
+    m->blobs++;m->blob_len=len;m->blob_answered=answered;
+}
 static int connect_mock(void *ctx, uint32_t ip, uint16_t port)
 {
     mock_t *m = ctx; assert(ip == 0xc0a80102); ++m->connects; m->port = port; return 0;
@@ -56,7 +64,7 @@ static void init(dj_link_db_t *c, mock_t *m, uint32_t limit)
 {
     memset(m, 0, sizeof(*m));
     dj_link_db_io_t io = {.connect=connect_mock, .send=send_mock, .close=close_mock,
-        .list_begin=list_begin, .track=row, .ctx=m};
+        .list_begin=list_begin, .track=row, .blob=blob, .ctx=m};
     dj_link_db_init(c, &io, limit);
 }
 static bool next_detail(void *ctx, uint32_t *index, uint32_t *id)
@@ -182,6 +190,25 @@ static void framing_and_visible_details(void)
     uint8_t bad_surrogate[] = {0xd8,0,0,'B'};
     dj_link_db_utf16be_to_utf8(bad_surrogate, sizeof(bad_surrogate), out, sizeof(out));
     assert(!strcmp(out, "?B"));
+    assert(dj_link_db_decode_path(utf16,sizeof(utf16),out,sizeof(out)));
+    assert(!dj_link_db_decode_path(utf16,sizeof(utf16),out,2) && !out[0]);
+    assert(!dj_link_db_decode_path(bad_surrogate,sizeof(bad_surrogate),out,sizeof(out)) && !out[0]);
+    uint8_t pair[]={0xd8,0x3d,0xde,0x00};
+    assert(dj_link_db_decode_path(pair,sizeof(pair),out,sizeof(out)) && !strcmp(out,"\xf0\x9f\x98\x80"));
+}
+static void bounded_assets(void)
+{
+    dj_link_db_t c;mock_t m;init(&c,&m,8);join(&c,&m);availability(&c,0);
+    uint8_t payload[]={1,2,3,4},out[4]={0};
+    djlink_db_arg_t args[3]={{.type=DJLINK_DB_FIELD_INT32,.num=DJLINK_DB_TYPE_BEATGRID_REQUEST},
+        {.type=DJLINK_DB_FIELD_INT32,.num=0},
+        {.type=DJLINK_DB_FIELD_BINARY,.bin=payload,.bin_len=sizeof(payload)}};
+    assert(dj_link_db_want_blob(&c,DJLINK_DB_TYPE_BEATGRID_REQUEST,7,out,2,200));
+    reply(&c,c.txid,DJLINK_DB_TYPE_BEATGRID_REPLY,args,3,1);
+    assert(m.blobs==1 && !m.blob_answered && !m.blob_len && !out[0]);
+    assert(dj_link_db_want_blob(&c,DJLINK_DB_TYPE_BEATGRID_REQUEST,7,out,sizeof(out),300));
+    reply(&c,c.txid,DJLINK_DB_TYPE_BEATGRID_REPLY,args,3,1);
+    assert(m.blobs==2 && m.blob_answered && m.blob_len==4 && !memcmp(out,payload,4));
 }
 static void metadata_completion(void)
 {
@@ -207,7 +234,7 @@ static void metadata_completion(void)
 int main(void)
 {
     bounded_list_and_playlist(); failures_and_stale_events(); framing_and_visible_details();
-    metadata_completion();
+    metadata_completion();bounded_assets();
     puts("PASS DB client fragments, 2000-row cap, playlists, malformed replies, cancel/epochs, timeout");
     return 0;
 }

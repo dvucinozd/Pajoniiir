@@ -214,6 +214,8 @@ extern void ui_link_mock_error(void);
 extern void ui_link_mock_pending(bool pending);
 extern void ui_link_mock_load(uint8_t deck);
 extern uint32_t ui_link_mock_visible_first(void);
+extern void ui_link_mock_audio(bool ready,bool cancel);
+extern uint32_t ui_link_mock_download_calls(void);
 static lv_obj_t *link_table(lv_obj_t *root)
 {
     if (lv_obj_check_type(root,&lv_table_class) && lv_obj_is_visible(root) &&
@@ -251,6 +253,25 @@ static int link_scenario(const char *output)
     ui_link_mock_load(CTRL_DECK_1); pump(256);
     if (!find_visible_label(lv_screen_active(),"LOAD LOCK")) fail("incoming load bypassed playing-deck load lock");
     deck_core_test_apply_event(&play); ui_simulator_deck_set_playing(false);
+    ui_link_mock_audio(true,false);
+    if(ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_OK)fail("verified remote artifact did not use common controller load");
+    deck_core_get_loaded_track(CTRL_DECK_1,&after);
+    if(after.track_key!=0x80000009u)fail("remote completion published the wrong selected track");
+    save_ppm(output,"link_loaded");
+    uint32_t calls=ui_link_mock_download_calls();deck_core_test_apply_event(&play);
+    if(ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_ERR_INVALID_STATE || ui_link_mock_download_calls()!=calls)
+        fail("playing-deck lock performed download before admission");
+    deck_core_test_apply_event(&play);ui_simulator_deck_set_playing(false);
+    ui_link_mock_audio(true,true);
+    if(ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_ERR_INVALID_STATE)fail("cancelled transfer reported success");
+    deck_core_get_loaded_track(CTRL_DECK_1,&after);
+    if(after.track_key!=0x80000009u)fail("cancelled transfer changed loaded deck");
+    ui_link_mock_audio(true,false);ui_link_mock_load(CTRL_DECK_1);pump(256);
+    deck_core_get_loaded_track(CTRL_DECK_1,&after);
+    if(after.track_key!=0x80000011u)fail("incoming load used selected browse row instead of requested track");
+    ui_link_mock_audio(false,false);
+    ui_library_load_track_index_for_deck(0,CTRL_DECK_1);
+    ui_link_mock_load(CTRL_DECK_1);pump(256);
     ui_link_mock_pending(true);
     click_label("PLAYLISTS"); pump(256);
     if (link_table(lv_screen_active())) fail("pending new menu displayed old completed rows");

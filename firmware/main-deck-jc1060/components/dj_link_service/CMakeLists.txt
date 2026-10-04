@@ -1,2 +1,3 @@
-idf_component_register(SRCS "dj_link_service.c" INCLUDE_DIRS "include"
-    REQUIRES board_ethernet dj_link_core app_settings esp_netif esp_timer heap freertos log)
+idf_component_register(SRCS "dj_link_service.c" "dj_link_download.c" INCLUDE_DIRS "include"
+    REQUIRES board_ethernet board_adapter dj_link_core app_settings media_catalog sd_io_gate
+        esp_netif esp_timer esp_hw_support heap freertos log)

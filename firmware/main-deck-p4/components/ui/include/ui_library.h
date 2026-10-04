@@ -15,6 +15,7 @@
 /* The LVGL table owns cells only for one page. Eight 40 px rows fit in the
  * 330 px data viewport, keeping the live cell model bounded at 8 x 5. */
 #define UI_LIBRARY_PAGE_ROWS 8
+const uint16_t *ui_library_deck_artwork(uint8_t deck);
 
 typedef struct {
     char title[UI_LIBRARY_TITLE_TEXT_MAX];

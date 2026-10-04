@@ -31,10 +31,17 @@ netif; no Wi-Fi/default-interface fallback exists.
 includes the nonblocking Ethernet-bound TCP adapter, serialized DBServer worker,
 owned 2,000-row cache, visible metadata and Library source/folder/playlist bridge.
 Incomplete lists and stale epochs never publish completed rows. Touch/controller
-and incoming loads share stopped/busy admission; metadata-only loads remain
-unsupported until J supplies verified audio. Real UDP/TCP sanitizers and the Link
-Library simulator pass. Physical peer interoperability is NOT RUN. Next: J safe
-download/cache, K sync/master, then L final compatibility/release gates.
+and incoming loads share stopped/busy admission. Real UDP/TCP sanitizers and the
+Link Library simulator pass. Physical peer interoperability is NOT RUN.
+[J software closure](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
+adds interface-bound NFS, verified SD artifacts/manifests, full identity-bound
+analysis/artwork/cues and one common load worker. Cancellation/space/recording
+admission failures preserve existing decks; local SD playback is independent of
+network and USB media presence. Unknown volume identity requires fresh session
+downloads and prevents cross-session local cue migration. The A/B replacement,
+integrity/interruption, gated SD loader and UI admission regressions are automated.
+Physical SD/peer/concurrent playback acceptance is NOT RUN. Next: K sync/master,
+then L final compatibility/release gates; keep the installed JC4880 image.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

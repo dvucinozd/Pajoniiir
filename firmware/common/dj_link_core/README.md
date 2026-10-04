@@ -16,8 +16,8 @@ but share the board's real MAC/IP. Peer snapshots include reconnect/replacement
 epochs, copied status/beat/position and bounded counters. No library is advertised,
 no audio position extrapolated, no packet I/O or filesystem/UI access occurs.
 
-Epochs are session-local runtime identity, never persistent cache keys.
-Remote media/file identity verification and common load admission belong to J.
+Epochs are session-local runtime identity, never durable cache keys.
+J adds content identity verification and common load admission.
 
 `dj_link_db` is the frozen donor's sans-I/O DBServer client, adapted for explicit
 source and per-connection epochs and a hard 2,000-row request limit. Transport
@@ -28,9 +28,24 @@ TCP framing uses the corrected codec's exact consumed prefix length. Malformed
 menu fields, wrong transaction/setup IDs and premature render footers fail the
 request. Folder/playlist menu requests always use source order.
 
-The donor's IP/player/track FNV cache-key API was intentionally excluded; no
-persistent identity or cache storage is provided here. Blob/path protocol helpers
-are retained for later J integration, not enabled in the current runtime.
+The donor's IP/player/track FNV cache-key API was intentionally excluded.
+`dj_link_cache` uses the existing full SHA-256 media identity, complete audio
+proof, normalized path/size/timestamp and caller-supplied export/session proof.
+The runtime cannot establish a trustworthy NFS volume UUID: every fresh mount
+adds a nonce and requires downloading again. Local edits do not migrate between
+these unidentified sessions. `dj_link_pdb_stamp_matches` is a retained donor
+optimization hint, unused by runtime and never sufficient for a hit.
+Versioned completion manifests are published last, after read-back verification.
+Cache limits are 1 GiB total/audio, 64 MiB PDB and 64 MiB free-space reserve.
+Both deck identities and the active download group prevent pruning. Runtime SD
+operations yield at 4 KiB boundaries and serialize handle cleanup after cancel.
+
+`dj_link_pdb` and `dj_link_anlz` are narrow MIT imports from frozen `428b97dd`.
+PDB title fixture index 17 is corrected with a distinct index-18 sentinel. Paths
+cannot silently truncate. ANLZ round trips use the current common parser and
+memory cue ordering/truncation policy, not a second donor library implementation.
+The null-output preview crash is fixed. DB file paths are lossless UTF-16;
+over-capacity asset blobs fail rather than publishing partial analysis/JPEG.
 
 `dj_link_tcp` implements a worker-owned nonblocking socket adapter shared with
 the real localhost tests. Each port-query/database connection requires both
@@ -46,4 +61,6 @@ pointers. A source or claim generation change closes TCP and hides all rows.
 Runtime IDs are not persistent identities. Incoming load routing validates the
 known sender address, source epoch, claimed destination and a three-second TTL;
 the firmware status socket is unicast-only. Routing never acknowledges or changes
-a deck. The LVGL admission path refuses unavailable downloads until package J.
+a deck. J connects LVGL admission to the existing load worker; NFS, DB assets,
+hashing and JPEG remain outside LVGL/audio output. Incomplete downloads preserve
+the old deck. Owned metadata/artwork publish only after accepted audio binding.

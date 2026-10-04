@@ -21,8 +21,13 @@ does not qualify or release this board. All JC1060 physical gates are NOT RUN.
 adds default-off Ethernet-only discovery, two-player claims and serialized
 DBServer browse with a bounded owned Library cache. Software/mock/simulator
 results do not qualify real CDJ or rekordbox peers. Incoming/touch/controller
-metadata-only LOADs respect the same lock/busy checks and remain unsupported
-until J supplies verified downloaded audio; no premature load ACK is sent.
+LOADs respect the same lock/busy checks; no premature load ACK is sent.
+[Package J software closure](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
+adds verified SD downloads and owned full-identity assets through that shared
+worker. Network/USB loss cannot stop completed SD playback. NFS supplies no
+trustworthy volume UUID, so current mounts remain session-local: fresh downloads
+are required and local cue edits cannot migrate across sessions. Host/mock/build
+results do not qualify real peer/card performance or power-loss behavior.
 [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
 UAC1 packed 16/24-bit formats and USB MAIN/cue pacing. The service API selects
 an available sink only with both decks stopped and recorder inactive. Host/build

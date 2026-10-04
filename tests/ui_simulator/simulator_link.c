@@ -4,19 +4,36 @@
 #include <string.h>
 #include <stdio.h>
 #include "lvgl.h"
+#include "library.h"
 static dj_link_browse_status_t s_status;
 static bool s_current=true, s_incoming;
 static uint32_t s_ready_at;
 static uint32_t s_first;
 static bool s_waiting_command;
 static dj_link_incoming_load_t s_load;
+static bool s_audio,s_cancel;
+static uint32_t s_download_calls;
+void ui_link_mock_audio(bool ready,bool cancel) {s_audio=ready;s_cancel=cancel;}
+uint32_t ui_link_mock_download_calls(void) {return s_download_calls;}
+esp_err_t ui_link_mock_download(uint8_t peer,uint64_t epoch,uint8_t slot,
+    const dj_link_peer_track_t *track,library_track_t *out)
+{
+    ++s_download_calls;
+    if(!s_audio)return ESP_ERR_NOT_SUPPORTED;
+    if(s_cancel || !s_current || peer!=1 || epoch!=12 || slot!=DJLINK_SLOT_LAPTOP || !track || !track->rekordbox_id)
+        return ESP_ERR_INVALID_STATE;
+    memset(out,0,sizeof(*out));out->track_id=0x80000000u|track->rekordbox_id;
+    out->duration_ms=245000;out->bpm=123;
+    snprintf(out->title,sizeof(out->title),"Downloaded track %u",track->rekordbox_id);
+    snprintf(out->artist,sizeof(out->artist),"Verified source");return ESP_OK;
+}
 void ui_link_mock_available(bool available) { s_current=available; ++s_status.revision; }
 void ui_link_mock_empty(void) { s_status.state=DJ_LINK_BROWSE_READY; s_status.count=s_status.total=0; ++s_status.revision; }
 void ui_link_mock_error(void) {
     s_status.state=DJ_LINK_BROWSE_FAILED; s_status.count=0; ++s_status.revision;
     snprintf(s_status.error,sizeof(s_status.error),"PARTIAL LIST");
 }
-void ui_link_mock_load(uint8_t deck) { s_incoming=true; s_load.deck=deck; }
+void ui_link_mock_load(uint8_t deck) { s_incoming=true; s_load=(dj_link_incoming_load_t){.deck=deck,.source=1,.slot=DJLINK_SLOT_LAPTOP,.source_epoch=12,.track_id=17}; }
 uint32_t ui_link_mock_visible_first(void) { return s_first; }
 void ui_link_mock_pending(bool pending) { s_waiting_command=pending; }
 bool dj_link_service_snapshot(dj_link_discovery_t *out)

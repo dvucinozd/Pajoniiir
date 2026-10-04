@@ -62,6 +62,7 @@
 #include <math.h>
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
+#include "sd_io_gate.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
 #endif
@@ -1635,7 +1636,7 @@ static void reset_all_resamplers(void)
 static bool any_deck_loaded(void)
 {
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        if (s_engines[i].loaded) {
+        if (s_engines[i].loaded || s_engines[i].loading) {
             return true;
         }
     }
@@ -2862,21 +2863,39 @@ static SemaphoreHandle_t ctx_tasks_done(const audio_fw_task_context_t *ctx)
     return s_tasks_done[d];
 }
 
+static bool ae_source_sd(const audio_fw_preload_t *fw)
+{
+    return fw && !strncmp(fw->path,"/sd/",4);
+}
+static bool ae_source_gate_begin(audio_fw_preload_t *fw)
+{
+    if (ae_source_sd(fw)) return sd_io_gate_try_begin(50);
+    media_io_gate_begin();return true;
+}
+static void ae_source_gate_end(audio_fw_preload_t *fw)
+{
+    if (ae_source_sd(fw)) sd_io_gate_end();else media_io_gate_end();
+}
+static void ae_source_close(audio_fw_preload_t *fw,FILE *fp)
+{
+    if(ae_source_sd(fw))sd_io_gate_begin();else media_io_gate_begin();
+    fclose(fp);ae_source_gate_end(fw);
+}
 static size_t ae_fw_cache_read_at(void *ctx, size_t offset,
                                   void *dst, size_t bytes)
 {
     audio_fw_preload_t *fw = (audio_fw_preload_t *)ctx;
     FILE *src = fw ? (FILE *)fw->source : NULL;
     if (!src || !dst || bytes == 0u || offset >= fw->file_size) return 0u;
-    media_io_gate_begin();
-    if (!media_io_gate_is_available() || fseek(src, (long)offset, SEEK_SET) != 0) {
-        media_io_gate_end();
+    if (!ae_source_gate_begin(fw)) return 0;
+    if ((!ae_source_sd(fw) && !media_io_gate_is_available()) || fseek(src, (long)offset, SEEK_SET) != 0) {
+        ae_source_gate_end(fw);
         return 0u;
     }
     int64_t started = esp_timer_get_time();
     size_t got = fread(dst, 1u, bytes, src);
     uint32_t elapsed = (uint32_t)(esp_timer_get_time() - started);
-    media_io_gate_end();
+    ae_source_gate_end(fw);
     ae_diag_record_preload_chunk((uint8_t)(fw - s_fw_preloads), elapsed,
                                  got, offset + got, fw->file_size);
     return got;
@@ -2900,21 +2919,19 @@ static void ae_loader_task(void *arg)
     audio_engine_state_t *eng = (audio_engine_state_t *)ctx->engine;
     audio_fw_preload_begin_load(fw);
 
-    media_io_gate_begin();
+    if (!ae_source_gate_begin(fw)) {ae_fail_load(eng,fw,runtime,ESP_ERR_TIMEOUT,"SD GATE TIMEOUT");goto park;}
     FILE *src = fopen(fw->path, "rb");
     if (!src) {
-        media_io_gate_end();
+        ae_source_gate_end(fw);
         ae_fail_load(eng, fw, runtime, ESP_ERR_NOT_FOUND, "NOT FOUND");
         goto park;
     }
     fseek(src, 0, SEEK_END);
     long fsz = ftell(src);
     fseek(src, 0, SEEK_SET);
-    media_io_gate_end();
+    ae_source_gate_end(fw);
     if (fsz <= 0) {
-        media_io_gate_begin();
-        fclose(src);
-        media_io_gate_end();
+        ae_source_close(fw,src);
         ae_fail_load(eng, fw, runtime, ESP_ERR_INVALID_SIZE, "BAD SIZE");
         goto park;
     }
@@ -2922,18 +2939,14 @@ static void ae_loader_task(void *arg)
     uint8_t *storage = heap_caps_malloc(AUDIO_FW_CACHE_BYTES,
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!storage) {
-        media_io_gate_begin();
-        fclose(src);
-        media_io_gate_end();
+        ae_source_close(fw,src);
         ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "CACHE OOM");
         goto park;
     }
     if (!audio_fw_preload_bind_cache(fw, storage, AUDIO_FW_CACHE_BYTES,
                                      (size_t)fsz, src, ae_fw_cache_read_at)) {
         heap_caps_free(storage);
-        media_io_gate_begin();
-        fclose(src);
-        media_io_gate_end();
+        ae_source_close(fw,src);
         ae_fail_load(eng, fw, runtime, ESP_FAIL, "CACHE INIT ERR");
         goto park;
     }
@@ -4749,9 +4762,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
          * it under a stuck loader would be a use-after-free. */
         if (joined) {
             if (fw->source) {
-                media_io_gate_begin();
-                fclose((FILE *)fw->source);
-                media_io_gate_end();
+                ae_source_close(fw,(FILE *)fw->source);
                 fw->source = NULL;
             }
             if (fw->buf) {
@@ -4793,9 +4804,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
          * task that reads it might still be alive. */
         if (joined) {
             if (fw->source) {
-                media_io_gate_begin();
-                fclose((FILE *)fw->source);
-                media_io_gate_end();
+                ae_source_close(fw,(FILE *)fw->source);
                 fw->source = NULL;
             }
             if (fw->buf) {
@@ -4962,9 +4971,7 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 #if AE_FW
     audio_fw_preload_t *fw = &s_fw_preloads[deck];
     if (fw->source) {
-        media_io_gate_begin();
-        fclose((FILE *)fw->source);
-        media_io_gate_end();
+        ae_source_close(fw,(FILE *)fw->source);
         fw->source = NULL;
     }
     if (fw->buf) {
@@ -5375,7 +5382,7 @@ uint32_t audio_engine_deck_session_generation(uint8_t deck)
     return generation;
 }
 
-static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
+static esp_err_t suspend_loads_and_stop_selected(bool *out_acquired,bool usb_only)
 {
     if (out_acquired) *out_acquired = false;
     /* Close admission first. A LOAD that already passed admission owns its
@@ -5394,7 +5401,13 @@ static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
     }
 
     esp_err_t first_err = ESP_OK;
+    bool preserved=false;
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+#if AE_FW
+        if(usb_only && ae_source_sd(&s_fw_preloads[deck])) {preserved=true;continue;}
+#else
+        (void)usb_only;
+#endif
         (void)lifecycle_advance_generation(deck);
         esp_err_t rc = audio_engine_stop_for_deck(deck);
         if (first_err == ESP_OK && rc != ESP_OK) {
@@ -5402,11 +5415,12 @@ static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
         }
     }
 #if AE_FW
-    esp_err_t output_rc = audio_output_service_stop();
+    esp_err_t output_rc = preserved ? ESP_OK : audio_output_service_stop();
     if (first_err == ESP_OK && output_rc != ESP_OK) {
         first_err = output_rc;
     }
 #endif
+    (void)preserved;
     for (uint8_t deck = AUDIO_ENGINE_DECK_COUNT; deck > 0u; deck--) {
         lifecycle_deck_unlock((uint8_t)(deck - 1u));
     }
@@ -5416,7 +5430,7 @@ static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
 esp_err_t audio_engine_suspend_loads_and_stop_all(void)
 {
     bool acquired = false;
-    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    esp_err_t rc = suspend_loads_and_stop_selected(&acquired,false);
     if (rc != ESP_OK && acquired) audio_engine_resume_loads();
     return rc;
 }
@@ -5431,9 +5445,26 @@ void audio_engine_resume_loads(void)
 esp_err_t audio_engine_stop_all(void)
 {
     bool acquired = false;
-    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    esp_err_t rc = suspend_loads_and_stop_selected(&acquired,false);
     if (acquired) audio_engine_resume_loads();
     return rc;
+}
+esp_err_t audio_engine_suspend_usb_loads_and_stop(void)
+{
+    bool acquired=false;esp_err_t rc=suspend_loads_and_stop_selected(&acquired,true);
+    if(rc!=ESP_OK && acquired)audio_engine_resume_loads();
+    return rc;
+}
+bool audio_engine_deck_is_sd(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return false;
+    lifecycle_deck_lock(deck);
+#if AE_FW
+    bool sd=ae_source_sd(&s_fw_preloads[deck]);
+#else
+    bool sd=false;
+#endif
+    lifecycle_deck_unlock(deck);return sd;
 }
 
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)

@@ -4,7 +4,7 @@ idf_component_register(
          "audio_cue_preroll.c" "audio_seek_skip.c" "audio_track_length.c"
          "audio_loop_resize.c" "audio_engine_memory.c"
     INCLUDE_DIRS "include"
-    REQUIRES log board_adapter esp_codec_dev esp_timer media_io_gate audio_recorder service_log controller_usb_host controller_usb_audio firmware_health
+    REQUIRES log board_adapter esp_codec_dev esp_timer media_io_gate sd_io_gate audio_recorder service_log controller_usb_host controller_usb_audio firmware_health
     # minimp3.h and dr_flac.h are single-header libraries included from this dir.
     # audio_flac_decoder.c holds the one DR_FLAC_IMPLEMENTATION.
     # Firmware audio: decode task + PCM5102A I2S MAIN out via bsp_jc4880.

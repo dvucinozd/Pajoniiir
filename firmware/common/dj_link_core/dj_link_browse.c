@@ -39,12 +39,22 @@ static bool next_detail(void *ctx, uint32_t *index, uint32_t *id)
             b->visible_count, 0, 0, index)) return false;
     *id = b->rows[*index].rekordbox_id; return true;
 }
+static void path(void *ctx,uint32_t id,const char *value)
+{
+    dj_link_browse_t *b=ctx;
+    if (b->transport.path) b->transport.path(b->transport.ctx,id,value);
+}
+static void blob(void *ctx,uint32_t id,uint16_t request,size_t len,bool answered)
+{
+    dj_link_browse_t *b=ctx;
+    if (b->transport.blob) b->transport.blob(b->transport.ctx,id,request,len,answered);
+}
 void dj_link_browse_init(dj_link_browse_t *b, dj_link_peer_track_t *rows,
                          const dj_link_db_io_t *transport)
 {
     memset(b, 0, sizeof(*b)); b->rows = rows; b->transport = *transport;
     dj_link_db_io_t io = {.connect=connect_peer, .send=send_peer, .close=close_peer,
-        .list_begin=list_begin, .track=track, .next_detail=next_detail, .ctx=b};
+        .list_begin=list_begin, .track=track, .next_detail=next_detail, .path=path,.blob=blob,.ctx=b};
     dj_link_db_init(&b->db, &io, DJ_LINK_DB_TRACK_LIMIT);
 }
 void dj_link_browse_cancel(dj_link_browse_t *b)

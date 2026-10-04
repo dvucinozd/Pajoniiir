@@ -1,4 +1,6 @@
 #include "ui_artwork.h"
+const uint16_t *ui_artwork_get_identity(uint32_t key,const media_persistent_id_t *id,ui_artwork_size_t size)
+{(void)id;return ui_artwork_get(key,size);}
 #include "ui_artwork_thumb.h"
 #include "artwork_fixture.h"
 

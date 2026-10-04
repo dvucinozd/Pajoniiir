@@ -781,6 +781,14 @@ static void on_read_reply(djlink_nfs_t *c, const djlink_rpc_reply_t *rep, uint32
         fail(c, DJLINK_NFS_E_READ, st, text);
         return;
     }
+    /* Each READ repeats attributes. Reject a replaced/edited file before
+     * delivering any bytes from that reply to the transactional cache. */
+    if (attr.type!=c->attr.type || attr.size!=c->attr.size ||
+        attr.fsid!=c->attr.fsid || attr.fileid!=c->attr.fileid ||
+        attr.mtime_s!=c->attr.mtime_s || attr.mtime_us!=c->attr.mtime_us ||
+        attr.ctime_s!=c->attr.ctime_s || attr.ctime_us!=c->attr.ctime_us) {
+        fail(c,DJLINK_NFS_E_READ,0,"SOURCE FILE CHANGED"); return;
+    }
     if (s->offset == c->delivered) {
         if (!deliver(c, idx, data, (uint32_t)data_len)) {
             if (c->state == DJLINK_NFS_BUSY) {

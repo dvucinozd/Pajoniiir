@@ -42,7 +42,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
 | H | Previous product design with new features at 800x480 and 1024x600 | Software verified; c4912d5b installed on JC4880. Focused AP/USB, operator design/controls and paused-track absolute resources PASS; full baseline/audio/soak acceptance open |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
-| J | Full persistent media identity, cancellable download, atomic cache | Pending |
+| J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
 | K | Epoch-bound network clock, controlled sync and tempo master | Pending |
 | L | Project-bound OTA, documentation, qualification and release candidate | Pending |
 
@@ -54,6 +54,18 @@ supersede them. UI redesign/presentation belongs to H and S3CP v4 to D.
 JC1060, DDJ-400 and real CDJ peer acceptance remain **NOT RUN** until the
 hardware is available. No deployment, production channel change or hardware
 acceptance follows from a successful host test or build.
+
+## Package J
+
+Current J closure is documented in
+[J software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md).
+NFS/PDB/DB analysis downloads use the existing worker, full identities and
+manifest-last completion. Cancel, corruption, space/admission and A/B swap tests
+pass; cache pruning respects both decks and the active artifact. Unidentified
+volumes intentionally cannot reuse cross-session audio or local cue edits.
+Completed SD playback survives network and local USB removal. No device was
+contacted or installed; SD performance, real peers, audio and final soak are
+NOT RUN. Next implementation is K, followed by L.
 
 ## Package G
 

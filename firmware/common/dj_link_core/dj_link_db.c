@@ -293,6 +293,35 @@ static uint32_t menu_count(const djlink_db_msg_t *m)
     return m->args[1].num;
 }
 
+/* Filenames must be lossless: a clipped or substituted display string can
+ * accidentally identify a different file. Titles keep their display policy. */
+bool dj_link_db_decode_path(const uint8_t *in,size_t len,char *out,size_t cap)
+{
+    if(!out || !cap)return false;
+    out[0]=0;if(!in || (len&1))return false;
+    size_t o=0;
+    for(size_t i=0;i<len;i+=2) {
+        uint32_t cp=((uint32_t)in[i]<<8)|in[i+1];
+        if(!cp)break;
+        if(cp>=0xd800 && cp<=0xdbff) {
+            if(i+3>=len)goto bad;
+            uint32_t lo=((uint32_t)in[i+2]<<8)|in[i+3];
+            if(lo<0xdc00 || lo>0xdfff)goto bad;
+            cp=0x10000+((cp-0xd800)<<10)+(lo-0xdc00);i+=2;
+        } else if(cp>=0xdc00 && cp<=0xdfff)goto bad;
+        size_t n=cp<0x80?1:cp<0x800?2:cp<0x10000?3:4;
+        if(o+n>=cap)goto bad;
+        if(n==1)out[o++]=(char)cp;
+        else {
+            out[o++]=(char)((n==2?0xc0:n==3?0xe0:0xf0)|(cp>>(6*(n-1))));
+            for(size_t j=n-1;j;j--)out[o++]=(char)(0x80|((cp>>(6*(j-1)))&63));
+        }
+    }
+    out[o]=0;return o>0;
+bad:
+    out[0]=0;return false;
+}
+
 static bool menu_success(const djlink_db_msg_t *m, uint32_t request)
 {
     return m->type == DJLINK_DB_TYPE_SUCCESS && m->arg_count >= 2 &&
@@ -561,8 +590,8 @@ static int blob_step(dj_link_db_t *c, uint32_t now_ms)
                                     ? DJ_LINK_DB_TYPE_ANLZ_TAG_REPLY
                                     : DJLINK_DB_TYPE_BEATGRID_REPLY);
         c->blob_typed = c->blob_keep;
-        if (c->blob_request == DJLINK_DB_TYPE_ARTWORK_REQUEST && blob_len > c->blob_cap) {
-            c->blob_keep = false; /* a cut JPEG is no picture */
+        if (blob_len > c->blob_cap) {
+            c->blob_keep = c->blob_typed = false; /* never publish a clipped asset */
         }
         if (!has_blob) {
             /* "No data": three integers and nothing else. */
@@ -719,7 +748,7 @@ static void handle_msg(dj_link_db_t *c, const djlink_db_msg_t *m, uint32_t now_m
             const djlink_db_arg_t *l2;
             if (item_fields(m, &num, &l1, &l2, &item_type) &&
                 item_type == DJ_LINK_DB_ITEM_FILE_PATH) {
-                dj_link_db_utf16be_to_utf8(l1->bin, l1->bin_len, c->path, sizeof(c->path));
+                (void)dj_link_db_decode_path(l1->bin,l1->bin_len,c->path,sizeof(c->path));
             }
         } else if (m->type == DJLINK_DB_TYPE_MENU_FOOTER) {
             finish_path(c, now_ms);

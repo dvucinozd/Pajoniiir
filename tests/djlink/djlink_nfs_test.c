@@ -6,6 +6,7 @@
  * duplicate, reorder or shorten READ traffic on demand. */
 #define _DEFAULT_SOURCE
 #include "djlink.h"
+#include "dj_link_cache.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -107,6 +108,8 @@ typedef struct {
     int short_reply;    /* answer this READ with half the data */
     int silent_portmap; /* never answer the portmapper */
     int no_mount_prog;  /* portmapper: MOUNT not registered */
+    int changed_read;
+    int media_variant;
 
     /* Observations. */
     int getport_calls;
@@ -354,9 +357,10 @@ static void mock_handle(int fd, const uint8_t *buf, size_t len, const struct soc
                 }
                 djlink_wr32(res, DJLINK_NFS_OK);
                 node_attr(dir, &res[4]);
+                if(read_no==m.changed_read)djlink_wr32(res+4+13*4,1800000000);
                 djlink_wr32(&res[4 + DJLINK_NFS_FATTR_LEN], got);
                 for (i = 0; i < got; i++) {
-                    res[8 + DJLINK_NFS_FATTR_LEN + i] = file_byte(dir->id, off + i);
+                    res[8 + DJLINK_NFS_FATTR_LEN + i] = file_byte(dir->id, off + i) ^ (m.media_variant?0x5a:0);
                 }
                 rl = 8 + DJLINK_NFS_FATTR_LEN + ((got + 3u) & ~3u);
                 memset(&res[8 + DJLINK_NFS_FATTR_LEN + got], 0, rl - 8 - DJLINK_NFS_FATTR_LEN - got);
@@ -439,6 +443,8 @@ typedef struct {
     int progress_calls;
     uint32_t last_done;
     uint32_t cancel_at;  /* cancel from the loop once written >= this */
+    dj_link_cache_t *cache;
+    dj_link_cache_txn_t txn;
 } sink_t;
 
 static int h_send(void *ctx, uint32_t ip, uint16_t port, const uint8_t *buf, size_t len)
@@ -461,6 +467,7 @@ static int h_open(void *ctx, uint32_t size)
     s->size = size;
     s->open_mtime_s = s_client.attr.mtime_s;
     s->open_mtime_us = s_client.attr.mtime_us;
+    if(s->cache && !dj_link_cache_begin(s->cache,&s->txn,size,DJ_LINK_CACHE_BUDGET))return -1;
     return size > s->cap ? -1 : 0;
 }
 
@@ -472,6 +479,7 @@ static int h_write(void *ctx, uint32_t offset, const uint8_t *data, size_t len)
         return -1;
     }
     memcpy(&s->data[offset], data, len);
+    if(s->cache && !dj_link_cache_write(&s->txn,data,len))return -1;
     s->written += (uint32_t)len;
     return 0;
 }
@@ -947,6 +955,40 @@ static void test_cancel(sink_t *sink)
     CHECK_EQ(mock_get().read_calls, reads);
     CHECK_EQ(djlink_nfs_state(&s_client), DJLINK_NFS_CANCELLED);
 }
+static void test_transactional_cache(sink_t *sink)
+{
+    char root[]="/tmp/pajoniiir-cache-XXXXXX";CHECK(mkdtemp(root)!=NULL);
+    dj_link_cache_t cache;dj_link_cache_io_t io={0};
+    CHECK(dj_link_cache_init(&cache,root,&io,NULL));sink->cache=&cache;
+    djlink_nfs_fetch_cfg_t cfg;char a_path[272],b_path[272];
+    uint8_t export_digest[32]={1};media_persistent_id_t a,b;
+    mock_reset();base_cfg(&cfg,"small.bin");
+    CHECK_EQ(run_fetch(&cfg,sink),DJLINK_NFS_DONE);
+    CHECK(dj_link_cache_seal(&sink->txn));
+    CHECK(dj_link_content_identity(export_digest,sink->txn.digest,"small.bin",sink->size,sink->open_mtime_s,&a));
+    CHECK(dj_link_cache_commit(&sink->txn,&a,"MP3",a_path));
+    cache.pins[0]=a;
+    /* Same endpoint, track path, size and timestamps. New media bytes only. */
+    mock_reset();pthread_mutex_lock(&s_mock_lock);s_mock.media_variant=1;pthread_mutex_unlock(&s_mock_lock);
+    CHECK_EQ(run_fetch(&cfg,sink),DJLINK_NFS_DONE);CHECK(dj_link_cache_seal(&sink->txn));
+    CHECK(dj_link_content_identity(export_digest,sink->txn.digest,"small.bin",sink->size,sink->open_mtime_s,&b));
+    CHECK(!media_persistent_id_equal(&a,&b));
+    CHECK(!dj_link_cache_hit(&cache,&b,"MP3",NULL));
+    CHECK(dj_link_cache_commit(&sink->txn,&b,"MP3",b_path));
+    CHECK(strcmp(a_path,b_path));
+    CHECK(dj_link_cache_hit(&cache,&a,"MP3",NULL));CHECK(dj_link_cache_hit(&cache,&b,"MP3",NULL));
+    /* Replaced file during READ cannot publish a completion. */
+    mock_reset();pthread_mutex_lock(&s_mock_lock);s_mock.changed_read=2;pthread_mutex_unlock(&s_mock_lock);
+    CHECK_EQ(run_fetch(&cfg,sink),DJLINK_NFS_FAILED);
+    CHECK(!strcmp(djlink_nfs_error_text(&s_client),"SOURCE FILE CHANGED"));
+    CHECK(!dj_link_cache_seal(&sink->txn));dj_link_cache_abort(&sink->txn);
+    CHECK(dj_link_cache_hit(&cache,&a,"MP3",NULL));
+    mock_reset();sink->cancel_at=1024;CHECK_EQ(run_fetch(&cfg,sink),DJLINK_NFS_CANCELLED);
+    dj_link_cache_abort(&sink->txn);sink->cancel_at=0;sink->cache=NULL;
+    CHECK(dj_link_cache_hit(&cache,&b,"MP3",NULL)); /* network gone, local intact */
+    char meta[300];snprintf(meta,sizeof(meta),"%s.manifest",a_path);unlink(meta);unlink(a_path);
+    snprintf(meta,sizeof(meta),"%s.manifest",b_path);unlink(meta);unlink(b_path);rmdir(root);
+}
 
 int main(void)
 {
@@ -972,6 +1014,7 @@ int main(void)
     test_big_fetch_with_losses(&sink);
     test_errors(&sink);
     test_cancel(&sink);
+    test_transactional_cache(&sink);
 
     pthread_mutex_lock(&s_mock_lock);
     s_mock_stop = 1;

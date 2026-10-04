@@ -4,6 +4,7 @@
 
 #include "library.h"
 #include "media_io_gate.h"
+#include "sd_io_gate.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -40,6 +41,8 @@ typedef struct {
 typedef struct {
     uint32_t key, gen, stamp;
     uint8_t state;
+    bool remote;
+    media_persistent_id_t identity;
 } art_slot_t;
 
 /* LVGL task only. */
@@ -235,7 +238,7 @@ static int slot_victim(void)
     int best = -1;
     for (int i = 0; i < UI_ARTWORK_SLOTS; i++) {
         const art_slot_t *s = &s_slot[i];
-        if (s->state == SLOT_EMPTY || s->gen != s_gen) return i;
+        if (s->state == SLOT_EMPTY || (!s->remote && s->gen != s_gen)) return i;
         if (s->state == SLOT_PENDING) continue;
         if (best < 0 || (int32_t)(s->stamp - s_slot[best].stamp) < 0) best = i;
     }
@@ -248,7 +251,7 @@ const uint16_t *ui_artwork_get(uint32_t track_key, ui_artwork_size_t size)
     s_gen = library_generation();
     for (int i = 0; i < UI_ARTWORK_SLOTS; i++) {
         art_slot_t *s = &s_slot[i];
-        if (s->state == SLOT_EMPTY || s->key != track_key || s->gen != s_gen) continue;
+        if (s->remote || s->state == SLOT_EMPTY || s->key != track_key || s->gen != s_gen) continue;
         s->stamp = ++s_clock;
         return s->state == SLOT_READY ? slot_pixels(i, size) : NULL;
     }
@@ -289,7 +292,7 @@ bool ui_artwork_poll(void)
         if (s_stage_decode_us > s_stats.decode_us_max) s_stats.decode_us_max = s_stage_decode_us;
         for (int i = 0; i < UI_ARTWORK_SLOTS; i++) {
             art_slot_t *s = &s_slot[i];
-            if (s->state != SLOT_PENDING || s->key != s_stage_req.key || s->gen != s_stage_req.gen) continue;
+            if (s->remote || s->state != SLOT_PENDING || s->key != s_stage_req.key || s->gen != s_stage_req.gen) continue;
             if (s_stage_result == RESULT_READY) {
                 memcpy(&s_thumbs[i], s_stage, sizeof(ui_artwork_thumb_t));
                 s->state = SLOT_READY;
@@ -330,4 +333,40 @@ void ui_artwork_take_stats(ui_artwork_stats_t *out)
 {
     if (out) *out = s_stats;
     s_stats = (ui_artwork_stats_t){0};
+}
+const uint16_t *ui_artwork_get_identity(uint32_t key,const media_persistent_id_t *id,ui_artwork_size_t size)
+{
+    if(id && id->valid && s_init_done && !s_init_failed) for(int i=0;i<UI_ARTWORK_SLOTS;++i) {
+        art_slot_t *s=&s_slot[i];
+        if(s->remote && s->state==SLOT_READY && media_persistent_id_equal(id,&s->identity)) {
+            s->stamp=++s_clock;return slot_pixels(i,size);
+        }
+    }
+    (void)key;return NULL;
+}
+void ui_artwork_publish_identity(uint32_t key,const media_persistent_id_t *id,const ui_artwork_thumb_t *thumb)
+{
+    if(!key || !id || !id->valid || !thumb || !art_init())return;
+    int v=slot_victim();if(v<0)return;
+    s_slot[v]=(art_slot_t){.key=key,.gen=s_gen,.stamp=++s_clock,.state=SLOT_READY,.remote=true,.identity=*id};
+    memcpy(&s_thumbs[v],thumb,sizeof(*thumb));
+}
+ui_artwork_thumb_t *ui_artwork_decode_sd(const char *path)
+{
+    if(!path || strncmp(path,"/sd/",4) || !sd_io_gate_try_begin(50))return NULL;
+    FILE *f=fopen(path,"rb");long size=f && !fseek(f,0,SEEK_END)?ftell(f):-1;
+    if(f)rewind(f);
+    sd_io_gate_end();if(!f)return NULL;
+    uint8_t *bytes=size>0 && size<=UI_ARTWORK_FILE_MAX ? art_alloc((size_t)size):NULL;
+    bool ok=bytes!=NULL;
+    for(size_t off=0;ok && off<(size_t)size;) {
+        size_t n=(size_t)size-off>4096?4096:(size_t)size-off;
+        if(!sd_io_gate_try_begin(50)){ok=false;break;}
+        ok=fread(bytes+off,1,n,f)==n;sd_io_gate_end();off+=n;
+    }
+    sd_io_gate_begin();fclose(f);sd_io_gate_end();
+    ui_artwork_thumb_work_t *work=ok?art_alloc(sizeof(*work)):NULL;
+    ui_artwork_thumb_t *thumb=work?art_alloc(sizeof(*thumb)):NULL;
+    if(thumb && !ui_artwork_thumb_decode(bytes,(size_t)size,work,thumb)){free(thumb);thumb=NULL;}
+    free(work);free(bytes);return thumb;
 }

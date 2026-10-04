@@ -61,9 +61,24 @@ one request. Its PSRAM cache owns at most 2,000 metadata rows; only bounded page
 copies cross into LVGL. Source/claim/connection epochs and command IDs reject
 stale publication. The Library owner handles navigation and incoming load
 admission without network or filesystem work. Metadata-only LOAD cannot alter a
-deck; J must supply verified local audio before acceptance/ACK. Local library
+deck; verified local audio is required before acceptance/ACK. Local library
 advertising and Wi-Fi Link are absent. See the
 [I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
+
+Package J runs NFS/PDB/analysis/JPEG work in the existing single-flight load
+worker, with PSRAM-owned buffers, Ethernet-only UDP and the same serialized DB
+session. DOWNLOAD reserves SD admission against REC. Filesystem reads/writes
+yield the SD gate in at most 4 KiB chunks; close/finalize is serialized even after
+cancellation. A full SHA-derived content identity binds audio/ANLZ/artwork/cues;
+locator IDs never enter persistent storage. NFS volumes lack UUID evidence, so
+each mount/load adds a random session nonce and never reuses an old session hit.
+The cache publishes a checksummed completion manifest only after exact length,
+flush/fsync/close and read-back hash match. Deck and active-artifact pins fence
+pruning. LVGL receives owned metadata/artwork only after common LOAD admission.
+The audio decoder gates /sd paths independently of local USB availability;
+USB removal retires only USB sessions and preserves SD loading/output sessions.
+No filesystem or network work enters the audio output task. See
+[J evidence and limits](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md).
 
 Package F separates the authoritative MAIN sink from USB cue mirroring.
 JC4880 defaults to blocking PCM5102A I2S pacing; its FLX4 format, attenuation

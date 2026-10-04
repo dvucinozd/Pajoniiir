@@ -628,10 +628,15 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
         ANLZ_LOGE(TAG, "Cannot open: %s", dat_path);
         return ESP_ERR_NOT_FOUND;
     }
+    esp_err_t rc=anlz_parse_dat_stream(fp,out);
+    fclose(fp);return rc;
+}
+esp_err_t anlz_parse_dat_stream(FILE *fp, anlz_metadata_t *out)
+{
+    if(!fp || !out)return ESP_ERR_INVALID_ARG;
 
     esp_err_t result = validate_section_chain(fp);
     if (result != ESP_OK) {
-        fclose(fp);
         memset(out, 0, sizeof(*out));
         return result;
     }
@@ -654,7 +659,6 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
         if (tags[i] == ANLZ_TAG_PPTH) has_path = found && next.audio_path[0] != '\0';
     }
     if (result == ESP_OK) result = parse_all_pcob(fp, &next);
-    fclose(fp);
 
     /* Without PPTH there is no audio path, so the analysis cannot be tied to a
      * file — treat it as absent rather than partially usable. */
@@ -663,7 +667,7 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
         anlz_free(&next);
         memset(&next, 0, sizeof(next));
         memset(out, 0, sizeof(*out));
-        ANLZ_LOGE(TAG, "DAT rejected before publish: %s (%d)", dat_path, result);
+        ANLZ_LOGE(TAG, "DAT rejected before publish (%d)", result);
         return result;
     }
 
@@ -682,6 +686,12 @@ esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta)
         ANLZ_LOGE(TAG, "Cannot open EXT: %s", ext_path);
         return ESP_ERR_NOT_FOUND;
     }
+    esp_err_t rc=anlz_parse_ext_stream(fp,meta);
+    fclose(fp);return rc;
+}
+esp_err_t anlz_parse_ext_stream(FILE *fp, anlz_metadata_t *meta)
+{
+    if(!fp || !meta)return ESP_ERR_INVALID_ARG;
 
     /* The high-resolution waveform is an enrichment of metadata the caller
      * already holds, so work on a clone: a rejected EXT leaves the existing
@@ -706,12 +716,10 @@ esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta)
             ANLZ_LOGW(TAG, "PWV4 ignored: %d", color_rc);
         }
     }
-    fclose(fp);
 
     if (result != ESP_OK) {
         anlz_free(&next);
-        ANLZ_LOGE(TAG, "EXT rejected; previous metadata retained: %s (%d)",
-                  ext_path, result);
+        ANLZ_LOGE(TAG, "EXT rejected; previous metadata retained (%d)",result);
         return result;
     }
 

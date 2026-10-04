@@ -49,6 +49,7 @@ typedef int esp_err_t;
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -168,6 +169,9 @@ typedef struct anlz_metadata {
  * @return ESP_OK on success; ESP_ERR_INVALID_ARG / ESP_ERR_NOT_FOUND on failure.
  */
 esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out);
+/* Borrowed stream, never closed. Remote workers read bounded SD chunks into
+ * PSRAM first, then parse without holding the SD gate during analysis. */
+esp_err_t anlz_parse_dat_stream(FILE *fp, anlz_metadata_t *out);
 
 /**
  * Parse ANLZ0000.EXT and populate PWV3 plus optional PWV4 color preview.
@@ -180,6 +184,7 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out);
  * @return ESP_OK on success.
  */
 esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta);
+esp_err_t anlz_parse_ext_stream(FILE *fp, anlz_metadata_t *meta);
 
 /* Resample the six-byte PWV4 columns to a display width. Height uses the
  * loudest entry; RGB represents the normalized bass/mid/treble mix. */

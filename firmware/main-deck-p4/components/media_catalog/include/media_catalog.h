@@ -8,6 +8,8 @@
 #include "rekordbox_anlz.h"
 #include "media_identity.h"
 
+typedef enum { MEDIA_SOURCE_USB, MEDIA_SOURCE_DJ_LINK } media_source_t;
+
 typedef struct {
     uint32_t track_key;
     uint32_t rekordbox_track_id;
@@ -37,9 +39,11 @@ typedef struct {
 typedef struct {
     uint32_t track_key;
     media_persistent_id_t persistent_id;
+    media_source_t source;
     char audio_path[272];
     char dat_path[272];
     char ext_path[272];
+    char artwork_path[272];
     uint32_t duration_ms;
     uint32_t analysis_span_ms;
     uint16_t bpm;

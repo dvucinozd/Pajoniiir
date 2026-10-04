@@ -13,6 +13,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "media_identity.h"
+#include "ui_artwork_thumb.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +27,11 @@ typedef enum { UI_ARTWORK_ROW, UI_ARTWORK_DECK } ui_artwork_size_t;
 /* Cached thumbnail of `track_key`, or NULL (no artwork, not decoded yet, or
  * no memory). A miss queues a decode bound to the current catalog generation. */
 const uint16_t *ui_artwork_get(uint32_t track_key, ui_artwork_size_t size);
+/* Full identity lookup for decks; runtime key collisions cannot return
+ * another source's artwork. Publish is LVGL-only, decode is worker-only. */
+const uint16_t *ui_artwork_get_identity(uint32_t key,const media_persistent_id_t *id,ui_artwork_size_t size);
+ui_artwork_thumb_t *ui_artwork_decode_sd(const char *path);
+void ui_artwork_publish_identity(uint32_t key,const media_persistent_id_t *id,const ui_artwork_thumb_t *thumb);
 /* The Library page changed: row decodes still queued for older pages are
  * dropped unread. */
 void ui_artwork_begin_page(void);

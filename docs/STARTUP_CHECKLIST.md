@@ -37,8 +37,21 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   adds single-session TCP browse and the Library selector. Verify USB/SD and
   rekordbox sources, folders, ordered playlists, visible-page metadata, 2,000-row
   truncation, cancel/timeout and source loss without stale rows/artwork. Incoming
-  LOAD must respect LOAD LOCK/busy and must not ACK or replace a deck before J
-  provides a verified local file. Network audio downloads are not part of I.
+  LOAD must respect LOAD LOCK/busy and must not ACK or replace a deck before
+  verification of its local file. Network audio downloads are part of J.
+
+- [ ] [Package J](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
+  physical gates are NOT RUN. On JC1060 test real CDJ and rekordbox NFS paths,
+  MP3/WAV/FLAC plus associated artwork/analysis/cues, SD gate latency and active
+  dual-deck deadlines while downloading. Replace media A/B with identical peer
+  IP/player/track ID/extension but different audio; B must not inherit A assets.
+  Verify cancellation, Link OFF, Ethernet removal, SD removal, full card and
+  interrupted power. Incomplete manifests must never hit; deck/active files must
+  survive prune. Recording must exclude downloads. Completed local playback must
+  survive network and unrelated local USB removal. Unidentified volumes require
+  a fresh session download; do not claim durable cue edits across such sessions.
+  Record exact card, peer/model/version and firmware SHA; follow the existing
+  resource/listening/reconnect/180-minute acceptance gates before publication.
 
 - [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
   returned network/USB and operator-confirmed previous design/FLX4 controls.

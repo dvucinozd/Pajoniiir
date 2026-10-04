@@ -279,6 +279,8 @@ int dj_link_db_msg_size(const uint8_t *buf, size_t len);
 /* UTF-16BE (NUL-terminated or not) to UTF-8, always NUL-terminated;
  * characters outside the BMP become '?'. */
 void dj_link_db_utf16be_to_utf8(const uint8_t *in, size_t in_len, char *out, size_t cap);
+/* Lossless file path decoder: overflow/invalid UTF-16 clears output. */
+bool dj_link_db_decode_path(const uint8_t *in,size_t len,char *out,size_t cap);
 
 /* v307: the next row of rows[0, count) wanting metadata for io.next_detail:
  * the priority row first (a track being loaded, wherever it is listed;

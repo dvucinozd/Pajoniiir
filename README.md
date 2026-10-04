@@ -60,10 +60,18 @@ adds bounded Link discovery, two distinct player claims and an Ethernet-only
 JC1060 worker. Link is default-off with a persistent Settings switch. Codec,
 claim and real UDP/TCP sanitizer tests pass. The serialized DBServer worker and
 owned 2,000-row Library cache support track/folder/playlist browsing and visible
-metadata with epoch cancellation and truncation/progress. Metadata-only LOAD is
-explicitly refused until J supplies verified downloads; actual CDJ/Rekordbox
+metadata with epoch cancellation and truncation/progress. Actual CDJ/Rekordbox
 interoperability remains NOT RUN. See the
 [I software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
+[Package J software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
+adds cancellable Ethernet NFS downloads to an SD cache with full identities,
+read-back SHA-256 verification and completion manifests. Touch/controller and
+incoming loads share the existing admission/worker path; incomplete downloads
+preserve the old deck. Verified SD playback survives network loss and local USB
+removal. Unidentified NFS volumes use session-local identities and require a
+fresh download; local cue edits cannot migrate between those sessions. Real
+SD/peer timing, fault injection, MAIN/cue listening and final soak remain NOT RUN.
+Next are K sync/master and L final compatibility/candidate gates.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
