@@ -204,6 +204,72 @@ static void build_color_ext(uint32_t entry_size, uint32_t claimed_entries,
     fclose(fp);
 }
 
+static void append_memory_pcob(uint16_t count, bool invalid_loop)
+{
+    FILE *fp = fopen(SYNTH_DAT, "ab");
+    if (!fp) { perror("append memory PCOB"); exit(1); }
+    w_tag(fp, ANLZ_TAG_PCOB);
+    w_be32(fp, 24u);
+    w_be32(fp, 24u + 56u * count);
+    w_be32(fp, 0u); /* memory list, not hot-cue slots */
+    w_be16(fp, 0u);
+    w_be16(fp, count);
+    w_be32(fp, 0u);
+    for (uint16_t i = 0; i < count; ++i) {
+        uint8_t pcpt[56] = {0};
+        memcpy(pcpt, "PCPT", 4);
+        pcpt[7] = 28;
+        pcpt[11] = 56;
+        pcpt[28] = i == 1u ? 2u : 1u;
+        uint32_t start = i < 2u ? 1000u : (uint32_t)i * 1000u;
+        uint32_t end = invalid_loop ? 500u : 2000u;
+        pcpt[32] = (uint8_t)(start >> 24);
+        pcpt[33] = (uint8_t)(start >> 16);
+        pcpt[34] = (uint8_t)(start >> 8);
+        pcpt[35] = (uint8_t)start;
+        pcpt[36] = (uint8_t)(end >> 24);
+        pcpt[37] = (uint8_t)(end >> 16);
+        pcpt[38] = (uint8_t)(end >> 8);
+        pcpt[39] = (uint8_t)end;
+        fwrite(pcpt, 1, sizeof(pcpt), fp);
+    }
+    fclose(fp);
+}
+
+static void test_memory_cue_list(void)
+{
+    build_synthetic_dat();
+    append_memory_pcob(17u, false);
+    anlz_metadata_t meta = {0};
+    esp_err_t rc = anlz_parse_dat(SYNTH_DAT, &meta);
+    TEST("memory cues stay separate from hot pads and report truncation");
+    CHECK(rc == ESP_OK && meta.cue_count == 2u &&
+          meta.memory_cue_count == ANLZ_MAX_MEMORY_CUES &&
+          meta.memory_cues_truncated &&
+          meta.memory_cues[0].start_ms == meta.memory_cues[1].start_ms &&
+          meta.memory_cues[0].type == ANLZ_CUE_SINGLE &&
+          meta.memory_cues[1].type == ANLZ_CUE_LOOP &&
+          meta.memory_cues[1].end_ms == 2000u,
+          "memory list altered hot pads or lost export order");
+    anlz_metadata_t copy = {0};
+    rc = anlz_clone(&meta, &copy);
+    TEST("memory cues survive metadata snapshot clone");
+    CHECK(rc == ESP_OK && copy.memory_cue_count == 16u &&
+          copy.memory_cues_truncated && copy.memory_cues[1].type == ANLZ_CUE_LOOP,
+          "memory cue clone incomplete");
+    anlz_free(&copy);
+    anlz_free(&meta);
+    remove(SYNTH_DAT);
+
+    build_synthetic_dat();
+    append_memory_pcob(2u, true);
+    rc = anlz_parse_dat(SYNTH_DAT, &meta);
+    TEST("invalid memory loop rejects DAT transactionally");
+    CHECK(rc == ESP_ERR_INVALID_SIZE && meta.memory_cue_count == 0u &&
+          meta.cue_count == 0u, "invalid memory loop escaped validation");
+    remove(SYNTH_DAT);
+}
+
 static void build_unicode_ppth_dat(void)
 {
     FILE *fp = fopen(SYNTH_UNICODE_DAT, "wb");
@@ -668,7 +734,7 @@ static void test_optional_pwv4_color_preview(void)
 
 static void test_pwv4_color_columns(void)
 {
-    TEST("PWV4 columns resample heights and band colors");
+    TEST("PWV4 peak uses loudest column");
     const uint8_t preview[12] = {
         20, 0, 0, 10, 0, 0,
         40, 0, 0, 0, 20, 0,
@@ -676,12 +742,15 @@ static void test_pwv4_color_columns(void)
     anlz_color_column_t col = {0};
     CHECK(anlz_color_preview_peak(preview, sizeof(preview)) == 40,
           "PWV4 peak incorrect");
+    TEST("PWV4 red column resampled");
     CHECK(anlz_color_preview_column(preview, sizeof(preview), 0, 2, &col) &&
           col.height == 20 && col.r == 255 && col.g == 0,
           "PWV4 red column incorrect");
+    TEST("PWV4 green column resampled");
     CHECK(anlz_color_preview_column(preview, sizeof(preview), 1, 2, &col) &&
           col.height == 40 && col.g == 255 && col.r == 0,
           "PWV4 green column incorrect");
+    TEST("invalid PWV4 columns rejected");
     CHECK(!anlz_color_preview_column(preview, 5, 0, 2, &col) &&
           !anlz_color_preview_column(preview, sizeof(preview), 2, 2, &col),
           "invalid PWV4 column accepted");
@@ -703,6 +772,7 @@ int main(int argc, char *argv[])
     run_unit_tests();
     test_optional_pwv4_color_preview();
     test_pwv4_color_columns();
+    test_memory_cue_list();
 
     printf("\n=== Strict truncation corpus ===\n");
     TEST("DAT header/section/payload truncations rejected transactionally");

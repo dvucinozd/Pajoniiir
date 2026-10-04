@@ -70,6 +70,7 @@ extern "C" {
 #define ANLZ_WAVEFORM_TINY_LEN   100u   /* PWV2: always 100 nibble entries */
 #define ANLZ_VBR_TABLE_LEN       400u   /* PVBR: 400 × uint32_t offsets    */
 #define ANLZ_MAX_CUES              8u   /* hot cues 0–7                    */
+#define ANLZ_MAX_MEMORY_CUES       16u   /* ordered memory points/loops     */
 #define ANLZ_WAVEFORM_HIGH_MAX 131072u  /* PWV3: up to 128 KB (observed max ~62 KB) */
 #define ANLZ_COLOR_PREVIEW_ENTRY    6u   /* PWV4 bytes per color column    */
 #define ANLZ_COLOR_PREVIEW_MAX   7200u   /* first 1200 color columns       */
@@ -127,6 +128,12 @@ typedef struct anlz_metadata {
     /* Hot cues / loops (from PCOB/PCPT) */
     anlz_cue_t cues[ANLZ_MAX_CUES];
     uint8_t    cue_count;
+
+    /* PCOB list type 0 is separate from the eight performance-pad slots.
+     * Index follows export order and may share a timestamp with another cue. */
+    anlz_cue_t memory_cues[ANLZ_MAX_MEMORY_CUES];
+    uint8_t    memory_cue_count;
+    bool       memory_cues_truncated;
 
     /* VBR seek table (from PVBR) — 400 file-byte offsets */
     uint32_t vbr[ANLZ_VBR_TABLE_LEN];

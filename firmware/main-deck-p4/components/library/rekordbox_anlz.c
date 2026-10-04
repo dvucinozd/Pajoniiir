@@ -414,16 +414,29 @@ static esp_err_t parse_pcob(FILE *fp, anlz_metadata_t *out)
             buf_be32(&buf[8]) != sizeof(buf)) {
             return ESP_ERR_INVALID_SIZE;
         }
-        if (list_type != 1u) continue; /* memory cues are not performance pads */
-
-        const uint32_t hot_cue = buf_be32(&buf[12]);
-        if (hot_cue == 0u || hot_cue > ANLZ_MAX_CUES) continue;
-        const uint8_t index = (uint8_t)(hot_cue - 1u);
+        if (list_type != 0u && list_type != 1u) continue;
+        const uint32_t hot_cue = list_type == 1u ? buf_be32(&buf[12]) : 0u;
+        if (list_type == 1u && (hot_cue == 0u || hot_cue > ANLZ_MAX_CUES))
+            continue;
         const uint8_t entry_type = buf[28];
         if (entry_type != 1u && entry_type != 2u) return ESP_ERR_INVALID_SIZE;
         const uint32_t start_ms = buf_be32(&buf[32]);
         const uint32_t end_ms = buf_be32(&buf[36]);
         if (entry_type == 2u && end_ms <= start_ms) return ESP_ERR_INVALID_SIZE;
+        if (list_type == 0u) {
+            if (out->memory_cue_count >= ANLZ_MAX_MEMORY_CUES) {
+                out->memory_cues_truncated = true;
+                continue;
+            }
+            anlz_cue_t *cue = &out->memory_cues[out->memory_cue_count];
+            cue->type = entry_type == 2u ? ANLZ_CUE_LOOP : ANLZ_CUE_SINGLE;
+            cue->index = out->memory_cue_count;
+            cue->start_ms = start_ms;
+            cue->end_ms = cue->type == ANLZ_CUE_LOOP ? end_ms : 0u;
+            out->memory_cue_count++;
+            continue;
+        }
+        const uint8_t index = (uint8_t)(hot_cue - 1u);
         for (uint8_t c = 0u; c < out->cue_count; c++) {
             if (out->cues[c].index == index) return ESP_ERR_INVALID_SIZE;
         }

@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B7 software verified; local cue merge, transport and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C4 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -256,6 +256,20 @@ Verification on 2026-10-04:
   below the `0x380000` budget; dependency lock unchanged.
 - Real touch/FLX4/Web Remote load rejection, PLAY-during-worker race and
   operator audio confirmation on JC4880: **NOT RUN**.
+
+## B7: Separate bounded memory cue import
+
+ANLZ PCOB list type 0 now imports up to 16 memory points and loops into an
+ordered metadata array independent of the eight hot-cue slots. A seventeenth
+entry sets an explicit truncation flag. Points and loops at the same timestamp
+remain separate. Malformed entries, including loops with an end before the
+start, reject the DAT transaction before publication. Metadata snapshots carry
+the inline memory cues unchanged.
+
+This step does not merge imported cues with local edits, store deletions or
+change transport controls; those remain package B work. Synthetic host cases
+cover separation, export order, truncation, clone and transactional rejection.
+Real Rekordbox memory cues and physical display/control acceptance: **NOT RUN**.
 
 ## C1: Bounded optional PWV4 color preview
 
