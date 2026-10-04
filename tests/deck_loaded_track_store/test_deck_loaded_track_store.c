@@ -55,6 +55,7 @@ static void test_reset_publishes_empty_coherent_snapshots(void)
         CHECK(!summary.valid);
         CHECK(summary.track_key == 0u);
         CHECK(summary.generation == 0u);
+        CHECK(summary.audio_session_generation == 0u);
         CHECK(summary.deck == 0u);
     }
     CHECK(!deck_loaded_track_store_get(&store, 2u, NULL));
@@ -74,6 +75,7 @@ static void test_publish_clones_one_complete_track_generation(void)
     meta.waveform_high = waveform_high;
     meta.waveform_high_len = sizeof(waveform_high);
     deck_loaded_track_payload_t input = payload(7u, 101u, 129u, &meta);
+    input.audio_session_generation = 17u;
 
     CHECK(deck_loaded_track_store_publish(&store, 0u, &input) ==
           DECK_LOADED_TRACK_OK);
@@ -88,6 +90,7 @@ static void test_publish_clones_one_complete_track_generation(void)
     CHECK(summary.media_generation == 7u);
     CHECK(summary.track_key == 101u);
     CHECK(summary.duration_ms == 1010u);
+    CHECK(summary.audio_session_generation == 17u);
     CHECK(summary.bpm == 129u);
     CHECK(summary.bpm_x100 == 12850u);
     CHECK(summary.has_anlz);

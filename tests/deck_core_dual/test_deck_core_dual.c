@@ -313,6 +313,8 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_loaded[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;
+        audio_engine_stub_duration_ms[deck] = 0;
+        audio_engine_stub_session_generation[deck] = 0;
         audio_engine_stub_deck_seek_count[deck] = 0;
         audio_engine_stub_loop_active[deck] = false;
         audio_engine_stub_loop_start_ms[deck] = 0;
@@ -994,6 +996,70 @@ static void test_jog_search_exits_loop_and_clamps_before_track_end(void)
     assert(!audio_engine_stub_loop_active[CTRL_DECK_2]);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 299999u);
+}
+
+static void test_search_and_beat_jump_use_only_bound_audio_duration(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    uint8_t deck = CTRL_DECK_2;
+    assert(deck_core_publish_loaded_track_session(2u, 1u, 2002u,
+        NULL, 120u, 1000u, NULL, 7u) == ESP_ERR_INVALID_ARG);
+    audio_engine_stub_deck_loaded[deck] = true;
+    audio_engine_stub_session_generation[deck] = 7u;
+    audio_engine_stub_duration_ms[deck] = 2000u;
+    assert(deck_core_publish_loaded_track_session(deck, 1u, 2002u,
+        NULL, 120u, 1000u, NULL, 7u) == ESP_OK);
+    ctrl_event_t search = deck_encoder(CTRL_ID_DECK2_JOG_SEARCH, 2);
+    audio_engine_stub_deck_position_ms[deck] = 1500u;
+    deck_core_test_apply_event(&search);
+    assert(audio_engine_stub_deck_position_ms[deck] == 1999u);
+    ctrl_event_t jump = deck_button(CTRL_ID_DECK2_BEAT_JUMP_FORWARD);
+    audio_engine_stub_deck_position_ms[deck] = 1500u;
+    deck_core_test_apply_event(&jump);
+    assert(audio_engine_stub_deck_position_ms[deck] == 1999u);
+    audio_engine_stub_duration_ms[deck] = 100u; /* shorter file than metadata */
+    deck_core_test_apply_event(&jump);
+    assert(audio_engine_stub_deck_position_ms[deck] == 99u);
+    audio_engine_stub_session_generation[deck] = 8u; /* replacement audio */
+    audio_engine_stub_duration_ms[deck] = 9000u;
+    audio_engine_stub_deck_position_ms[deck] = 1500u;
+    deck_core_test_apply_event(&search);
+    assert(audio_engine_stub_deck_position_ms[deck] == 999u);
+    assert(deck_core_publish_loaded_track_session(deck, 1u, 9999u,
+        NULL, 120u, 9000u, NULL, 7u) == ESP_ERR_INVALID_STATE);
+    deck_loaded_track_summary_t loaded = {0};
+    assert(deck_core_get_loaded_track(deck, &loaded));
+    assert(loaded.track_key == 2002u && loaded.audio_session_generation == 7u);
+    audio_engine_stub_deck_loaded[deck] = false;
+    assert(deck_core_publish_loaded_track_session(deck, 1u, 9999u,
+        NULL, 120u, 9000u, NULL, 8u) == ESP_ERR_INVALID_STATE);
+    audio_engine_stub_deck_loaded[deck] = true;
+    assert(deck_core_publish_loaded_track(deck, 1u, 2003u, NULL,
+        120u, 1000u, NULL) == ESP_OK); /* old API stays metadata-only */
+    audio_engine_stub_deck_position_ms[deck] = 1500u;
+    deck_core_test_apply_event(&jump);
+    assert(audio_engine_stub_deck_position_ms[deck] == 999u);
+    ctrl_event_t back = deck_button(CTRL_ID_DECK2_BEAT_JUMP_BACK);
+    audio_engine_stub_deck_position_ms[deck] = 100u;
+    deck_core_test_apply_event(&back);
+    assert(audio_engine_stub_deck_position_ms[deck] == 0u);
+    audio_engine_stub_duration_ms[deck] = 1u;
+    assert(deck_core_publish_loaded_track_session(deck, 1u, 2004u,
+        NULL, 120u, 0u, NULL, 8u) == ESP_OK);
+    deck_core_test_apply_event(&jump);
+    assert(audio_engine_stub_deck_position_ms[deck] == 0u);
+    audio_engine_stub_duration_ms[deck] = 0u; /* no known upper bound */
+    audio_engine_stub_deck_position_ms[deck] = 1000u;
+    deck_core_test_apply_event(&jump);
+    assert(audio_engine_stub_deck_position_ms[deck] == 1500u);
+    audio_engine_stub_deck_position_ms[deck] = UINT32_MAX - 10u;
+    deck_core_test_apply_event(&search);
+    assert(audio_engine_stub_deck_position_ms[deck] == UINT32_MAX);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(deck_core_clear_loaded_track(deck, 1u) == ESP_OK);
+    assert(deck_core_get_loaded_track(deck, &loaded));
+    assert(!loaded.valid && loaded.audio_session_generation == 0u);
 }
 
 static void test_cdj_mode_releases_vinyl_owner_and_survives_track_reset(void)
@@ -3141,6 +3207,7 @@ int main(void)
     test_decks_track_transport_independently();
     test_cdj_cue_hold_release_and_play_commit();
     test_cdj_mode_releases_vinyl_owner_and_survives_track_reset();
+    test_search_and_beat_jump_use_only_bound_audio_duration();
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();

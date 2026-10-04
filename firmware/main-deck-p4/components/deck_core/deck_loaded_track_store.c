@@ -166,6 +166,7 @@ deck_loaded_track_result_t deck_loaded_track_store_publish(
             .track_key = payload->track_key,
             .persistent_id = payload->persistent_id,
             .duration_ms = payload->duration_ms,
+            .audio_session_generation = payload->audio_session_generation,
             .bpm_x100 = bpm_x100,
             .bpm = payload->bpm,
             .deck = deck,

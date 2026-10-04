@@ -166,6 +166,13 @@ esp_err_t deck_core_publish_loaded_track(uint8_t deck,
                                          const struct anlz_metadata *anlz);
 esp_err_t deck_core_clear_loaded_track(uint8_t deck,
                                        uint32_t media_generation);
+/* Worker publication with the exact session returned by its accepted LOAD.
+ * Rejects an unloaded or mismatched audio session without replacing metadata. */
+esp_err_t deck_core_publish_loaded_track_session(uint8_t deck,
+    uint32_t media_generation, uint32_t track_key,
+    const media_persistent_id_t *persistent_id, uint16_t bpm,
+    uint32_t duration_ms, const struct anlz_metadata *anlz,
+    uint32_t audio_session_generation);
 esp_err_t deck_core_clear_loaded_tracks(uint32_t media_generation);
 bool deck_core_get_loaded_track(uint8_t deck,
                                 deck_loaded_track_summary_t *out);

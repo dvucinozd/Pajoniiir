@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B14 implemented; controller profile binding, PWV3 span refinement and MP3 EOF measurement pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B15 implemented; controller profile binding, PWV3 span refinement and MP3 EOF measurement pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -437,13 +437,43 @@ remain unchanged. The audio stub now mirrors the B10 status fields.
 
 This is UI integration of B10, not a claim of measured MP3 EOF or precise
 PWV3 span qualification. Deck-core beat-jump bounds still use loaded metadata
-and require the same session association in a later step. Physical duration,
+and require the same session association (implemented below in B15). Physical duration,
 seek, waveform timing and dual-deck acceptance: **NOT RUN**.
 
 Validation: new `ui_track_duration`, renderer span cases, full P4 host runner
 and simulator interactions passed; all 11 screenshot baselines unchanged.
 ESP-IDF v6.0.2 P4 build passed: 2,535,280 bytes within `0x380000`.
 Dependency lock unchanged. Documentation integrity and diff checks passed.
+
+## B15: Session-bound beat-jump and search limits
+
+The immutable loaded-track payload/summary now records the exact accepted
+audio session generation. The new `deck_core_publish_loaded_track_session`
+API validates nonzero sessions against loaded audio status without taking
+the lifecycle lock. A wrong or unloaded session is rejected before metadata
+replacement. The original publish API remains metadata-only with session 0.
+The production loader and simulator use session-bound publication; a failed
+production publication retires only the originating audio session.
+
+Beat-jump and shift+jog search choose live duration only for the same loaded
+session with a known length. Otherwise they retain metadata bounds. Targets
+are capped at the last millisecond before known EOF, and search saturates
+at `UINT32_MAX` when length is unknown instead of wrapping. Source analysis,
+beatgrid, cue positions and persistent identity remain unchanged. Clearing
+a track clears the session association. No persistent or wire format changes.
+
+Host tests cover longer audio, shorter audio, stale/unloaded publication,
+legacy publication, D1/D2 isolation, backward jump at zero, a one-millisecond
+track, unknown duration and integer overflow. Store tests verify coherent
+session copying/reset, alongside the existing concurrent replacement suite.
+MP3 EOF measurement and PWV3 span refinement remain open. Physical navigation,
+cue/loop continuity and exact-image audio acceptance: **NOT RUN**.
+
+Validation: full P4 host runner, final dual-deck tests in both scratch modes,
+and loaded-track store suite passed. Simulator interactions and all 11
+unchanged screenshot baselines passed. Final ESP-IDF v6.0.2 P4 build:
+2,535,536 bytes within `0x380000`; dependency lock unchanged. Documentation
+integrity and diff checks passed. No hardware image was installed or released.
 
 ## C1: Bounded optional PWV4 color preview
 

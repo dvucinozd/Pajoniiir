@@ -19,6 +19,7 @@ typedef struct {
     uint32_t track_key;
     media_persistent_id_t persistent_id;
     uint32_t duration_ms;
+    uint32_t audio_session_generation;
     uint16_t bpm;
     const anlz_metadata_t *anlz;
 } deck_loaded_track_payload_t;

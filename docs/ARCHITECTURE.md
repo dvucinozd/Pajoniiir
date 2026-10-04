@@ -4,6 +4,13 @@ Status: **current M2.4 P4-only architecture, reconciled 2026-09-29**. The P4 is
 both the authoritative playback/UI engine and the direct dual-root USB host.
 No secondary firmware target or inter-board transport belongs to the product.
 
+Development integration on `codex/fork-improvements` additionally binds
+loaded-track snapshots to the audio session returned by the accepted LOAD.
+UI duration, beat-jump and search consume live length only for that session;
+metadata remains the fallback and waveform time base. See
+[B14-B15 integration evidence](FORK_IMPROVEMENTS.md). This is software evidence,
+with physical acceptance pending; the production baseline above is unchanged.
+
 ## High-Level Flow
 
 ```text

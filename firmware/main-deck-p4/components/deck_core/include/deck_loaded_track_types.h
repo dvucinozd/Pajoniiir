@@ -10,6 +10,7 @@ typedef struct {
     uint32_t track_key;
     media_persistent_id_t persistent_id;
     uint32_t duration_ms;
+    uint32_t audio_session_generation; // zero: metadata-only legacy publication
     uint32_t bpm_x100;
     uint16_t bpm;
     uint8_t deck;

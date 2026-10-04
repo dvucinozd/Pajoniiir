@@ -1176,17 +1176,17 @@ static void ui_poll_track_load_result(void)
         const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
-        esp_err_t publish_rc = deck_core_publish_loaded_track(
+        esp_err_t publish_rc = deck_core_publish_loaded_track_session(
             deck,
             result.generation,
             result.loaded.track_key,
             &result.loaded.persistent_id,
             bpm,
             result.loaded.duration_ms,
-            meta);
+            meta, result.audio_session_generation);
         if (publish_rc != ESP_OK) {
             anlz_free(&meta_snapshot);
-            ui_library_release_deck_audio(deck);
+            ui_library_release_deck_audio_session(deck, result.audio_session_generation);
             ui_library_apply_empty_track(deck);
             ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
             ui_library_set_load_busy(false, "LIBRARY CHANGED");
@@ -1250,15 +1250,16 @@ static esp_err_t ui_library_publish_simulated_track(
     if (rc != ESP_OK) {
         return rc;
     }
-    rc = deck_core_publish_loaded_track(deck,
+    const uint32_t audio_session = audio_engine_deck_session_generation(deck);
+    rc = deck_core_publish_loaded_track_session(deck,
                                           generation,
                                           track->track_id,
                                           &persistent_id,
                                           track->bpm,
                                           track->duration_ms,
-                                          meta);
+                                          meta, audio_session);
     if (rc == ESP_OK)
-        s_deck_audio_session[deck] = audio_engine_deck_session_generation(deck);
+        s_deck_audio_session[deck] = audio_session;
     return rc;
 }
 #endif

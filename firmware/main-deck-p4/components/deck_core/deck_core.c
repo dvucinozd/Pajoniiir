@@ -905,6 +905,18 @@ static uint16_t loaded_bpm_for_deck(uint8_t deck)
     return deck_base_bpm(deck);
 }
 
+static uint32_t loaded_track_duration_ms(uint8_t deck,
+                                        const deck_loaded_track_summary_t *loaded)
+{
+    if (!loaded || !loaded->valid) return 0u;
+    audio_engine_deck_status_t status = {0};
+    if (loaded->audio_session_generation != 0u &&
+        audio_engine_deck_get_status(deck, &status) == ESP_OK && status.loaded &&
+        status.session_generation == loaded->audio_session_generation &&
+        status.duration_ms != 0u) return status.duration_ms;
+    return loaded->duration_ms;
+}
+
 static void handle_beat_jump(uint8_t deck,
                              int beat_numerator,
                              uint16_t beat_denominator,
@@ -927,6 +939,8 @@ static void handle_beat_jump(uint8_t deck,
         has_loaded && loaded.has_anlz ? meta : NULL;
     uint32_t target_ms = beat_jump_calculate_fractional_target_ms(
         position_ms, bpm, beat_numerator, beat_denominator, meta_ptr);
+    uint32_t duration_ms = loaded_track_duration_ms(deck, &loaded);
+    if (duration_ms > 0u && target_ms >= duration_ms) target_ms = duration_ms - 1u;
     anlz_snapshot_release(snapshot);
 
     esp_err_t rc = audio_engine_deck_seek(deck, target_ms);
@@ -2713,17 +2727,16 @@ static void on_jog_search(uint8_t deck, int16_t delta)
 
     uint32_t current = uses_audio ? audio_engine_deck_position_ms(deck) : state->position_ms;
     int64_t target = (int64_t)current + ((int64_t)delta * (int64_t)JOG_SEARCH_STEP_MS);
-    if (target < 0) {
-        target = 0;
-    }
+    if (target < 0) target = 0;
+    if (target > UINT32_MAX) target = UINT32_MAX;
 
     /* Never seek to or beyond EOF. At exact EOF there is no frame available
      * to release the startup gate; rapid held-search events used to leave the
      * deck logically PLAYING with a frozen waveform and a full PCM runway. */
     deck_loaded_track_summary_t loaded = {0};
-    if (deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) &&
-        loaded.valid && loaded.duration_ms > 0u) {
-        uint32_t last_valid_ms = loaded.duration_ms - 1u;
+    if (deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded)) {
+        uint32_t duration_ms = loaded_track_duration_ms(deck, &loaded);
+        uint32_t last_valid_ms = duration_ms > 0u ? duration_ms - 1u : UINT32_MAX;
         if (target > (int64_t)last_valid_ms) {
             target = (int64_t)last_valid_ms;
         }
@@ -3388,6 +3401,23 @@ esp_err_t deck_core_publish_loaded_track(uint8_t deck,
                                          uint32_t duration_ms,
                                          const anlz_metadata_t *anlz)
 {
+    return deck_core_publish_loaded_track_session(deck, media_generation,
+        track_key, persistent_id, bpm, duration_ms, anlz, 0u);
+}
+
+esp_err_t deck_core_publish_loaded_track_session(uint8_t deck,
+    uint32_t media_generation, uint32_t track_key,
+    const media_persistent_id_t *persistent_id, uint16_t bpm,
+    uint32_t duration_ms, const anlz_metadata_t *anlz,
+    uint32_t audio_session_generation)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+    if (audio_session_generation != 0u) {
+        audio_engine_deck_status_t status = {0};
+        if (audio_engine_deck_get_status(deck, &status) != ESP_OK ||
+            !status.loaded || status.session_generation != audio_session_generation)
+            return ESP_ERR_INVALID_STATE;
+    }
     media_persistent_id_t cue_id = {0};
     if (persistent_id) cue_id = *persistent_id;
     const deck_loaded_track_payload_t payload = {
@@ -3395,6 +3425,7 @@ esp_err_t deck_core_publish_loaded_track(uint8_t deck,
         .track_key = track_key,
         .persistent_id = cue_id,
         .duration_ms = duration_ms,
+        .audio_session_generation = audio_session_generation,
         .bpm = bpm,
         .anlz = anlz,
     };
