@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 verified; B13a-B13b jog core/touch selector added; controller profile binding and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B14 implemented; controller profile binding, PWV3 span refinement and MP3 EOF measurement pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -410,6 +410,40 @@ Validation: full P4 host runner passed; simulator interaction checks and all
 11 screenshot hashes passed after visual review of Hot Cues. ESP-IDF v6.0.2
 P4 build passed (2,534,384 bytes); dependency lock unchanged. Documentation
 integrity and `git diff --check` passed. No image was installed or released.
+
+## B14: Session-bound playback duration and fixed analysis time base
+
+The UI retains the audio session generation returned by the accepted load.
+It uses live file duration only when status is loaded, the captured session
+matches, and duration is nonzero; otherwise metadata remains the fallback.
+Rejecting or clearing a load cannot import duration from the preceding or
+replacement audio session. The resolver performs no lifecycle wait or I/O.
+
+Frame snapshots carry separate playback duration and analysis span. Overview
+time, interpolation, progress and touch seek bounds use playback duration.
+Zoom waveform sampling/cache keys continue to use analysis span. The mini
+waveform and PWV4 are mapped onto the file timeline; an unanalyzed file tail
+stays blank, and a shorter decoded file shows only its analyzed portion.
+Duration changes invalidate time/cue positions and the mini canvas in the
+LVGL task. Original beat timestamps, cue positions and PVBR tables do not
+change. Metadata browsing rows retain their exported duration.
+
+Host tests cover shorter/longer files, unknown length, unloaded status,
+unbound/wrong sessions and integer boundaries. Renderer tests cover blank
+analysis tails, cropped analysis and invalid stride. Simulator exercises the
+production duration getter, a visible Overview update, fixed analysis span,
+stale-session rejection and unloaded fallback; existing screenshot baselines
+remain unchanged. The audio stub now mirrors the B10 status fields.
+
+This is UI integration of B10, not a claim of measured MP3 EOF or precise
+PWV3 span qualification. Deck-core beat-jump bounds still use loaded metadata
+and require the same session association in a later step. Physical duration,
+seek, waveform timing and dual-deck acceptance: **NOT RUN**.
+
+Validation: new `ui_track_duration`, renderer span cases, full P4 host runner
+and simulator interactions passed; all 11 screenshot baselines unchanged.
+ESP-IDF v6.0.2 P4 build passed: 2,535,280 bytes within `0x380000`.
+Dependency lock unchanged. Documentation integrity and diff checks passed.
 
 ## C1: Bounded optional PWV4 color preview
 

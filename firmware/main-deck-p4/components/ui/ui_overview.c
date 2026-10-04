@@ -378,12 +378,15 @@ static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_C
 static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
 #endif
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
+static ui_waveform_source_t ui_overview_redraw_source(uint8_t deck,
+                                                      const anlz_metadata_t *meta);
 
 static lv_obj_t *s_overview_cue_markers[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_overview_mini_cue_markers[DECK_CORE_DECK_COUNT][8];
 static uint32_t s_overview_cue_fingerprint[DECK_CORE_DECK_COUNT];
 static bool s_overview_cue_fingerprint_valid[DECK_CORE_DECK_COUNT];
 static uint32_t s_overview_deck_duration_ms[DECK_CORE_DECK_COUNT];
+static uint32_t s_overview_deck_analysis_span_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
 static anlz_snapshot_t *s_overview_deck_snapshot[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
@@ -1748,19 +1751,22 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
  * the dominant Rekordbox frequency bands; PWAV/PWV3 remains the fallback. */
 static bool ui_overview_draw_color_mini(uint8_t *pixels, int stride,
                                         int width, int height,
-                                        const anlz_metadata_t *meta)
+                                        const anlz_metadata_t *meta,
+                                        uint32_t duration_ms, uint32_t analysis_span_ms)
 {
     if (!pixels || !meta || !meta->color_preview || width <= 0 ||
-        height <= 0 || stride < width) return false;
+        height <= 0 || stride < width || !duration_ms || !analysis_span_ms) return false;
     uint8_t peak = anlz_color_preview_peak(meta->color_preview,
                                            meta->color_preview_len);
     if (!peak) return false;
     memset(pixels, 0, (size_t)stride * height);
     for (int x = 0; x < width; x += 2) {
+        uint64_t analysis_x = (uint64_t)x * duration_ms / analysis_span_ms;
+        if (analysis_x >= (uint32_t)width) continue;
         anlz_color_column_t col;
         if (!anlz_color_preview_column(meta->color_preview,
                                        meta->color_preview_len,
-                                       (uint32_t)x, (uint32_t)width, &col))
+                                       (uint32_t)analysis_x, (uint32_t)width, &col))
             continue;
         int bar_height = (int)col.height * (height - 2) / peak;
         if (col.height && bar_height == 0) bar_height = 1;
@@ -1781,6 +1787,26 @@ static bool ui_overview_draw_color_mini(uint8_t *pixels, int stride,
     return true;
 }
 
+static void ui_overview_redraw_mini(uint8_t idx)
+{
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    if (!panel->mini_wave_canvas || !panel->mini_wave_buf) return;
+    const anlz_metadata_t *meta = s_overview_deck_meta[idx];
+    ui_waveform_source_t source = ui_waveform_source_select(meta,
+        s_overview_wave_source[idx].waveform_low,
+        s_overview_wave_source[idx].has_waveform);
+    uint8_t *pixels = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
+    uint32_t duration = s_overview_deck_duration_ms[idx];
+    uint32_t span = s_overview_deck_analysis_span_ms[idx];
+    if (!ui_overview_draw_color_mini(pixels, panel->mini_wave_stride_px,
+                                    OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H,
+                                    meta, duration, span)) {
+        ui_overview_renderer_draw_mini_spans(pixels, panel->mini_wave_stride_px,
+            OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, &source, duration, span);
+    }
+    ui_overview_invalidate_mini_wave_range(panel, 0, OVERVIEW_MINI_CV_W);
+}
+
 /* Render the overview waveform to the canvas once at track load. */
 void ui_overview_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
@@ -1790,8 +1816,8 @@ void ui_overview_load_waveform_data(uint8_t deck,
 {
     uint8_t idx = ui_overview_deck_index(deck);
     ui_overview_replace_snapshot(idx, snapshot);
-    const anlz_metadata_t *meta = s_overview_deck_meta[idx];
     s_overview_deck_duration_ms[idx] = duration_ms;
+    s_overview_deck_analysis_span_ms[idx] = duration_ms;
     s_overview_wave_source[idx] = (ui_overview_waveform_source_info_t){
         .kind = has_waveform ? UI_OVERVIEW_WAVEFORM_SOURCE_LOADED_MEDIA
                              : UI_OVERVIEW_WAVEFORM_SOURCE_METADATA,
@@ -1814,22 +1840,7 @@ void ui_overview_load_waveform_data(uint8_t deck,
     ui_overview_wave_cache_reset(&s_overview_wave_cache[idx]);
     ui_overview_arm_all_wave_reblits();
 #endif
-    ui_waveform_source_t wave_source =
-        ui_waveform_source_select(meta, waveform_low, has_waveform);
-    bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
-
-    if (panel->mini_wave_canvas && panel->mini_wave_buf) {
-        uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
-        const int MW = OVERVIEW_MINI_CV_W;
-        const int MH = OVERVIEW_MINI_CV_H;
-        const int MS = panel->mini_wave_stride_px;
-        if (!ui_overview_draw_color_mini(mini_buf, MS, MW, MH, meta))
-            ui_overview_renderer_draw_mini(mini_buf, MS, MW, MH,
-                                           wave_valid ? &wave_source : NULL,
-                                           duration_ms);
-
-        ui_overview_invalidate_mini_wave_range(panel, 0, OVERVIEW_MINI_CV_W);
-    }
+    ui_overview_redraw_mini(idx);
 }
 
 /* FNV-1a over the cue layout + track duration. Lets the 1 Hz slow-update skip
@@ -2092,7 +2103,8 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
 
     if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
-        ui_render_overview_main_waveform(panel, deck, &source, duration_ms, meta,
+        ui_render_overview_main_waveform(panel, deck, &source,
+                                        s_overview_deck_analysis_span_ms[idx], meta,
                                          center_ms, window_ms,
                                          loop_active, loop_start_ms, loop_end_ms);
     }
@@ -2456,11 +2468,20 @@ void ui_overview_update(const ui_frame_context_t *ctx)
 
     s_overview_active_tab = ctx->active_tab;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        bool duration_changed = s_overview_deck_duration_ms[deck] != ctx->deck_duration_ms[deck] ||
+            s_overview_deck_analysis_span_ms[deck] != ctx->deck_analysis_span_ms[deck];
         s_overview_deck_duration_ms[deck] = ctx->deck_duration_ms[deck];
+        s_overview_deck_analysis_span_ms[deck] = ctx->deck_analysis_span_ms[deck];
         s_overview_deck_bpm[deck] = ctx->deck_bpm[deck];
         ui_overview_replace_snapshot(deck, ctx->deck_anlz[deck]);
         s_overview_deck_info[deck] = ctx->deck_info[deck];
         s_overview_wave_source[deck] = ctx->overview_wave_source[deck];
+        if (duration_changed) {
+            s_overview_decks[deck].last_time_bucket = UINT32_MAX;
+            s_overview_decks[deck].last_wave_center_ms = UINT32_MAX;
+            s_overview_cue_fingerprint_valid[deck] = false;
+            ui_overview_redraw_mini(deck);
+        }
     }
 
 #ifndef WIN32

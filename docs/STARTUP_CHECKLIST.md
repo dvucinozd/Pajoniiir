@@ -52,6 +52,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   switching during platter touch, playing bend and paused scrub independently
   on both decks. B13a-B13b verify software only; physical acceptance:
   **NOT RUN**.
+- [ ] B14: compare a shorter decoded file and a longer file with truncated
+  analysis. Check live elapsed/remaining time, touch seek, fixed zoom waveform
+  timing and blank mini-waveform tail. Hardware/listening acceptance: **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

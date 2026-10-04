@@ -2,6 +2,7 @@
 #include "ui_diagnostics.h"
 #include "ui_event_counter.h"
 #include "ui_load_gate.h"
+#include "ui_track_duration.h"
 #ifndef UI_LIBRARY_HOST_TEST
 #include "ui_artwork.h"
 #include "ui_artwork_thumb.h"
@@ -247,6 +248,7 @@ static uint8_t s_library_load_request_deck = CTRL_DECK_1;
 
 static uint32_t s_deck_loaded_track_key[DECK_CORE_DECK_COUNT] = {0, 0};
 static bool s_deck_loaded_track_valid[DECK_CORE_DECK_COUNT] = {false, false};
+static uint32_t s_deck_audio_session[DECK_CORE_DECK_COUNT];
 #ifdef WIN32
 static uint8_t s_deck_loaded_waveform_low[DECK_CORE_DECK_COUNT][400];
 static bool s_deck_loaded_has_waveform[DECK_CORE_DECK_COUNT] = {false, false};
@@ -853,6 +855,7 @@ static void ui_library_apply_empty_track(uint8_t deck)
     memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
 #endif
     s_deck_loaded_track_valid[deck] = false;
+    s_deck_audio_session[deck] = 0u;
     s_deck_loaded_track_key[deck] = 0u;
     if (s_library_config.actions.clear_deck_track_info) {
         s_library_config.actions.clear_deck_track_info(deck);
@@ -1192,6 +1195,7 @@ static void ui_poll_track_load_result(void)
         }
 
         s_loaded_media[deck] = result.loaded;
+        s_deck_audio_session[deck] = result.audio_session_generation;
         s_loaded_media_valid[deck] = true;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
         s_deck_loaded_track_valid[deck] = true;
@@ -1246,13 +1250,16 @@ static esp_err_t ui_library_publish_simulated_track(
     if (rc != ESP_OK) {
         return rc;
     }
-    return deck_core_publish_loaded_track(deck,
+    rc = deck_core_publish_loaded_track(deck,
                                           generation,
                                           track->track_id,
                                           &persistent_id,
                                           track->bpm,
                                           track->duration_ms,
                                           meta);
+    if (rc == ESP_OK)
+        s_deck_audio_session[deck] = audio_engine_deck_session_generation(deck);
+    return rc;
 }
 #endif
 
@@ -2177,6 +2184,18 @@ void ui_library_update(const ui_frame_context_t *ctx)
 }
 
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
+{
+    uint8_t idx = ui_library_deck_index(deck);
+    uint32_t metadata_ms = ui_library_deck_analysis_span_ms(deck, fallback_duration_ms);
+    audio_engine_deck_status_t status = {0};
+    if (!s_deck_loaded_track_valid[idx] ||
+        audio_engine_deck_get_status(idx, &status) != ESP_OK) return metadata_ms;
+    return ui_track_duration_select(metadata_ms, s_deck_audio_session[idx],
+                                    status.loaded, status.session_generation,
+                                    status.duration_ms);
+}
+
+uint32_t ui_library_deck_analysis_span_ms(uint8_t deck, uint32_t fallback_duration_ms)
 {
     uint8_t idx = ui_library_deck_index(deck);
 #ifndef WIN32

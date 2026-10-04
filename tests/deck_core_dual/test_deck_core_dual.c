@@ -3132,6 +3132,9 @@ static void test_imported_hot_loop_recalls_bounds_and_single_cue_exits_loop(void
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
 }
 
+uint32_t audio_engine_stub_duration_ms[2];
+uint32_t audio_engine_stub_session_generation[2];
+
 int main(void)
 {
     test_load_lock_uses_actual_target_deck_transport();

@@ -1784,6 +1784,16 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_track_duration"
+        Dir = "tests/ui_track_duration"
+        Target = "test_ui_track_duration.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_track_duration.exe", "test_ui_track_duration.c"
+        )
+    },
+    @{
         Name = "audio_eof_policy"
         Dir = "tests/audio_eof_policy"
         Target = "test_audio_eof_policy.exe"

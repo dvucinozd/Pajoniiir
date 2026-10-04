@@ -455,8 +455,26 @@ static void test_mini_renderer_leaves_horizontal_gaps(void)
     assert(pixels[(45 - 1) * 8 + 3] == 0);
 }
 
+static void test_mini_preserves_analysis_span_and_leaves_unknown_tail_blank(void)
+{
+    uint8_t samples[8] = {31,31,31,31,31,31,31,31};
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW, .samples = samples, .sample_count = 8,
+    };
+    uint8_t pixels[8 * 6];
+    assert(ui_overview_renderer_draw_mini_spans(pixels, 8, 8, 6, &source, 16000, 8000));
+    for (int y = 0; y < 6; ++y) {
+        for (int x = 4; x < 8; ++x) assert(pixels[y * 8 + x] == 0);
+    }
+    assert(pixels[5 * 8 + 2] != 0);
+    assert(ui_overview_renderer_draw_mini_spans(pixels, 8, 8, 6, &source, 4000, 8000));
+    assert(pixels[5 * 8 + 6] != 0);
+    assert(!ui_overview_renderer_draw_mini_spans(pixels, 7, 8, 6, &source, 4000, 8000));
+}
+
 int main(void)
 {
+    test_mini_preserves_analysis_span_and_leaves_unknown_tail_blank();
     test_main_renderer_clears_and_draws_waveform_columns();
     test_main_renderer_keeps_downbeat_grid_on_top();
     test_main_renderer_keeps_regular_beat_grid_behind_waveform();

@@ -11,6 +11,9 @@
 esp_err_t audio_engine_stub_deck_play_result[2] = {ESP_OK, ESP_OK};
 bool audio_engine_stub_deck_playing[2] = {false, false};
 bool audio_engine_stub_deck_loaded[2] = {true, true};
+uint32_t audio_engine_stub_duration_ms[2];
+uint32_t audio_engine_stub_session_generation[2] = {1u, 1u};
+
 uint32_t audio_engine_stub_deck_position_ms[2] = {45250u, 91800u};
 int audio_engine_stub_deck_seek_count[2] = {0, 0};
 bool audio_engine_stub_loop_active[2] = {false, false};

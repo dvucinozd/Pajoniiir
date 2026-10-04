@@ -19,6 +19,8 @@ Interaction checks also cover playlist navigation/export order, playing-deck
 load lock and the active-deck VINYL/CDJ touch selector, including D1/D2
 isolation and label refresh after a controller semantic mode event. PC
 events publish the deck snapshot after dispatch, matching the firmware task.
+Live-duration checks exercise the production UI getter with shorter/longer
+files, unchanged analysis span, stale session rejection and unloaded fallback.
 
 The reference is a SHA-256 manifest over the complete RGB framebuffer. A
 one-pixel change therefore fails the gate and leaves the generated PPM captures

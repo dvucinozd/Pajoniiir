@@ -1082,6 +1082,8 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ctx->deck_duration_ms[deck] = ui_deck_duration_ms(deck);
+        ctx->deck_analysis_span_ms[deck] = ui_library_deck_analysis_span_ms(
+            deck, ctx->deck_duration_ms[deck]);
         ctx->deck_bpm[deck] = ui_deck_bpm(deck);
         ctx->deck_anlz[deck] = ui_deck_anlz_acquire(deck);
         ctx->deck_meta[deck] =

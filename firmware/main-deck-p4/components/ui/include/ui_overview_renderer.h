@@ -96,6 +96,11 @@ bool ui_overview_renderer_draw_mini(uint8_t *pixels,
                                     int height_px,
                                     const ui_waveform_source_t *source,
                                     uint32_t duration_ms);
+bool ui_overview_renderer_draw_mini_spans(uint8_t *pixels, int stride_px,
+                                         int width_px, int height_px,
+                                         const ui_waveform_source_t *source,
+                                         uint32_t duration_ms,
+                                         uint32_t analysis_span_ms);
 
 #ifdef __cplusplus
 }

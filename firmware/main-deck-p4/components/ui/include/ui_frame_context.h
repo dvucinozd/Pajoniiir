@@ -44,6 +44,7 @@ typedef struct {
     deck_state_t active_state;
 
     uint32_t deck_duration_ms[DECK_CORE_DECK_COUNT];
+    uint32_t deck_analysis_span_ms[DECK_CORE_DECK_COUNT];
     uint16_t deck_bpm[DECK_CORE_DECK_COUNT];
     uint32_t deck_speed_permille[DECK_CORE_DECK_COUNT];
 

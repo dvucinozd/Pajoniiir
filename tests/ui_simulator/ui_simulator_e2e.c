@@ -13,6 +13,9 @@
 
 extern void ui_simulator_deck_set_playing(bool playing);
 extern void deck_core_test_apply_event(const ctrl_event_t *event);
+extern uint32_t audio_engine_stub_duration_ms[2];
+extern uint32_t audio_engine_stub_session_generation[2];
+extern bool audio_engine_stub_deck_loaded[2];
 
 #define DISPLAY_WIDTH 800
 #define DISPLAY_HEIGHT 480
@@ -290,6 +293,30 @@ int main(int argc, char **argv)
         fail("rejected load changed the current track");
     }
     ui_simulator_deck_set_playing(false);
+
+    if (!click_label("OVERVIEW") || !click_label("D1"))
+        fail("could not inspect live duration");
+    uint32_t analysis_ms = ui_library_deck_analysis_span_ms(CTRL_DECK_1, 0);
+    uint64_t metadata_hash = framebuffer_hash();
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = analysis_ms + 30000u;
+    pump(64);
+    if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms + 30000u ||
+        ui_library_deck_analysis_span_ms(CTRL_DECK_1, 0) != analysis_ms)
+        fail("live duration changed waveform time base or was ignored");
+    if (framebuffer_hash() == metadata_hash)
+        fail("live duration did not update the visible overview");
+    ++audio_engine_stub_session_generation[CTRL_DECK_1];
+    if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms)
+        fail("stale audio session leaked its duration into current track");
+    --audio_engine_stub_session_generation[CTRL_DECK_1];
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = 100u;
+    if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != 100u)
+        fail("metadata duration overrode shorter decoded duration");
+    audio_engine_stub_deck_loaded[CTRL_DECK_1] = false;
+    if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms)
+        fail("unloaded audio retained its duration");
+    audio_engine_stub_deck_loaded[CTRL_DECK_1] = true;
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = 0u;
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

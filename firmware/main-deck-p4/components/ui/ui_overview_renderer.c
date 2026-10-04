@@ -31,6 +31,7 @@ typedef struct {
 
 static bool mini_waveform_column_for_column(const ui_waveform_source_t *source,
                                             uint32_t duration_ms,
+                                            uint32_t analysis_span_ms,
                                             int column,
                                             int column_count,
                                             mini_waveform_column_t *out)
@@ -38,7 +39,7 @@ static bool mini_waveform_column_for_column(const ui_waveform_source_t *source,
     if (!out) return false;
     *out = (mini_waveform_column_t){0};
     if (!source || !source->samples || source->sample_count == 0 ||
-        duration_ms == 0 || column < 0 || column_count <= 0 ||
+        duration_ms == 0 || analysis_span_ms == 0 || column < 0 || column_count <= 0 ||
         column >= column_count) {
         return false;
     }
@@ -46,6 +47,14 @@ static bool mini_waveform_column_for_column(const ui_waveform_source_t *source,
     uint64_t sample_start = ((uint64_t)column * source->sample_count) / (uint64_t)column_count;
     uint64_t sample_end = ((uint64_t)(column + 1) * source->sample_count + (uint64_t)column_count - 1u) /
                           (uint64_t)column_count;
+    if (analysis_span_ms != duration_ms) {
+        uint64_t start_ms = (uint64_t)column * duration_ms / (uint32_t)column_count;
+        uint64_t end_ms = ((uint64_t)(column + 1) * duration_ms +
+                           (uint32_t)column_count - 1u) / (uint32_t)column_count;
+        sample_start = start_ms * source->sample_count / analysis_span_ms;
+        sample_end = (end_ms * source->sample_count + analysis_span_ms - 1u) /
+                     analysis_span_ms;
+    }
     if (sample_start >= source->sample_count) {
         return false;
     }
@@ -816,13 +825,25 @@ bool ui_overview_renderer_draw_mini(uint8_t *pixels,
                                     const ui_waveform_source_t *source,
                                     uint32_t duration_ms)
 {
-    if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
+    return ui_overview_renderer_draw_mini_spans(pixels, stride_px, width_px,
+                                               height_px, source, duration_ms,
+                                               duration_ms);
+}
+
+bool ui_overview_renderer_draw_mini_spans(uint8_t *pixels, int stride_px,
+                                         int width_px, int height_px,
+                                         const ui_waveform_source_t *source,
+                                         uint32_t duration_ms,
+                                         uint32_t analysis_span_ms)
+{
+    if (!pixels || stride_px < width_px || width_px <= 0 || height_px <= 0) {
         return false;
     }
 
     memset(pixels, 0, (size_t)stride_px * height_px * sizeof(uint8_t));
 
-    if (!source || source->kind == UI_WAVEFORM_SOURCE_NONE || duration_ms == 0) {
+    if (!source || source->kind == UI_WAVEFORM_SOURCE_NONE ||
+        duration_ms == 0 || analysis_span_ms == 0) {
         return false;
     }
 
@@ -841,7 +862,8 @@ bool ui_overview_renderer_draw_mini(uint8_t *pixels,
         }
 
         mini_waveform_column_t col;
-        if (!mini_waveform_column_for_column(source, duration_ms, bar, bar_count, &col)) {
+        if (!mini_waveform_column_for_column(source, duration_ms, analysis_span_ms,
+                                              bar, bar_count, &col)) {
             continue;
         }
 
