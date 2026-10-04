@@ -33,7 +33,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
 | F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
-| H | Previous product design with new features at 800x480 and 1024x600 | H1-H3 historical optional preview; H3 hardware Wi-Fi/USB FAIL; recovery complete; pending-OTA startup guard added; presentation/memory acceptance open |
+| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; one selected presentation/shared Settings; allocation/stack/resource gates. H3 historical hardware FAIL recovered; final physical acceptance NOT RUN |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Pending |
 | J | Full persistent media identity, cancellable download, atomic cache | Pending |
 | K | Epoch-bound network clock, controlled sync and tempo master | Pending |
@@ -366,8 +366,10 @@ preservation and second-deck isolation. The simulator keeps its explicit PC
 transport adapter and verifies the shared presentation; physical touch/MIDI
 parity, loop continuity and operator audio acceptance are **NOT RUN**. CDJ CUE
 hold behavior is covered by B12; VINYL/CDJ core behavior is covered by B13a.
-Waveform cue overlays still consume the source ANLZ bank; integrating local
-overrides into the render snapshot remains an explicit UI/package H gate.
+At B11, waveform cue overlays still consumed the source ANLZ bank. The subsequent
+[H software closure](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
+merges local overrides/tombstones into the owned product render snapshot and
+checks deletion in actual Overview pixels; physical acceptance remains NOT RUN.
 
 Verification on 2026-10-04 for B8-B11:
 

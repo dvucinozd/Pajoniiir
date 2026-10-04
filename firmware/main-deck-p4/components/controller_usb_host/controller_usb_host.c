@@ -11,6 +11,9 @@
 #include "freertos/task.h"
 #include "usb/usb_host.h"
 #include "usb_host_manager.h"
+#ifdef ESP_PLATFORM
+#include "firmware_resources.h"
+#endif
 
 static const char *TAG = "controller_usb";
 #define DEFAULT_TRANSFER_BYTES 64
@@ -627,6 +630,9 @@ static void controller_task(void *arg)
     }
 
     for (;;) {
+#ifdef ESP_PLATFORM
+        firmware_resources_sample_task(FW_RESOURCE_CONTROLLER);
+#endif
         const esp_err_t rc = usb_host_client_handle_events(
             s_state.client, pdMS_TO_TICKS(100));
         if (rc != ESP_OK && rc != ESP_ERR_TIMEOUT) {

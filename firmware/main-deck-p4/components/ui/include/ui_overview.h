@@ -49,6 +49,7 @@ void ui_overview_update_cue_markers(uint8_t deck,
                                     const anlz_metadata_t *meta,
                                     uint32_t duration_ms);
 void ui_overview_update(const ui_frame_context_t *ctx);
+void ui_overview_cancel_holds(void);
 
 #ifdef __cplusplus
 }

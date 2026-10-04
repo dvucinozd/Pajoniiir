@@ -336,6 +336,14 @@ esp_err_t library_load_anlz(library_track_t *track)
         .type = ANLZ_CUE_LOOP, .index = 1,
         .start_ms = beat_ms * 24u, .end_ms = beat_ms * 32u,
     };
+    s_current_meta.memory_cue_count = ANLZ_MAX_MEMORY_CUES;
+    s_current_meta.memory_cues_truncated = true;
+    for (uint8_t i = 0; i < ANLZ_MAX_MEMORY_CUES; ++i)
+        s_current_meta.memory_cues[i] = (anlz_cue_t){
+            .type = i == 15 ? ANLZ_CUE_LOOP : ANLZ_CUE_SINGLE,
+            .start_ms = beat_ms * (4u + i * 8u),
+            .end_ms = i == 15 ? beat_ms * 132u : 0,
+        };
     track->has_anlz = 1;
     return ESP_OK;
 }

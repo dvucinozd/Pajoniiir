@@ -9,6 +9,9 @@
 #include "lvgl.h"
 #include "ui_diagnostics.h"
 #include "ui_overview_perf.h"
+#ifndef WIN32
+#include "firmware_resources.h"
+#endif
 
 static const char *TAG = "ui";
 
@@ -542,6 +545,7 @@ static void ui_lvgl_task(void *arg)
     uint64_t last_handler_start_us = 0;
     bool refresh_pending = false;
     while (1) {
+        firmware_resources_sample_task(FW_RESOURCE_LVGL);
         uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
         if (ui_diagnostics_enabled() && last_handler_start_us != 0) {
             ui_overview_perf_report_t interval_report;

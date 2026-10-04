@@ -23,6 +23,9 @@
 #include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
 #include "splash_screen.h"
+#include "ui_artwork.h"
+#include "ui_artwork_thumb.h"
+#include "hot_cue_store.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,8 +38,16 @@
 #endif
 
 #ifndef UI_HOR_RES
+#ifdef DISPLAY_WIDTH
+#define UI_HOR_RES DISPLAY_WIDTH
+#define UI_VER_RES DISPLAY_HEIGHT
+#elif CONFIG_PAJONIIIR_BOARD_JC1060
+#define UI_HOR_RES 1024
+#define UI_VER_RES 600
+#else
 #define UI_HOR_RES   800
 #define UI_VER_RES   480
+#endif
 #define UI_TOPBAR_H   46
 #define UI_CONTENT_Y  UI_TOPBAR_H
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
@@ -79,12 +90,24 @@ static void play_pause_event_cb(lv_event_t *e)
     }
 }
 
+static bool s_cue_touch_held[DECK_CORE_DECK_COUNT];
+
+void ui_overview_cancel_holds(void)
+{
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        if (s_cue_touch_held[deck] && s_overview_config.actions.cue)
+            s_overview_config.actions.cue(deck, false);
+        s_cue_touch_held[deck] = false;
+    }
+}
+
 static void cue_event_cb(lv_event_t *e)
 {
     uint8_t deck = ui_event_deck(e);
-    if (s_overview_config.actions.cue) {
-        s_overview_config.actions.cue(deck, lv_event_get_code(e) == LV_EVENT_PRESSED);
-    }
+    bool pressed = lv_event_get_code(e) == LV_EVENT_PRESSED;
+    if (!pressed && !s_cue_touch_held[deck]) return;
+    s_cue_touch_held[deck] = pressed;
+    if (s_overview_config.actions.cue) s_overview_config.actions.cue(deck, pressed);
 }
 
 static void master_tempo_event_cb(lv_event_t *e)
@@ -139,18 +162,19 @@ static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
 }
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 648
-#define OVERVIEW_CV_H 141
+#define OVERVIEW_EXTRA_H (UI_VER_RES - 480)
+#define OVERVIEW_CV_W (UI_HOR_RES - 152)
+#define OVERVIEW_CV_H (141 + OVERVIEW_EXTRA_H / 2)
 #define OVERVIEW_WAVE_STRIP_MARGIN_PX UI_OVERVIEW_WAVE_CACHE_MARGIN_PX
 #define OVERVIEW_WAVE_STRIP_W (OVERVIEW_CV_W + (OVERVIEW_WAVE_STRIP_MARGIN_PX * 2))
 _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider than visible canvas");
-#define OVERVIEW_MINI_CV_W 392
+#define OVERVIEW_MINI_CV_W (UI_HOR_RES / 2 - 46)
 #define OVERVIEW_MINI_CV_H 45
 #define OVERVIEW_WAVE_X 82
 #define OVERVIEW_WAVE_INSET_X 0
 #define OVERVIEW_WAVE_INSET_Y 0
 #define OVERVIEW_DECK1_WAVE_Y 0
-#define OVERVIEW_DECK2_WAVE_Y 142
+#define OVERVIEW_DECK2_WAVE_Y (OVERVIEW_CV_H + 1)
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_BEAT_STRIP_DOT_SIZE_PX 12
 #define OVERVIEW_BEAT_STRIP_STEP_PX 24
@@ -186,16 +210,16 @@ _Static_assert(OVERVIEW_VU_Y_OFFSET + OVERVIEW_VU_H <= OVERVIEW_CV_H,
                "VU meter must fit within the deck waveform lane height");
 #define OVERVIEW_PLAYHEAD_W 3
 #define OVERVIEW_OUTLINE_W 1
-#define OVERVIEW_DECK_INFO_W 400
-#define OVERVIEW_TITLE_Y 312
+#define OVERVIEW_DECK_INFO_W (UI_HOR_RES / 2)
+#define OVERVIEW_TITLE_Y (312 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_TITLE_H 30
-#define OVERVIEW_TITLE_TEXT_W 392
-#define OVERVIEW_INFO_DIVIDER_Y 344
-#define OVERVIEW_INFO_ROW_Y 346
-#define OVERVIEW_TIME_Y 354
-#define OVERVIEW_MIX_ROW_Y 370
+#define OVERVIEW_TITLE_TEXT_W (OVERVIEW_DECK_INFO_W - 8)
+#define OVERVIEW_INFO_DIVIDER_Y (344 + OVERVIEW_EXTRA_H)
+#define OVERVIEW_INFO_ROW_Y (346 + OVERVIEW_EXTRA_H)
+#define OVERVIEW_TIME_Y (354 + OVERVIEW_EXTRA_H)
+#define OVERVIEW_MIX_ROW_Y (370 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_BPM_X 170
-#define OVERVIEW_BPM_Y 348
+#define OVERVIEW_BPM_Y (348 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_BPM_W 80
 #define OVERVIEW_BPM_TAG_X 252
 /* Per-deck time counters on the BPM row (out of the blue title strip, which is
@@ -210,7 +234,7 @@ _Static_assert(OVERVIEW_VU_Y_OFFSET + OVERVIEW_VU_H <= OVERVIEW_CV_H,
 _Static_assert(OVERVIEW_REMAIN_X + OVERVIEW_REMAIN_W <= OVERVIEW_BPM_X, "overview time counters must stay left of the BPM value");
 _Static_assert(OVERVIEW_TIME_X + OVERVIEW_ELAPSED_W <= OVERVIEW_REMAIN_X, "elapsed time must not overlap the remaining time");
 #define OVERVIEW_PITCH_X 286
-#define OVERVIEW_PITCH_Y 346
+#define OVERVIEW_PITCH_Y (346 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_PITCH_CHIP_W 70
 #define OVERVIEW_PITCH_CHIP_H 28
 #define OVERVIEW_PITCH_W OVERVIEW_PITCH_CHIP_W
@@ -220,17 +244,17 @@ _Static_assert(OVERVIEW_PITCH_X + OVERVIEW_PITCH_CHIP_W <= OVERVIEW_MT_X,
                "pitch chip must not overlap Master Tempo");
 _Static_assert(OVERVIEW_MT_X + OVERVIEW_MT_W <= OVERVIEW_DECK_INFO_W,
                "Master Tempo must fit in its deck info column");
-#define OVERVIEW_MINI_WAVE_Y 386
+#define OVERVIEW_MINI_WAVE_Y (386 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_SIDE_BTN_H 38
 /* The D1/D2 deck badges are sized to match the play/cue transport buttons. */
 _Static_assert(OVERVIEW_DECK_BADGE_W == OVERVIEW_TRANSPORT_W, "deck badge width must match the play/cue buttons");
 _Static_assert(OVERVIEW_DECK_BADGE_H == OVERVIEW_SIDE_BTN_H, "deck badge height must match the play/cue buttons");
-#define OVERVIEW_FX_PANEL_X 736
+#define OVERVIEW_FX_PANEL_X (UI_HOR_RES - 64)
 #define OVERVIEW_FX_PANEL_Y 0
 #define OVERVIEW_FX_PANEL_W 64
 /* Panel runs from the top down to just above the blue title strip so the depth
  * meter fills the whole right rail with no dead space at the bottom. */
-#define OVERVIEW_FX_PANEL_H 308
+#define OVERVIEW_FX_PANEL_H (308 + OVERVIEW_EXTRA_H)
 #define OVERVIEW_FX_ROW_X 4
 #define OVERVIEW_FX_ROW_W 56
 /* Effect identity chip (big, filled in the effect colour when FX is on). */
@@ -286,6 +310,10 @@ typedef struct {
     lv_obj_t *label_status;
     lv_obj_t *label_title;
     lv_obj_t *label_artist;
+    lv_obj_t *label_key;
+    lv_obj_t *artwork;
+    lv_image_dsc_t artwork_dsc;
+    uint16_t *artwork_pixels;
     lv_obj_t *title_time_bg;
     lv_obj_t *label_time_elapsed;
     lv_obj_t *label_time;
@@ -394,6 +422,8 @@ static uint32_t s_overview_deck_analysis_span_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
 static anlz_snapshot_t *s_overview_deck_snapshot[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
+static anlz_metadata_t *s_overview_render_meta[DECK_CORE_DECK_COUNT];
+static uint32_t s_overview_edit_revision[DECK_CORE_DECK_COUNT];
 static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
@@ -403,10 +433,42 @@ static void ui_overview_replace_snapshot(uint8_t deck,
                                          anlz_snapshot_t *snapshot)
 {
     uint8_t idx = ui_overview_deck_index(deck);
+    uint32_t revision = deck_core_hot_cue_revision();
+    if (s_overview_deck_snapshot[idx] == snapshot && s_overview_edit_revision[idx] == revision)
+        return;
     anlz_snapshot_t *next = anlz_snapshot_retain(snapshot);
     anlz_snapshot_t *old = s_overview_deck_snapshot[idx];
     s_overview_deck_snapshot[idx] = next;
-    s_overview_deck_meta[idx] = anlz_snapshot_metadata(next);
+    const anlz_metadata_t *source_meta = anlz_snapshot_metadata(next);
+    s_overview_deck_meta[idx] = NULL; /* no raw source-cue fallback after local deletion */
+    if (source_meta && s_overview_render_meta[idx]) {
+        anlz_metadata_t *render = s_overview_render_meta[idx];
+        *render = *source_meta; /* pointer fields remain owned by the retained lease */
+        deck_loaded_track_summary_t track = {0};
+        hot_cue_store_blob_t source = {0}, local = {0}, effective = {0};
+        for (uint8_t i = 0; i < source_meta->cue_count && i < ANLZ_MAX_CUES; ++i) {
+            const anlz_cue_t *cue = &source_meta->cues[i];
+            if (cue->index >= HOT_CUE_STORE_SLOT_COUNT) continue;
+            source.valid_mask |= 1u << cue->index;
+            source.slots[cue->index] = (hot_cue_store_slot_t){.pos_ms=cue->start_ms,
+                .end_ms=cue->end_ms, .type=cue->type == ANLZ_CUE_LOOP ?
+                    HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE};
+        }
+        esp_err_t rc = deck_core_get_loaded_track(deck, &track) && track.persistent_id.valid
+            ? hot_cue_store_load(&track.persistent_id, &local) : ESP_ERR_NOT_FOUND;
+        if (rc != ESP_OK && rc != ESP_ERR_NOT_FOUND) source.valid_mask = 0;
+        hot_cue_store_merge(&source, rc == ESP_OK ? &local : NULL, &effective);
+        render->cue_count = 0;
+        for (uint8_t i = 0; i < HOT_CUE_STORE_SLOT_COUNT; ++i) {
+            if (!(effective.valid_mask & (1u << i))) continue;
+            render->cues[render->cue_count++] = (anlz_cue_t){.index=i,
+                .start_ms=effective.slots[i].pos_ms, .end_ms=effective.slots[i].end_ms,
+                .type=effective.slots[i].type == HOT_CUE_STORE_TYPE_LOOP ? ANLZ_CUE_LOOP : ANLZ_CUE_SINGLE};
+        }
+        s_overview_deck_meta[idx] = render;
+    }
+    s_overview_edit_revision[idx] = revision;
+    s_overview_cue_fingerprint_valid[idx] = false;
     anlz_snapshot_release(old);
 }
 
@@ -699,7 +761,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->last_time_bucket = UINT32_MAX;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
     int wave_y = (deck == CTRL_DECK_1) ? OVERVIEW_DECK1_WAVE_Y : OVERVIEW_DECK2_WAVE_Y;
-    int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
+    int info_x = deck * OVERVIEW_DECK_INFO_W;
 
     panel->panel = lv_obj_create(parent);
     lv_obj_remove_style_all(panel->panel);
@@ -802,6 +864,26 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_out = NULL;
     panel->out_bar_bg = NULL;
     panel->out_bar_fill = NULL;
+    panel->label_key = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+        COL_AMBER, info_x + 4, OVERVIEW_MIX_ROW_Y + 4, 92, "KEY: --");
+    panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+        COL_TEXT_MUTED, info_x + 100, OVERVIEW_MIX_ROW_Y + 4,
+        OVERVIEW_DECK_INFO_W - 104, "EMPTY");
+    panel->artwork = lv_image_create(panel->panel);
+    lv_obj_set_pos(panel->artwork, info_x + 4, OVERVIEW_MINI_WAVE_Y + 5);
+#ifndef WIN32
+    panel->artwork_pixels = heap_caps_calloc(UI_ARTWORK_DECK_PX * UI_ARTWORK_DECK_PX,
+                                           sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    panel->artwork_pixels = calloc(UI_ARTWORK_DECK_PX * UI_ARTWORK_DECK_PX, sizeof(uint16_t));
+#endif
+    panel->artwork_dsc = (lv_image_dsc_t){
+        .header = {.magic=LV_IMAGE_HEADER_MAGIC, .cf=LV_COLOR_FORMAT_RGB565,
+                   .w=UI_ARTWORK_DECK_PX, .h=UI_ARTWORK_DECK_PX, .stride=UI_ARTWORK_DECK_PX * 2},
+        .data_size=UI_ARTWORK_DECK_PX * UI_ARTWORK_DECK_PX * 2,
+        .data=(const uint8_t *)panel->artwork_pixels};
+    if (panel->artwork_pixels) lv_image_set_src(panel->artwork, &panel->artwork_dsc);
+    lv_obj_add_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
 
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
@@ -867,7 +949,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_opa(panel->mini_wave_border, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->mini_wave_border, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->mini_wave_border, OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H);
-    lv_obj_set_pos(panel->mini_wave_border, info_x + 4, OVERVIEW_MINI_WAVE_Y);
+    lv_obj_set_pos(panel->mini_wave_border, info_x + 42, OVERVIEW_MINI_WAVE_Y);
     /* Tap-to-seek across the full track: keep the border clickable (its canvas,
      * played overlay, cue markers and playhead are all non-clickable, so taps
      * land here) and tag it with the deck so the handler seeks the right one. */
@@ -1234,11 +1316,21 @@ lv_obj_t *ui_overview_create(lv_obj_t *parent) {
     lv_obj_add_style(screen, &s_style_screen_bg, LV_PART_MAIN);
     lv_obj_set_size(screen, UI_HOR_RES, UI_CONTENT_H);
     lv_obj_set_pos(screen, 0, UI_CONTENT_Y);
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; ++d) {
+#ifndef WIN32
+        s_overview_render_meta[d] = heap_caps_calloc(1, sizeof(anlz_metadata_t),
+                                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+        s_overview_render_meta[d] = calloc(1, sizeof(anlz_metadata_t));
+#endif
+    }
 
     ui_create_overview_deck_panel(screen, CTRL_DECK_1, 4);
-    ui_create_overview_deck_panel(screen, CTRL_DECK_2, 222);
+    ui_create_overview_deck_panel(screen, CTRL_DECK_2, 222 + OVERVIEW_EXTRA_H / 2);
     ui_create_overview_center_marker(screen);
     ui_create_overview_fx_panel(screen);
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck)
+        ui_overview_update_cue_markers(deck, NULL, 0); /* create bounded markers once */
     return screen;
 }
 
@@ -1783,6 +1875,16 @@ static void ui_overview_redraw_mini(uint8_t idx)
         ui_overview_renderer_draw_mini_spans(pixels, panel->mini_wave_stride_px,
             OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, &source, duration, span);
     }
+    /* Memory markers use the existing indexed surface, avoiding 32 extra
+     * internal-heap LVGL objects in the ordinary libc presentation. */
+    if (meta && duration) {
+        for (uint8_t i = 0; i < meta->memory_cue_count && i < ANLZ_MAX_MEMORY_CUES; ++i) {
+            if (meta->memory_cues[i].start_ms > duration) continue;
+            int x = (int)((uint64_t)meta->memory_cues[i].start_ms * (OVERVIEW_MINI_CV_W - 2) / duration);
+            for (int y = OVERVIEW_MINI_CV_H - 18; y < OVERVIEW_MINI_CV_H; ++y)
+                pixels[y * panel->mini_wave_stride_px + x] = 6; /* amber */
+        }
+    }
     ui_overview_invalidate_mini_wave_range(panel, 0, OVERVIEW_MINI_CV_W);
 }
 
@@ -1833,6 +1935,13 @@ static uint32_t ui_overview_cue_fingerprint(const anlz_metadata_t *meta, uint32_
         for (uint8_t j = 0; j < meta->cue_count && j < ANLZ_MAX_CUES; j++) {
             fp = (fp ^ (uint32_t)meta->cues[j].index) * 16777619u;
             fp = (fp ^ meta->cues[j].start_ms) * 16777619u;
+            fp = (fp ^ meta->cues[j].end_ms) * 16777619u;
+            fp = (fp ^ meta->cues[j].type) * 16777619u;
+        }
+        fp = (fp ^ meta->memory_cue_count) * 16777619u;
+        for (uint8_t j = 0; j < meta->memory_cue_count && j < ANLZ_MAX_MEMORY_CUES; ++j) {
+            fp = (fp ^ meta->memory_cues[j].start_ms) * 16777619u;
+            fp = (fp ^ meta->memory_cues[j].end_ms) * 16777619u;
         }
     }
     return fp;
@@ -1842,6 +1951,7 @@ void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, u
 {
     uint8_t deck_idx = ui_overview_deck_index(deck);
     ui_overview_deck_panel_t *panel = &s_overview_decks[deck_idx];
+    if (!panel->panel) return;
 
     /* Skip when nothing about the cues changed. Previously this ran every second
      * and unconditionally reset the wave cache (forcing a full strip rebuild on
@@ -2368,6 +2478,27 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
         ui_overview_apply_play_button(panel, state->playing);
     }
     ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "NO TRACK");
+    char key_text[24];
+    snprintf(key_text, sizeof key_text, "KEY: %s", info->valid && info->key[0] ? info->key : "--");
+    ui_label_set_text_if_changed(panel->label_key, key_text);
+    audio_engine_deck_status_t status = {0};
+    char status_text[96];
+    if (audio_engine_deck_get_status(deck, &status) == ESP_OK && status.state == AE_LOADING)
+        snprintf(status_text, sizeof status_text, "LOADING %u%%", (unsigned)status.load_progress);
+    else if (status.last_error_text[0]) snprintf(status_text, sizeof status_text, "ERROR: %.72s", status.last_error_text);
+    else snprintf(status_text, sizeof status_text, "%s%s", info->valid ? "READY" : "EMPTY",
+                  !deck_core_load_allowed(deck) ? " / LOAD LOCK" : "");
+    ui_label_set_text_if_changed(panel->label_status, status_text);
+    deck_loaded_track_summary_t track = {0};
+    const uint16_t *pixels = deck_core_get_loaded_track(deck, &track)
+        ? ui_artwork_get(track.track_key, UI_ARTWORK_DECK) : NULL;
+    if (pixels && panel->artwork_pixels) {
+        if (memcmp(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size)) {
+            memcpy(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size);
+            lv_obj_invalidate(panel->artwork);
+        }
+        lv_obj_remove_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
+    } else lv_obj_add_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
 
     uint32_t time_bucket = duration_ms > 0 ? (elapsed_ms / 1000u) : UINT32_MAX - 1u;
     if (time_bucket != panel->last_time_bucket) {
@@ -2449,12 +2580,17 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         bool duration_changed = s_overview_deck_duration_ms[deck] != ctx->deck_duration_ms[deck] ||
             s_overview_deck_analysis_span_ms[deck] != ctx->deck_analysis_span_ms[deck];
+        bool cues_changed = s_overview_deck_snapshot[deck] != ctx->deck_anlz[deck] ||
+            s_overview_edit_revision[deck] != deck_core_hot_cue_revision();
         s_overview_deck_duration_ms[deck] = ctx->deck_duration_ms[deck];
         s_overview_deck_analysis_span_ms[deck] = ctx->deck_analysis_span_ms[deck];
         s_overview_deck_bpm[deck] = ctx->deck_bpm[deck];
         ui_overview_replace_snapshot(deck, ctx->deck_anlz[deck]);
         s_overview_deck_info[deck] = ctx->deck_info[deck];
         s_overview_wave_source[deck] = ctx->overview_wave_source[deck];
+        if (duration_changed || cues_changed)
+            ui_overview_update_cue_markers(deck, s_overview_deck_meta[deck], ctx->deck_duration_ms[deck]);
+        if (cues_changed) ui_overview_redraw_mini(deck);
         if (duration_changed) {
             s_overview_decks[deck].last_time_bucket = UINT32_MAX;
             s_overview_decks[deck].last_wave_center_ms = UINT32_MAX;
@@ -2514,10 +2650,10 @@ void ui_overview_update(const ui_frame_context_t *ctx)
         ui_update_mixer_overview(&ctx->mixer_snapshot);
 #endif
         ui_overview_update_cue_markers(CTRL_DECK_1,
-                                       ctx->deck_meta[CTRL_DECK_1],
+                                       s_overview_deck_meta[CTRL_DECK_1],
                                        ctx->deck_duration_ms[CTRL_DECK_1]);
         ui_overview_update_cue_markers(CTRL_DECK_2,
-                                       ctx->deck_meta[CTRL_DECK_2],
+                                       s_overview_deck_meta[CTRL_DECK_2],
                                        ctx->deck_duration_ms[CTRL_DECK_2]);
     }
 }

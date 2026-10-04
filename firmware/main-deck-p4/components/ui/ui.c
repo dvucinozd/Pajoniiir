@@ -19,6 +19,9 @@
 #include "ui_status.h"
 #include "splash_screen.h"
 #include "ui_idle.h"
+#if CONFIG_AUDIO_RECORDER_ENABLED && !defined(WIN32)
+#include "audio_recorder.h"
+#endif
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
 #include "ui_dj_bridge.h"
 #endif
@@ -379,7 +382,6 @@ static void ui_performance_set_jog_mode(uint8_t deck, bool cdj)
 
 static void ui_performance_restore_source_cues(uint8_t deck)
 {
-#ifndef WIN32
     ctrl_event_t ev = {
         .type = CTRL_EV_BUTTON,
         .id = ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION,
@@ -388,18 +390,18 @@ static void ui_performance_restore_source_cues(uint8_t deck)
         .value = CTRL_DECK_EXT_VALUE(
             CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true),
     };
+#ifndef WIN32
     esp_err_t rc = deck_core_queue_event(&ev);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "D%u source cue restore queue failed: %s",
                  (unsigned)deck + 1u, esp_err_to_name(rc));
     }
 #else
-    (void)deck;
+    deck_core_test_apply_event(&ev);
 #endif
 }
 
-#ifndef WIN32
-static void ui_performance_hot_cue_pad(uint8_t deck, uint8_t pad)
+static void ui_performance_hot_cue_pad(uint8_t deck, uint8_t pad, bool pressed, bool deleted)
 {
     if (pad >= HOT_CUE_STORE_SLOT_COUNT) return;
     ctrl_event_t ev = {
@@ -407,15 +409,18 @@ static void ui_performance_hot_cue_pad(uint8_t deck, uint8_t pad)
         .id = ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
                                   CTRL_ID_DECK2_PAD_ACTION),
         .deck = deck,
-        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, false, true),
+        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, deleted, pressed),
     };
+#ifdef WIN32
+    deck_core_test_apply_event(&ev);
+#else
     esp_err_t rc = deck_core_queue_event(&ev);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "D%u hot cue queue failed: %s",
                  (unsigned)deck + 1u, esp_err_to_name(rc));
     }
-}
 #endif
+}
 
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
@@ -428,6 +433,8 @@ static void ui_set_loop_shadow(uint8_t deck,
 
 static void ui_set_performance_deck(uint8_t deck)
 {
+    ui_overview_cancel_holds();
+    ui_performance_tabs_cancel_holds();
     uint8_t before = ui_controls_active_deck(&s_controls);
     ui_controls_set_active_deck(&s_controls, ui_deck_index(deck));
     uint8_t after = ui_controls_active_deck(&s_controls);
@@ -458,6 +465,8 @@ static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *m
 
 static void ui_switch_tab(int target_idx)
 {
+    ui_overview_cancel_holds();
+    ui_performance_tabs_cancel_holds();
     if (target_idx < 0 || target_idx >= UI_TAB_COUNT) {
         return;
     }
@@ -481,10 +490,10 @@ static void ui_switch_tab(int target_idx)
     s_active_tab = target_idx;
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_container) {
+        dj_ui_show_tab((dj_tab_t)target_idx); /* cancels holds even for shared Settings */
         if (target_idx != UI_TAB_SETTINGS) {
             lv_obj_add_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
-            dj_ui_show_tab((dj_tab_t)target_idx);
         } else {
             lv_obj_add_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
@@ -505,10 +514,9 @@ static void footer_btn_event_cb(lv_event_t *e) {
 static void ui_overview_action_play_pause(uint8_t deck)
 {
 #ifdef WIN32
-    (void)deck;
-    ui_simulator_deck_toggle_play();
-    deck_state_t state = deck_core_get_state();
-    ESP_LOGI(TAG, "Simulator Play/Pause: %s", state.playing ? "PLAYING" : "PAUSED");
+    ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
+        .id=ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY), .value=1};
+    deck_core_test_apply_event(&ev);
 #else
     ctrl_event_t ev = {
         .type  = CTRL_EV_BUTTON,
@@ -524,10 +532,10 @@ static void ui_overview_action_play_pause(uint8_t deck)
 static void ui_overview_action_cue(uint8_t deck, bool pressed)
 {
 #ifdef WIN32
-    (void)deck;
-    if (!pressed) return;
-    ui_simulator_deck_set_playing(false);
-    ui_simulator_deck_set_position(0);
+    ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
+        .id=ui_deck_control_id(deck, CTRL_ID_DECK1_CUE, CTRL_ID_DECK2_CUE),
+        .value=pressed ? 1 : 0};
+    deck_core_test_apply_event(&ev);
 #else
     ctrl_event_t ev = {
         .type  = CTRL_EV_BUTTON,
@@ -545,8 +553,7 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
 #ifndef WIN32
     audio_engine_deck_seek(deck, target_ms);
 #else
-    (void)deck;
-    ui_simulator_deck_set_position(target_ms);
+    audio_engine_deck_seek(deck, target_ms);
 #endif
 }
 
@@ -926,6 +933,7 @@ static void ui_load_waveform_data(uint8_t deck,
 {
     (void)meta;
     ui_cache_invalidate();
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     anlz_snapshot_t *snapshot = ui_deck_anlz_acquire(deck);
     ui_overview_load_waveform_data(deck,
                                    duration_ms,
@@ -933,6 +941,9 @@ static void ui_load_waveform_data(uint8_t deck,
                                    has_waveform,
                                    snapshot);
     anlz_snapshot_release(snapshot);
+#else
+    (void)deck; (void)duration_ms; (void)waveform_low; (void)has_waveform;
+#endif
 }
 
 static bool ui_library_is_performance_target_active(uint8_t deck)
@@ -942,10 +953,9 @@ static bool ui_library_is_performance_target_active(uint8_t deck)
 
 static void ui_update_overview_cue_markers(uint8_t deck)
 {
-    anlz_snapshot_t *snapshot = ui_deck_anlz_acquire(deck);
-    ui_overview_update_cue_markers(
-        deck, anlz_snapshot_metadata(snapshot), ui_deck_duration_ms(deck));
-    anlz_snapshot_release(snapshot);
+    /* The selected renderer refreshes the effective bank on the next frame.
+     * Do not briefly repaint raw source cues before merging local tombstones. */
+    (void)deck;
 }
 
 // ─── Global Interface Functions ──────────────────────────────────────────────
@@ -1050,9 +1060,7 @@ esp_err_t ui_init(void) {
             .clear_loop = ui_performance_clear_loop,
             .restore_source_cues = ui_performance_restore_source_cues,
             .set_jog_mode = ui_performance_set_jog_mode,
-#ifndef WIN32
             .hot_cue_pad = ui_performance_hot_cue_pad,
-#endif
             .update_overview_cue_markers = ui_update_overview_cue_markers,
         },
         .hor_res = UI_HOR_RES,
@@ -1123,12 +1131,12 @@ esp_err_t ui_init(void) {
     create_footer(s_root_container);
 
     // Build the screen layers
-    s_screens[UI_TAB_OVERVIEW] = ui_overview_create(s_root_container);
-    ui_controls_update_performance_target_visuals(&s_controls);
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_screens[UI_TAB_OVERVIEW] = ui_overview_create(s_root_container);
     s_screens[UI_TAB_LIBRARY] = ui_library_create(s_root_container);
-#endif
     s_screens[UI_TAB_HOT_CUES] = ui_performance_tabs_create_hot_cues(s_root_container);
+#endif
+    ui_controls_update_performance_target_visuals(&s_controls);
     s_screens[UI_TAB_SETTINGS] = ui_settings_create(s_root_container);
 
     // Switch initially to overview (index 0) and hide others
@@ -1348,9 +1356,16 @@ static void ui_idle_service(const ui_frame_context_t *ctx)
     /* The recorder is compiled out by default; the inhibit stays in the pure
      * helper so re-enabling it needs no rediscovery here. */
     bool recording = false;
+#if CONFIG_AUDIO_RECORDER_ENABLED
+    audio_recorder_state_t recorder_state = audio_recorder_get_state();
+    recording = recorder_state == AUDIO_RECORDER_STARTING ||
+        recorder_state == AUDIO_RECORDER_RECORDING || recorder_state == AUDIO_RECORDER_STOPPING;
+#endif
 
     switch (ui_idle_tick(&s_idle, now, playing, recording)) {
     case UI_IDLE_ACTION_SHOW:
+        ui_overview_cancel_holds();
+        ui_performance_tabs_cancel_holds();
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
         dj_ui_set_screensaver(true);
 #else
@@ -1436,7 +1451,6 @@ void ui_update(void) {
     ui_status_update(&ctx);
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     ui_dj_bridge_update(&ctx);
-    if (ctx.active_tab != UI_TAB_OVERVIEW) ui_overview_update(&ctx);
 #else
     ui_overview_update(&ctx);
 #endif
@@ -1475,7 +1489,7 @@ esp_err_t ui_show_library(void)
 
 esp_err_t ui_toggle_library_view(void)
 {
-    if (!s_root_container || !s_screens[UI_TAB_OVERVIEW] || !ui_library_ready()) {
+    if (!s_root_container || !ui_library_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
 

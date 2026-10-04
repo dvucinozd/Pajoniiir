@@ -1,5 +1,6 @@
 #include "lvgl.h"
 #include "esp_heap_caps.h"
+#include "ui_heap_usage.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -8,6 +9,8 @@
 static unsigned allocations, reallocations, frees;
 static bool fail_next, intact = true;
 static size_t total = 1024, available = 640, biggest = 320;
+static size_t allocated_size;
+size_t heap_caps_get_allocated_size(void *p) { assert(p); return allocated_size; }
 static void require_external(uint32_t caps)
 {
     assert(caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -16,12 +19,14 @@ void *heap_caps_malloc(size_t n, uint32_t caps)
 {
     require_external(caps); ++allocations;
     if (fail_next) { fail_next = false; return NULL; }
+    allocated_size = n;
     return malloc(n);
 }
 void *heap_caps_realloc(void *p, size_t n, uint32_t caps)
 {
     require_external(caps); ++reallocations;
     if (fail_next) { fail_next = false; return NULL; }
+    allocated_size = n;
     return realloc(p, n);
 }
 void heap_caps_free(void *p) { if (p) ++frees; free(p); }
@@ -39,13 +44,16 @@ int main(void)
     /* Even tiny labels must avoid the internal allocator threshold. */
     unsigned char *p = lv_malloc_core(8);
     assert(p); memset(p, 0x42, 8);
+    assert(ui_heap_usage_bytes() == 8);
     p = lv_realloc_core(p, 300); assert(p);
     for (unsigned i = 0; i < 8; ++i) assert(p[i] == 0x42);
     fail_next = true;
     assert(lv_realloc_core(p, 600) == NULL);
     for (unsigned i = 0; i < 8; ++i) assert(p[i] == 0x42);
     assert(reallocations == 2 && frees == 0);
+    assert(ui_heap_usage_bytes() == 300);
     lv_free_core(p); lv_free_core(NULL); assert(frees == 1);
+    assert(ui_heap_usage_bytes() == 0);
     fail_next = true;
     assert(lv_malloc_core(16) == NULL);
     assert(allocations == 2); /* no internal retry/fallback on external OOM */

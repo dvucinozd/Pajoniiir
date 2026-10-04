@@ -1959,6 +1959,24 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     // s_label_library_hint has been removed
     ui_library_set_load_busy(false, NULL);
 
+    /* Native wide geometry: keep control sizes, expand the catalog columns
+     * and move the action rail. No bitmap or touch-coordinate scaling. */
+    int extra = s_library_config.hor_res - 800;
+    if (extra > 0) {
+        lv_obj_update_layout(s_library_screen);
+        for (uint32_t i = 0; i < lv_obj_get_child_count(s_library_screen); ++i) {
+            lv_obj_t *child = lv_obj_get_child(s_library_screen, (int32_t)i);
+            if (lv_obj_get_x(child) >= 650) lv_obj_set_x(child, lv_obj_get_x(child) + extra);
+        }
+        lv_obj_set_width(s_library_header_table, 630 + extra);
+        lv_obj_set_width(s_library_table, 630 + extra);
+        lv_table_set_column_width(s_library_header_table, 0, 280 + extra / 2);
+        lv_table_set_column_width(s_library_header_table, 1, 160 + extra / 2);
+        lv_table_set_column_width(s_library_table, 0, 280 + extra / 2);
+        lv_table_set_column_width(s_library_table, 1, 160 + extra / 2);
+        lv_obj_set_x(s_btn_library_page_next, 550 + extra);
+        lv_obj_set_width(s_label_library_source, 300 + extra);
+    }
     return s_library_screen;
 }
 
@@ -2252,6 +2270,19 @@ void ui_library_update(const ui_frame_context_t *ctx)
             lv_obj_set_style_text_color(s_label_indicator_deck, COL_TEXT, LV_PART_MAIN);
             lv_obj_set_style_text_color(s_label_indicator_status, COL_TEXT_MUTED, LV_PART_MAIN);
         }
+    }
+    if (ctx && s_active_tab == 1 && s_library_table) {
+        lv_obj_t *buttons[2] = {s_btn_library_load, s_btn_library_load_deck2};
+        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; ++d) {
+            bool locked = s_browse_mode != UI_BROWSE_NODES && !deck_core_load_allowed(d);
+            lv_label_set_text_fmt(lv_obj_get_child(buttons[d], 0),
+                                 locked ? "D%u LOAD LOCK" : "LOAD DECK %u", (unsigned)d + 1u);
+        }
+        audio_engine_deck_status_t status = {0};
+        if (ui_library_track_load_busy() &&
+            audio_engine_deck_get_status(s_library_load_request_deck, &status) == ESP_OK &&
+            status.state == AE_LOADING)
+            lv_label_set_text_fmt(s_label_indicator_status, "LOAD %u%%", (unsigned)status.load_progress);
     }
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_ready && ctx && s_active_tab == 1) {

@@ -151,7 +151,7 @@ static void metadata_update(uint8_t d, bridge_deck_t *s,
         0, 0, f->deck_duration_ms[d]);
     dj_ui_set_bpm(d, f->deck_bpm[d],
         meta && meta->beats && meta->beat_count ? meta->beats[0].time_ms : 0);
-    dj_ui_set_key(d, "--");
+    dj_ui_set_key(d, info && info->valid && info->key[0] ? info->key : "--");
     uint32_t memory[DJ_MEMORY_CUES];
     uint8_t n = meta ? meta->memory_cue_count : 0;
     if (n > DJ_MEMORY_CUES) n = DJ_MEMORY_CUES;

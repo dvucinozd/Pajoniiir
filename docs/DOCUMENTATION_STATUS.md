@@ -24,6 +24,13 @@ evidence does not qualify DDJ-400 sound or FLX4 hardware regression.
 
 ## Production release
 
+[Package H software closure](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
+preserves the previous design in both native resolutions and removes duplicate
+presentation trees. Seven simulator presentations, host suites and board builds
+verify software only. Runtime memory, timing, touch, audio/reconnect, guarded
+rollback and final 180-minute exact-image soak remain NOT RUN. The device remains
+on recovery `M2.4-7-gb8d9cb7`; this work performs no installation or publication.
+
 [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
 adds an explicit recorder experiment and default-off SD idle workaround.
 Ordinary release builds remain recorder-free and retain original SD idle wait.

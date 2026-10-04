@@ -107,6 +107,26 @@ static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
+static lv_obj_t *s_label_main_sink;
+
+static void main_sink_event_cb(lv_event_t *event)
+{
+    (void)event;
+#ifndef WIN32
+    audio_main_sink_t next = audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB
+        ? AUDIO_MAIN_SINK_PCM5102A : AUDIO_MAIN_SINK_USB;
+    esp_err_t rc = audio_engine_set_main_sink(next);
+    if (rc != ESP_OK) {
+        lv_label_set_text(s_label_main_sink, rc == ESP_ERR_INVALID_STATE
+            ? "STOP BOTH DECKS / REC" : "SINK UNAVAILABLE");
+        return;
+    }
+    lv_label_set_text(s_label_main_sink, next == AUDIO_MAIN_SINK_USB
+        ? "MAIN: USB" : "MAIN: PCM5102A");
+#else
+    lv_label_set_text(s_label_main_sink, "SINK: SIMULATOR");
+#endif
+}
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
 static ui_settings_recording_toggle_cb_t s_recording_toggle_cb = NULL;
@@ -470,7 +490,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #endif
 
     const int left_x = 30;
-    const int left_w = 350;
+    const int left_w = s_config.hor_res / 2 - 50;
 
     lv_obj_t *display_section = ui_settings_section(screen, left_x, 20, left_w, 86, "DISPLAY");
     lv_obj_t *slider_backlight = lv_slider_create(display_section);
@@ -506,25 +526,30 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_align(s_label_master_trim, LV_ALIGN_CENTER, 0, 0);
 
     ui_settings_value_label(master_section,
-                            "Lower if limiter stays active",
+                            "Limiter? Lower trim",
                             COL_TEXT_DIM,
                             &lv_font_montserrat_12,
                             198,
                             48);
 
     lv_obj_t *output_section = ui_settings_section(screen, left_x, 216, left_w, 86, "OUTPUT");
+    lv_obj_t *sink = lv_button_create(output_section);
+    lv_obj_set_pos(sink, 12, 28);
+    lv_obj_set_size(sink, left_w - 24, 30);
+    lv_obj_set_style_bg_color(sink, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_add_event_cb(sink, main_sink_event_cb, LV_EVENT_CLICKED, NULL);
+    s_label_main_sink = ui_settings_value_label(sink,
+#ifndef WIN32
+        audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "MAIN: USB" :
+#endif
+        "MAIN: PCM5102A", COL_GREEN, &lv_font_montserrat_12, 0, 0);
+    lv_obj_center(s_label_main_sink);
     ui_settings_value_label(output_section,
-                            "MAIN: PCM5102A RCA",
-                            COL_GREEN,
-                            &lv_font_montserrat_12,
-                            16,
-                            36);
-    ui_settings_value_label(output_section,
-                            "CUE: FLX4 USB",
+                            "CUE: USB pair 3/4",
                             COL_ACCENT,
                             &lv_font_montserrat_12,
                             16,
-                            56);
+                            62);
     ui_settings_value_label(output_section,
 #if defined(CONFIG_BSP_ES8311_MONITOR) && CONFIG_BSP_ES8311_MONITOR
                             "LOCAL: ES8311 monitor",
@@ -535,7 +560,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #endif
                             &lv_font_montserrat_12,
                             176,
-                            56);
+                            62);
 
 #if CONFIG_AUDIO_RECORDER_ENABLED
     /* Compact section that fits the gap between OUTPUT and the full-width
@@ -569,7 +594,8 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 
 #endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
 
-    lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
+    lv_obj_t *status_section = ui_settings_section(screen, s_config.hor_res / 2 + 10, 20,
+                                                  s_config.hor_res / 2 - 40, 210, "SYSTEM STATUS");
 
     lv_obj_t *label_controller_status =
         ui_settings_value_label(status_section,
@@ -624,7 +650,13 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     }
 #endif
 
-    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 82, "WIRELESS");
+    bool ethernet = s_config.hor_res == 1024;
+#ifndef WIN32
+    ethernet = board_capabilities_get()->ethernet;
+#endif
+    lv_obj_t *wifi_section = ui_settings_section(screen, s_config.hor_res / 2 + 10, 240,
+                                                s_config.hor_res / 2 - 40, 82,
+                                                ethernet ? "ETHERNET / DJ LINK" : "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
     ui_settings_style_wireless_switch(sw_wifi, COL_GREEN);
     lv_obj_set_pos(sw_wifi, 16, 38);
@@ -638,8 +670,13 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                   wifi_remote_init ? COL_GREEN : COL_TEXT_DIM,
                                                   &lv_font_montserrat_14,
                                                   96, 41);
+    if (ethernet) {
+        lv_obj_add_flag(sw_wifi, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_label_wifi_remote, "DJ LINK: UNAVAILABLE");
+        lv_obj_set_x(s_label_wifi_remote, 16);
+    }
 
-    lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS");
+    lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS");
     ui_settings_static_tile(mixer_section, 18, 34, 110, 22,
                             "MIXER: FLX4", COL_TEXT_MUTED, COL_PANEL_DK, COL_BORDER);
     ui_settings_static_tile(mixer_section, 140, 34, 104, 22,

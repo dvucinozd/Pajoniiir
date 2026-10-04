@@ -196,11 +196,11 @@ static bool save_ppm(const char *output_dir, const char *name)
     return true;
 }
 
-static unsigned count_tables(lv_obj_t *object)
+static unsigned count_objects(lv_obj_t *object, const lv_obj_class_t *type)
 {
-    unsigned count = lv_obj_check_type(object, &lv_table_class) ? 1u : 0u;
+    unsigned count = lv_obj_check_type(object, type) ? 1u : 0u;
     for (uint32_t i = 0; i < lv_obj_get_child_count(object); ++i)
-        count += count_tables(lv_obj_get_child(object, (int32_t)i));
+        count += count_objects(lv_obj_get_child(object, (int32_t)i), type);
     return count;
 }
 
@@ -232,11 +232,17 @@ int main(int argc, char **argv)
 
     pump(3200);
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
-    if (count_tables(lv_screen_active()) != 0)
+    if (count_objects(lv_screen_active(), &lv_table_class) != 0)
         fail("preview instantiated a hidden legacy Library table");
+    if (count_objects(lv_screen_active(), &lv_canvas_class) != 0)
+        fail("preview instantiated hidden legacy waveform canvases");
+    if (count_objects(lv_screen_active(), &lv_slider_class) != 2)
+        fail("preview allocated duplicate Settings controls");
 #else
-    if (count_tables(lv_screen_active()) != 2)
+    if (count_objects(lv_screen_active(), &lv_table_class) != 2)
         fail("legacy Library did not retain header and data tables");
+    if (count_objects(lv_screen_active(), &lv_canvas_class) != 4)
+        fail("product did not retain the shared waveform surfaces");
 #endif
     char accepted_key[16];
     ui_get_deck_track_key(CTRL_DECK_1, accepted_key, sizeof(accepted_key));
@@ -261,10 +267,13 @@ int main(int argc, char **argv)
     if (framebuffer_hash() == deck1_hash) {
         fail("Deck 2 selection produced no visible change");
     }
-#if CONFIG_PAJONIIIR_DJ_OVERVIEW
     /* Exercise actual shared callbacks against deck_core, not callback counters. */
     lv_obj_t *badge_label = find_visible_label(lv_screen_active(), "D2");
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
     lv_obj_t *footer = badge_label ? lv_obj_get_parent(lv_obj_get_parent(badge_label)) : NULL;
+#else
+    lv_obj_t *footer = badge_label ? lv_obj_get_parent(badge_label) : NULL;
+#endif
     lv_obj_t *play = find_visible_label(footer, LV_SYMBOL_PLAY);
     lv_obj_t *cue = find_visible_label(footer, "CUE");
     if (!play || !cue) fail("Deck 2 transport controls unavailable");
@@ -285,8 +294,12 @@ int main(int argc, char **argv)
         if (deck_core_get_deck_state(CTRL_DECK_2).cue_held ||
             deck_core_get_deck_state(CTRL_DECK_2).playing)
             fail("touch CUE release retained paused preview");
+        lv_obj_send_event(lv_obj_get_parent(cue), LV_EVENT_PRESSED, NULL);
+        click_label("LIBRARY");
+        pump(64);
+        if (deck_core_get_deck_state(CTRL_DECK_2).cue_held)
+            fail("navigation retained a touch CUE hold");
     }
-#endif
 
     if (!click_label("LIBRARY") || !ui_is_library_active()) {
         fail("library navigation failed");
@@ -324,6 +337,19 @@ int main(int argc, char **argv)
         fail("Hot Cues navigation failed");
     }
     save_ppm(argv[1], "hot_cues");
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (!click_label("MEMORY")) fail("memory cue list missing");
+    if (!find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16 (TRUNCATED)"))
+        fail("memory cue count/truncation missing");
+    save_ppm(argv[1], "memory_cues");
+    lv_obj_t *memory_title = find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16 (TRUNCATED)");
+    if (memory_title) {
+        lv_obj_scroll_to_y(lv_obj_get_parent(memory_title), 400, LV_ANIM_OFF);
+        pump(64);
+        save_ppm(argv[1], "memory_cues_scrolled");
+    }
+    if (!click_label("MEMORY")) fail("memory list close failed");
+#endif
 
     if (!click_label("D2 JOG: VINYL")) fail("Deck 2 jog selector missing");
     if (!deck_core_get_deck_state(CTRL_DECK_2).jog_cdj_mode ||
@@ -455,6 +481,13 @@ int main(int argc, char **argv)
         fail("touch LOAD did not open the selected folder");
     if (!click_label("BACK") || !click_label("BACK"))
         fail("touch playlist navigation did not restore all tracks");
+#else
+    deck_loaded_track_summary_t d2_touch = {0};
+    if (!deck_core_get_loaded_track(CTRL_DECK_2, &d2_touch)) fail("Deck 2 identity missing");
+#endif
+    click_label("OVERVIEW");
+    click_deck(CTRL_DECK_2);
+    uint64_t source_cue_pixels = framebuffer_hash();
     if (!click_label("HOT CUES") || !click_deck(CTRL_DECK_2) ||
         !click_label("DELETE: OFF")) fail("explicit cue delete mode missing");
     lv_obj_t *cue_a = find_visible_label(lv_screen_active(), "CUE A");
@@ -472,6 +505,11 @@ int main(int argc, char **argv)
         fail("touch delete did not persist a source cue tombstone");
     if (deck_core_get_deck_state(CTRL_DECK_2).position_ms != delete_position)
         fail("delete mode triggered audible cue/seek before deleting");
+    click_label("OVERVIEW");
+    pump(64);
+    if (framebuffer_hash() == source_cue_pixels)
+        fail("Overview kept the deleted source cue");
+    click_label("HOT CUES");
     if (!click_deck(CTRL_DECK_1) ||
         !find_visible_label(lv_screen_active(), "DELETE: OFF"))
         fail("delete mode survived target change");
@@ -498,7 +536,6 @@ int main(int argc, char **argv)
             (restored != ESP_OK || deleted.override_mask))
             fail("explicit hold did not reset local cue overrides");
     }
-#endif
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

@@ -1,4 +1,4 @@
-# Package H migration progress (H remains open)
+# Package H migration history and software closure
 
 Date: 2026-10-04. Branch: `codex/fork-improvements`.
 Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
@@ -6,13 +6,19 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 MIT provenance is retained in `components/ui/DJ_UI_NOTICE.md`.
 Production M2.4 and the separate APTA branch are unchanged.
 
+The final software record linked below supersedes unfinished-work statements
+in the historical checkpoints on this page; their original test/install evidence
+is retained. Physical acceptance remains open.
+
 ## Current work: previous design and guarded OTA startup
 
 The accepted implementation plan retains the previous product design on both
 native resolutions. H1-H3 below describe historical preview work, not the
 remaining product direction. The Settings stash is preserved for selective
 review; it is not applied as a completed implementation. Recovery is complete;
-H, exact-image audio acceptance and memory qualification remain open.
+H software closure is recorded in
+[the final software record](FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md).
+Exact-image audio acceptance and memory qualification remain open.
 
 Pending OTA images now wait for completed critical core initialization and,
 when Wi-Fi remote was enabled in saved boot settings, the active AP/HTTP
@@ -315,7 +321,7 @@ recorder, PSRAM and dj-ui variants on JC1060. The host job runs all five
 presentation gates. Preview configuration must be explicitly asserted rather
 than inferred from an unused component compiling.
 
-## Remaining H work
+## Historical remaining H work (superseded by software closure)
 
 1. Separate Library model/actions from widget creation; each build initializes
    only its selected presentation. Preserve the Settings stash for selective

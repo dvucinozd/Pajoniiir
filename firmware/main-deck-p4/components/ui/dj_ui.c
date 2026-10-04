@@ -1651,14 +1651,16 @@ void dj_ui_set_features(bool ethernet, bool recorder)
         lv_obj_set_width(g.status_box,
             lv_display_get_horizontal_resolution(lv_obj_get_display(g.status_box)) == 800 ? 188 : 230);
         lv_obj_set_width(g.status_lbl, lv_obj_get_width(g.status_box) - 8);
-        lv_obj_add_flag(g.link_sw, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(g.f_lbl[DJ_F_LINK_STATUS], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(g.f_box[DJ_F_LINK_SYNC], LV_OBJ_FLAG_HIDDEN);
-        for (int k = 0; k < DJ_LINK_ROWS; ++k) lv_obj_add_flag(g.peer_lbl[k], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_t *network = lv_obj_get_parent(g.link_sw);
-        lv_label_set_text(lv_obj_get_child(network, 0), "NETWORK / REMOTE");
+        if (g.link_sw) {
+            lv_obj_add_flag(g.link_sw, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(g.f_lbl[DJ_F_LINK_STATUS], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(g.f_box[DJ_F_LINK_SYNC], LV_OBJ_FLAG_HIDDEN);
+            for (int k = 0; k < DJ_LINK_ROWS; ++k) lv_obj_add_flag(g.peer_lbl[k], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_t *network = lv_obj_get_parent(g.link_sw);
+            lv_label_set_text(lv_obj_get_child(network, 0), "NETWORK / REMOTE");
+        }
     }
-    if (!recorder) lv_obj_add_flag(lv_obj_get_parent(g.rec_btn), LV_OBJ_FLAG_HIDDEN);
+    if (!recorder && g.rec_btn) lv_obj_add_flag(lv_obj_get_parent(g.rec_btn), LV_OBJ_FLAG_HIDDEN);
     if (lv_display_get_horizontal_resolution(lv_obj_get_display(g.page[3])) == 800) {
         int y = 0;
         for (uint32_t k = 0; k < lv_obj_get_child_count(g.page[3]); ++k) {
@@ -1698,7 +1700,11 @@ void dj_ui_create(lv_obj_t *parent)
     build_overview(g.page[0]);
     build_library(g.page[1]);
     build_hotcues(g.page[2]);
+    /* Runtime uses the shared product Settings owner and presentation. The
+     * standalone donor demo keeps its illustrative Settings controls. */
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     build_settings(g.page[3]);
+#endif
 
     static const char *names[4] = { "OVERVIEW", "LIBRARY", "HOT CUES", "SETTINGS" };
     for (int i = 0; i < 4; i++)
@@ -2333,6 +2339,7 @@ void dj_ui_set_field(dj_field_t field, const char *text, dj_tone_t tone)
 
 void dj_ui_set_brightness(uint8_t pct)
 {
+    if (!g.bright) return;
     lv_slider_set_value(g.bright, pct, LV_ANIM_OFF);
     lv_label_set_text_fmt(g.bright_lbl, "%u%%", (unsigned)lv_slider_get_value(g.bright));
 }

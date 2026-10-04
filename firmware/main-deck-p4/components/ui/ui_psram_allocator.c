@@ -4,12 +4,15 @@
  * No internal fallback: allocation failure stays visible to LVGL's checks. */
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
+#include "ui_heap_usage.h"
 #if CONFIG_LV_USE_CUSTOM_MALLOC
 #include "lvgl.h"
 #include "esp_heap_caps.h"
 #include <string.h>
 
 #define UI_HEAP_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+static uint32_t s_used_bytes;
+uint32_t ui_heap_usage_bytes(void) { return __atomic_load_n(&s_used_bytes, __ATOMIC_RELAXED); }
 
 /* Pull this object from libui before LVGL's later archive is resolved. */
 void ui_psram_allocator_keep(void) {}
@@ -27,15 +30,28 @@ void lv_mem_remove_pool(lv_mem_pool_t pool) { (void)pool; }
 
 void *lv_malloc_core(size_t size)
 {
-    return heap_caps_malloc(size, UI_HEAP_CAPS);
+    void *p = heap_caps_malloc(size, UI_HEAP_CAPS);
+    if (p) __atomic_fetch_add(&s_used_bytes, heap_caps_get_allocated_size(p), __ATOMIC_RELAXED);
+    return p;
 }
 
 void *lv_realloc_core(void *pointer, size_t size)
 {
-    return heap_caps_realloc(pointer, size, UI_HEAP_CAPS);
+    size_t old = pointer ? heap_caps_get_allocated_size(pointer) : 0;
+    void *p = heap_caps_realloc(pointer, size, UI_HEAP_CAPS);
+    if (p) {
+        size_t updated = heap_caps_get_allocated_size(p);
+        if (updated >= old) __atomic_fetch_add(&s_used_bytes, updated - old, __ATOMIC_RELAXED);
+        else __atomic_fetch_sub(&s_used_bytes, old - updated, __ATOMIC_RELAXED);
+    } else if (size == 0 && pointer) __atomic_fetch_sub(&s_used_bytes, old, __ATOMIC_RELAXED);
+    return p;
 }
 
-void lv_free_core(void *pointer) { heap_caps_free(pointer); }
+void lv_free_core(void *pointer)
+{
+    if (pointer) __atomic_fetch_sub(&s_used_bytes, heap_caps_get_allocated_size(pointer), __ATOMIC_RELAXED);
+    heap_caps_free(pointer);
+}
 
 void lv_mem_monitor_core(lv_mem_monitor_t *monitor)
 {
@@ -53,5 +69,7 @@ lv_result_t lv_mem_test_core(void)
 {
     return heap_caps_check_integrity(UI_HEAP_CAPS, false) ? LV_RESULT_OK : LV_RESULT_INVALID;
 }
+#else
+uint32_t ui_heap_usage_bytes(void) { return UINT32_MAX; }
 #endif
 #endif

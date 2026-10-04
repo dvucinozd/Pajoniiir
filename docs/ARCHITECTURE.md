@@ -17,6 +17,23 @@ with physical acceptance pending; the production baseline above is unchanged.
 
 ## High-Level Flow
 
+Development package H constructs one selected Overview/Library/Hot Cues tree;
+Settings and chrome are shared. Library ownership/actions do not depend on table
+widgets. The product Overview retains leased analysis snapshots, owns PSRAM
+render metadata, merges local cue edits by full persistent identity and copies
+borrowed artwork before another cache operation. Markers reuse waveform buffers.
+LVGL alone mutates widgets; workers own filesystem/JPEG operations. Paired holds
+retain their deck and are cancelled by tab/target/screensaver changes.
+
+`firmware_resources` records bounded allocation-failure/phase data from common
+startup and self-sampled task stack minima without retaining task handles.
+Output sampling is throttled and included in its deadline timing. The read-only
+`/api/resources` supplements existing Web status without changing its fields.
+Regular libc LVGL accounting is reported as unknown, rather than fabricated;
+the preview reports owned bytes through the PSRAM allocator. These diagnostics
+and [resource gates](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
+require physical measurements before acceptance.
+
 Development package G preserves the FAT and media locks, adding a long-operation
 reservation shared by REC and future download workers. START/STOP serialize;
 producer admission closes on loss, and timeout retains writer-owned resources.

@@ -22,15 +22,16 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
-- [ ] Library owner/widget separation is software-only until exact-image
-  validation: preview must have no hidden legacy tables and must retain
-  controller selection/sort/load and artwork behavior. Ordinary UI remains
-  the product default; removing one duplicate screen does not close H or
-  establish safe startup/playback memory reserves.
+- [ ] H is software verified; qualify its exact image separately. Verify one
+  selected presentation, retained controller navigation and owned artwork.
+  Capture `/api/status` and `/api/resources` in network/dual-USB idle and active
+  dual playback; run `tools/check_ui_runtime_budget.py` against measured matching
+  baseline scenarios. Missing evidence, critical allocation failures, absolute
+  reserve failures or >10% internal-free/largest-block regression block acceptance.
 
-- [ ] [Package H preview](validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md):
-  default-off, Overview, Library and Hot Cues in the actual firmware. Do not treat
-  prototype Settings captures as completed runtime parity. Physical touch,
+- [ ] [Package H](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md):
+  previous product design by default, optional preview; both native layouts and
+  shared runtime Settings pass simulator gates. Physical touch,
   render, MAIN/cue and strict timing gates remain NOT RUN. Network OTA installation
   is authorized when reachable. H3 failed Wi-Fi/USB acceptance; verified previous
   firmware was restored on explicitly authorized COM15 with matching flash

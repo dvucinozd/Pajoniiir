@@ -51,3 +51,23 @@ manifest:
 Screenshot approval is a PC rendering regression gate. It does not replace the
 P4 DSI/PPA fluidity, touch-coordinate, visibility-at-distance or panel-timing
 hardware acceptance.
+
+Package H runs seven presentations. `legacy`, `product-compact` and
+`product-wide` compile the actual previous product presentation, at 800x480 or
+1024x600, with thirteen captures including the bounded memory-cue list and its
+scroll state. `runtime-compact`/`runtime-wide` compile the actual optional
+preview plus the shared product Settings (eleven captures each). The standalone
+`native-compact`/`native-wide` donor demos have nine captures each and do not
+prove runtime integration.
+
+```powershell
+foreach ($mode in @('legacy','product-compact','product-wide',
+                    'runtime-compact','runtime-wide','native-compact','native-wide')) {
+    .\tests\ui_simulator\run_ui_simulator_e2e.ps1 -Presentation $mode -KeepArtifacts
+}
+```
+
+Runtime assertions also cover one selected widget tree, paired D1/D2 PLAY/CUE
+and pad holds, cancellation on navigation, tombstone precedence in waveform
+rendering, deletion without triggering a cue and explicit long-held restore.
+Baseline manifests are updated only after reviewing the generated captures.

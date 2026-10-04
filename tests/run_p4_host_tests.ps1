@@ -886,7 +886,7 @@ Assert-FileContains `
     -Name "P4 Settings mixer status strip keeps title clear of controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
     -LiteralPatterns @(
-        'ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS")',
+        'ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS")',
         "mixer_section, 18, 34, 110, 22",
         "lv_obj_set_size(btn_cue, 142, 22);",
         "lv_obj_set_pos(btn_cue, 570, 34);"
@@ -2724,6 +2724,18 @@ $tests = @(
         )
     },
     @{
+        Name = "firmware_resources"
+        Dir = "tests/firmware_resources"
+        Target = "test_firmware_resources.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c11",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_firmware_resources.exe", "test_firmware_resources.c",
+            "../../firmware/common/firmware_health/firmware_resources.c"
+        )
+    },
+    @{
         Name = "firmware_health"
         Dir = "tests/p4_startup_gate"
         Target = "test_firmware_health.exe"
@@ -2742,6 +2754,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DESP_PLATFORM", "-Istubs", "-o", "test_ui_psram_allocator.exe",
+            "-I../../firmware/main-deck-p4/components/ui/include",
             "test_ui_psram_allocator.c",
             "../../firmware/main-deck-p4/components/ui/ui_psram_allocator.c"
         )
@@ -3695,6 +3708,9 @@ foreach ($suite in @("controller_profile", "controller_runtime", "controller_usb
 
 Invoke-Step -Name "run profile compiler and converter" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/controller_profile_converter/test_convert_web_profile.py")
+
+Invoke-Step -Name "run UI runtime memory budget gate" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/firmware_resources/test_runtime_budget.py")
 
 # Keep source-text contracts after executable suites: a stale UI spelling must
 # not prevent functional regressions from running. Default CI still runs both.

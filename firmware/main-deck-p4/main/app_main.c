@@ -32,6 +32,7 @@
 #include "esp_heap_caps.h"
 #include "firmware_health.h"
 #include "p4_startup_gate.h"
+#include "firmware_resources.h"
 #include "p4_ota.h"
 
 static const char *TAG = "main";
@@ -340,6 +341,8 @@ void app_main(void)
 {
     const uint64_t boot_started_us = (uint64_t)esp_timer_get_time();
     p4_tcm_heap_guard_keep();
+    ESP_ERROR_CHECK(firmware_resources_init());
+    firmware_resources_phase("board");
     ESP_ERROR_CHECK(bsp_audio_force_safe_boot_state());
     ESP_ERROR_CHECK(firmware_health_init());
     ESP_ERROR_CHECK(p4_ota_init());
@@ -358,9 +361,11 @@ void app_main(void)
     ESP_ERROR_CHECK(media_io_gate_init());
 
     // ── Board support (stubs until hardware arrives) ─────────────────────────
+    firmware_resources_phase("display");
     ESP_ERROR_CHECK(bsp_display_init());
     ESP_ERROR_CHECK(bsp_touch_init());
     ESP_ERROR_CHECK(bsp_audio_init());
+    firmware_resources_phase("storage");
     ESP_ERROR_CHECK(bsp_sd_init());
 
     // ── Structured microSD service journal ───────────────────────────────────
@@ -430,6 +435,7 @@ void app_main(void)
         ESP_LOGW(TAG, "library_init: %s (USB not mounted yet — OK)", esp_err_to_name(lib_rc));
     }
 
+    firmware_resources_phase("audio");
     ESP_ERROR_CHECK(audio_engine_init());
     audio_pcm_timeline_start_scheduler_probe();
 #if CONFIG_AUDIO_RECORDER_ENABLED
@@ -459,10 +465,12 @@ void app_main(void)
     ESP_ERROR_CHECK(deck_core_init(&ctrl_queue));
 
     // ── UI ───────────────────────────────────────────────────────────────────
+    firmware_resources_phase("ui");
     ESP_ERROR_CHECK(ui_init());
 
     // ── External control producers ───────────────────────────────────────────
     // From this point onward direct USB controller events may update state.
+    firmware_resources_phase("controller");
     ESP_ERROR_CHECK(control_link_init(ctrl_queue));
 
     // Settings callbacks are published only after their downstream services
@@ -494,6 +502,7 @@ void app_main(void)
      * permanent until the requested service actually runs. This uses the main
      * task; LVGL/audio/USB continue independently and no extra stack is needed.
      * Already accepted and factory images keep their normal boot behaviour. */
+    firmware_resources_phase("startup-gate");
     firmware_health_info_t boot_health;
     ESP_ERROR_CHECK(firmware_health_get_info(&boot_health));
     if (boot_health.rollback_pending) {
@@ -503,8 +512,10 @@ void app_main(void)
         };
         p4_startup_result_t result;
         do {
+            firmware_resources_t resources;
+            firmware_resources_snapshot(&resources);
             result = p4_startup_gate_poll(&gate,
-                (uint64_t)esp_timer_get_time(), true,
+                (uint64_t)esp_timer_get_time(), resources.critical_allocation_failures == 0,
                 boot_network_required && wifi_link_is_active());
             if (result == P4_STARTUP_WAIT) vTaskDelay(pdMS_TO_TICKS(250));
         } while (result == P4_STARTUP_WAIT);
@@ -518,5 +529,6 @@ void app_main(void)
         }
     }
     ESP_LOGI(TAG, "all subsystems ready — P4-only deck waiting for direct controller events");
+    firmware_resources_phase("ready");
     ESP_ERROR_CHECK(firmware_health_mark_ready());
 }

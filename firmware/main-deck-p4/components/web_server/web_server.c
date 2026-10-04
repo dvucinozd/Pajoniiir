@@ -8,6 +8,8 @@
 #include "media_catalog.h"
 #include "ui.h"
 #include "ui_library.h"
+#include "firmware_resources.h"
+#include "ui_heap_usage.h"
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
@@ -1322,6 +1324,36 @@ static esp_err_t api_validation_reboot_handler(httpd_req_t *req)
                            HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t api_resources_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    firmware_resources_sample_task(FW_RESOURCE_HTTP);
+    firmware_resources_t r;
+    firmware_resources_snapshot(&r);
+    uint32_t used = ui_heap_usage_bytes();
+    char lvgl_bytes[16];
+    if (used == UINT32_MAX) snprintf(lvgl_bytes, sizeof lvgl_bytes, "null");
+    else snprintf(lvgl_bytes, sizeof lvgl_bytes, "%u", (unsigned)used);
+    char json[768];
+    int n = snprintf(json, sizeof json,
+        "{\"lvgl_heap_bytes\":%s,\"allocation_failures\":%u,\"critical_allocation_failures\":%u,"
+        "\"last_failed_bytes\":%u,\"last_failed_caps\":%u,\"startup_phase\":\"%s\","
+        "\"last_failed_phase\":\"%s\","
+        "\"stack_min_bytes\":[%u,%u,%u,%u,%u,%u,%u,%u,%u],"
+        "\"stack_sample_ms\":[%u,%u,%u,%u,%u,%u,%u,%u,%u]}",
+        lvgl_bytes, (unsigned)r.allocation_failures, (unsigned)r.critical_allocation_failures,
+        (unsigned)r.last_failed_bytes, (unsigned)r.last_failed_caps, r.startup_phase, r.last_failed_phase,
+        (unsigned)r.stack_min_bytes[0], (unsigned)r.stack_min_bytes[1], (unsigned)r.stack_min_bytes[2],
+        (unsigned)r.stack_min_bytes[3], (unsigned)r.stack_min_bytes[4], (unsigned)r.stack_min_bytes[5],
+        (unsigned)r.stack_min_bytes[6], (unsigned)r.stack_min_bytes[7], (unsigned)r.stack_min_bytes[8],
+        (unsigned)r.stack_sample_ms[0], (unsigned)r.stack_sample_ms[1], (unsigned)r.stack_sample_ms[2],
+        (unsigned)r.stack_sample_ms[3], (unsigned)r.stack_sample_ms[4], (unsigned)r.stack_sample_ms[5],
+        (unsigned)r.stack_sample_ms[6], (unsigned)r.stack_sample_ms[7], (unsigned)r.stack_sample_ms[8]);
+    if (n < 0 || (size_t)n >= sizeof json) return ESP_FAIL;
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
@@ -2261,7 +2293,7 @@ esp_err_t web_server_start(void)
     /* Must stay above the number of register_uri_or_stop() calls below: a single
      * failed registration stops the whole server, so an over-tight limit takes
      * every endpoint (including OTA) down with it. */
-    config.max_uri_handlers = 24;
+    config.max_uri_handlers = 28; /* all 27 routes, including recorder builds */
     config.task_priority = 3;
     config.core_id = 0;
 
@@ -2317,6 +2349,11 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t resources_uri = {.uri="/api/resources", .method=HTTP_GET,
+                                 .handler=api_resources_handler};
+    rc = register_uri_or_stop(s_web_server, &resources_uri);
     if (rc != ESP_OK) return rc;
 
 #if CONFIG_AUDIO_RECORDER_ENABLED

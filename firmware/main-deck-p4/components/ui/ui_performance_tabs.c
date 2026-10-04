@@ -52,6 +52,32 @@ static lv_obj_t *s_hot_cue_buttons[UI_PERFORMANCE_TAB_COUNT_HOT_CUES];
 static lv_obj_t *s_jog_mode_label;
 static uint8_t s_jog_mode_deck = CTRL_DECK_NONE;
 static bool s_jog_mode_cdj;
+static bool s_pad_held[UI_PERFORMANCE_TAB_COUNT_HOT_CUES];
+static uint8_t s_pad_deck[UI_PERFORMANCE_TAB_COUNT_HOT_CUES];
+static bool s_delete_mode;
+static lv_obj_t *s_delete_label;
+static lv_obj_t *s_memory_panel;
+static lv_obj_t *s_memory_text;
+static lv_obj_t *s_memory_title;
+static bool s_restore_held;
+static uint8_t s_restore_deck;
+static bool s_display_valid;
+static uint8_t s_display_deck;
+static uint32_t s_display_version, s_display_revision;
+static media_persistent_id_t s_display_id;
+
+void ui_performance_tabs_cancel_holds(void)
+{
+    for (uint8_t i = 0; i < UI_PERFORMANCE_TAB_COUNT_HOT_CUES; ++i) {
+        if (s_pad_held[i] && s_config.actions.hot_cue_pad)
+            s_config.actions.hot_cue_pad(s_pad_deck[i], i, false, false);
+        s_pad_held[i] = false;
+    }
+    s_restore_held = false;
+    s_delete_mode = false;
+    if (s_delete_label) lv_label_set_text(s_delete_label, "DELETE: OFF");
+    if (s_memory_panel) lv_obj_add_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
+}
 
 static ui_controls_state_t *ui_performance_tabs_controls(void)
 {
@@ -165,6 +191,14 @@ void ui_performance_tabs_init(const ui_performance_tabs_config_t *config)
 {
     s_config = (ui_performance_tabs_config_t){0};
     s_jog_mode_label = NULL;
+    s_delete_label = NULL;
+    s_memory_panel = NULL;
+    s_memory_title = NULL;
+    s_memory_text = NULL;
+    s_display_valid = false;
+    s_restore_held = false;
+    s_delete_mode = false;
+    for (unsigned i = 0; i < UI_PERFORMANCE_TAB_COUNT_HOT_CUES; ++i) s_pad_held[i] = false;
     s_jog_mode_deck = CTRL_DECK_NONE;
     if (config) {
         s_config = *config;
@@ -190,9 +224,24 @@ static void hot_cue_event_cb(lv_event_t *event)
     int cue_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
     uint8_t deck = ui_performance_tabs_active_deck();
     if (s_config.actions.hot_cue_pad) {
-        s_config.actions.hot_cue_pad(deck, (uint8_t)cue_idx);
+        lv_event_code_t code = lv_event_get_code(event);
+        if (code == LV_EVENT_PRESSED) {
+            if (s_delete_mode) {
+                s_config.actions.hot_cue_pad(deck, (uint8_t)cue_idx, true, true);
+                s_config.actions.hot_cue_pad(deck, (uint8_t)cue_idx, false, true);
+            } else {
+                s_pad_held[cue_idx] = true;
+                s_pad_deck[cue_idx] = deck;
+                s_config.actions.hot_cue_pad(deck, (uint8_t)cue_idx, true, false);
+            }
+        } else if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) &&
+                   s_pad_held[cue_idx]) {
+            s_pad_held[cue_idx] = false;
+            s_config.actions.hot_cue_pad(s_pad_deck[cue_idx], (uint8_t)cue_idx, false, false);
+        }
         return;
     }
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
     ui_controls_hot_cue_t cue =
         ui_controls_hot_cue(ui_performance_tabs_controls(), (uint8_t)cue_idx);
     uint32_t pos = cue.position_ms;
@@ -259,10 +308,34 @@ void ui_performance_tabs_update_jog_mode(void)
 
 static void restore_source_cues_event_cb(lv_event_t *event)
 {
-    (void)event;
-    if (s_config.actions.restore_source_cues) {
-        s_config.actions.restore_source_cues(ui_performance_tabs_active_deck());
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_PRESSED) {
+        s_restore_held = true;
+        s_restore_deck = ui_performance_tabs_active_deck();
+    } else if (code == LV_EVENT_LONG_PRESSED && s_restore_held &&
+               s_restore_deck == ui_performance_tabs_active_deck() &&
+               s_config.actions.restore_source_cues) {
+        s_restore_held = false;
+        s_config.actions.restore_source_cues(s_restore_deck);
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        s_restore_held = false;
     }
+}
+
+static void delete_mode_event_cb(lv_event_t *event)
+{
+    (void)event;
+    s_delete_mode = !s_delete_mode;
+    lv_label_set_text(s_delete_label, s_delete_mode ? "DELETE: ON" : "DELETE: OFF");
+}
+
+static void memory_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (lv_obj_has_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
+    ui_performance_tabs_update_hot_cues();
 }
 
 static lv_obj_t *ui_performance_tabs_create_screen(lv_obj_t *parent)
@@ -280,10 +353,10 @@ static lv_obj_t *ui_performance_tabs_create_screen(lv_obj_t *parent)
 lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
 {
     lv_obj_t *screen = ui_performance_tabs_create_screen(parent);
-    ui_controls_create_performance_target_selector(screen, 298, 4);
+    ui_controls_create_performance_target_selector(screen, (s_config.hor_res - 204) / 2, 4);
 
-    int pad_w = 170;
-    int pad_h = 130;
+    int pad_w = (s_config.hor_res - 120) / 4;
+    int pad_h = 130 + (s_config.content_h - 434) / 2;
     int spacing_x = 20;
     int spacing_y = 20;
     int offset_x = 30;
@@ -304,7 +377,7 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
                        offset_x + col * (pad_w + spacing_x),
                        offset_y + row * (pad_h + spacing_y));
         lv_obj_set_user_data(s_hot_cue_buttons[i], (void *)(intptr_t)i);
-        lv_obj_add_event_cb(s_hot_cue_buttons[i], hot_cue_event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(s_hot_cue_buttons[i], hot_cue_event_cb, LV_EVENT_ALL, NULL);
 
         lv_obj_t *lbl_pad = lv_label_create(s_hot_cue_buttons[i]);
         lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
@@ -328,15 +401,27 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
     if (s_config.styles.panel_frame) {
         lv_obj_add_style(status_strip, s_config.styles.panel_frame, LV_PART_MAIN);
     }
-    lv_obj_set_size(status_strip, 740, 62);
-    lv_obj_set_pos(status_strip, 30, 360);
+    lv_obj_set_size(status_strip, s_config.hor_res - 60, 62);
+    lv_obj_set_pos(status_strip, 30, s_config.content_h - 74);
     lv_obj_clear_flag(status_strip, LV_OBJ_FLAG_SCROLLABLE);
-    ui_performance_tabs_value_label(status_strip, "HOT CUE STATUS", COL_TEXT_MUTED,
-                                    &lv_font_montserrat_12, 16, 12);
+    lv_obj_t *del = lv_button_create(status_strip);
+    lv_obj_set_size(del, 144, 36);
+    lv_obj_set_pos(del, 12, 12);
+    lv_obj_set_style_bg_color(del, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_add_event_cb(del, delete_mode_event_cb, LV_EVENT_CLICKED, NULL);
+    s_delete_label = ui_performance_tabs_value_label(del, "DELETE: OFF", COL_TEXT,
+                                                    &lv_font_montserrat_12, 0, 0);
+    lv_obj_center(s_delete_label);
     ui_performance_tabs_static_tile(status_strip, 176, 12, 90, 36, "CUE A-H",
                                     COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_performance_tabs_static_tile(status_strip, 278, 12, 104, 36, "LOOP CUES",
-                                    COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    lv_obj_t *memory = lv_button_create(status_strip);
+    lv_obj_set_size(memory, 104, 36);
+    lv_obj_set_pos(memory, 278, 12);
+    lv_obj_set_style_bg_color(memory, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_add_event_cb(memory, memory_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *memory_label = ui_performance_tabs_value_label(memory, "MEMORY", COL_AMBER,
+                                                           &lv_font_montserrat_12, 0, 0);
+    lv_obj_center(memory_label);
     lv_obj_t *restore = lv_button_create(status_strip);
     lv_obj_remove_style_all(restore);
     lv_obj_set_style_bg_color(restore, COL_PANEL_DK, LV_PART_MAIN);
@@ -346,7 +431,7 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
     lv_obj_set_size(restore, 112, 36);
     lv_obj_set_pos(restore, 394, 12);
     lv_obj_add_event_cb(restore, restore_source_cues_event_cb,
-                        LV_EVENT_LONG_PRESSED, NULL);
+                        LV_EVENT_ALL, NULL);
     lv_obj_t *restore_label = lv_label_create(restore);
     lv_label_set_text(restore_label, "HOLD RESTORE");
     lv_obj_set_style_text_font(restore_label, &lv_font_montserrat_12, LV_PART_MAIN);
@@ -366,6 +451,17 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_jog_mode_label, COL_TEXT, LV_PART_MAIN);
     s_jog_mode_deck = CTRL_DECK_NONE;
     ui_performance_tabs_update_jog_mode();
+    s_memory_panel = lv_obj_create(screen);
+    lv_obj_set_size(s_memory_panel, s_config.hor_res - 60, s_config.content_h - 100);
+    lv_obj_set_pos(s_memory_panel, 30, 48);
+    lv_obj_set_style_bg_color(s_memory_panel, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_memory_panel, LV_OPA_COVER, LV_PART_MAIN);
+    s_memory_title = ui_performance_tabs_value_label(s_memory_panel, "MEMORY CUES", COL_AMBER,
+                                                     &lv_font_montserrat_16, 0, 0);
+    s_memory_text = ui_performance_tabs_value_label(s_memory_panel, "", COL_TEXT,
+                                                   &lv_font_montserrat_14, 0, 30);
+    lv_obj_set_style_text_line_space(s_memory_text, 6, LV_PART_MAIN);
+    lv_obj_add_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
     return screen;
 }
 
@@ -375,7 +471,37 @@ void ui_performance_tabs_update_hot_cues(void)
     anlz_snapshot_t *snapshot =
         ui_performance_tabs_acquire_active_anlz();
     const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
-    bool has_anlz = meta != NULL;
+    media_persistent_id_t id = {0};
+    bool has_identity = s_config.actions.active_persistent_id &&
+        s_config.actions.active_persistent_id(&id);
+    uint32_t version = anlz_snapshot_version(snapshot), revision = deck_core_hot_cue_revision();
+    if (s_display_valid && s_display_deck == deck && s_display_version == version &&
+        s_display_revision == revision &&
+        ((!id.valid && !s_display_id.valid) || media_persistent_id_equal(&id, &s_display_id))) {
+        anlz_snapshot_release(snapshot);
+        return;
+    }
+    if (s_memory_title) {
+        lv_label_set_text_fmt(s_memory_title, "D%u MEMORY CUES: %u%s",
+            (unsigned)deck + 1u, meta ? meta->memory_cue_count : 0u,
+            meta && meta->memory_cues_truncated ? " (TRUNCATED)" : "");
+        char text[1024] = {0};
+        size_t used = 0;
+        for (uint8_t i = 0; i < ANLZ_MAX_MEMORY_CUES; ++i) {
+            if (meta && i < meta->memory_cue_count) {
+                const anlz_cue_t *cue = &meta->memory_cues[i];
+                char start[16], end[16];
+                ui_performance_tabs_format_time(start, sizeof start, cue->start_ms);
+                ui_performance_tabs_format_time(end, sizeof end, cue->end_ms);
+                int written = snprintf(text + used, sizeof text - used, "%02u  %s  %s%s%s\n",
+                    (unsigned)i + 1u, start, cue->type == ANLZ_CUE_LOOP ? "LOOP " : "CUE",
+                    cue->type == ANLZ_CUE_LOOP ? "- " : "", cue->type == ANLZ_CUE_LOOP ? end : "");
+                if (written < 0 || (size_t)written >= sizeof text - used) break;
+                used += (size_t)written;
+            }
+        }
+        lv_label_set_text(s_memory_text, text[0] ? text : "No memory cues");
+    }
     hot_cue_store_blob_t source = {0};
     hot_cue_store_blob_t local = {0};
     hot_cue_store_blob_t effective = {0};
@@ -394,9 +520,6 @@ void ui_performance_tabs_update_hot_cues(void)
             };
         }
     }
-    media_persistent_id_t id = {0};
-    bool has_identity = s_config.actions.active_persistent_id &&
-        s_config.actions.active_persistent_id(&id);
     esp_err_t local_rc = has_identity ? hot_cue_store_load(&id, &local) : ESP_ERR_NOT_FOUND;
     bool has_local = local_rc == ESP_OK;
     if (has_identity && local_rc != ESP_OK && local_rc != ESP_ERR_NOT_FOUND) {
@@ -428,57 +551,35 @@ void ui_performance_tabs_update_hot_cues(void)
                                     type,
                                     false);
 
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
+            lv_obj_t *lbl_time = s_hot_cue_buttons[i] ? lv_obj_get_child(s_hot_cue_buttons[i], 1) : NULL;
             if (lbl_time) {
                 char time_buf[16];
                 ui_performance_tabs_format_time(time_buf, sizeof(time_buf), pos);
                 lv_label_set_text(lbl_time, time_buf);
             }
 
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
+            lv_obj_t *lbl_pad = s_hot_cue_buttons[i] ? lv_obj_get_child(s_hot_cue_buttons[i], 0) : NULL;
             bool is_loop = type == UI_CONTROLS_HOT_CUE_LOOP;
             if (lbl_pad) {
                 lv_label_set_text_fmt(lbl_pad, "%s %c", is_loop ? "LOOP" : "CUE", 'A' + i);
             }
             ui_performance_tabs_style_hot_cue_pad(i, is_loop, false);
-        } else if (has_anlz || has_identity) {
+        } else {
             ui_controls_set_hot_cue(ui_performance_tabs_controls(),
                                     (uint8_t)i,
                                     0,
                                     0,
                                     UI_CONTROLS_HOT_CUE_SINGLE,
                                     true);
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
+            lv_obj_t *lbl_time = s_hot_cue_buttons[i] ? lv_obj_get_child(s_hot_cue_buttons[i], 1) : NULL;
             if (lbl_time) {
                 lv_label_set_text(lbl_time, "EMPTY");
             }
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
+            lv_obj_t *lbl_pad = s_hot_cue_buttons[i] ? lv_obj_get_child(s_hot_cue_buttons[i], 0) : NULL;
             if (lbl_pad) {
                 lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
             }
             ui_performance_tabs_style_hot_cue_pad(i, false, true);
-        } else {
-            uint32_t default_pos = (uint32_t)i * 15000u;
-            if (i >= 5) {
-                default_pos = (uint32_t)(i - 1) * 30000u;
-            }
-            ui_controls_set_hot_cue(ui_performance_tabs_controls(),
-                                    (uint8_t)i,
-                                    default_pos,
-                                    0,
-                                    UI_CONTROLS_HOT_CUE_SINGLE,
-                                    false);
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
-            if (lbl_time) {
-                char time_buf[16];
-                ui_performance_tabs_format_time(time_buf, sizeof(time_buf), default_pos);
-                lv_label_set_text(lbl_time, time_buf);
-            }
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
-            if (lbl_pad) {
-                lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
-            }
-            ui_performance_tabs_style_hot_cue_pad(i, false, false);
         }
     }
 
@@ -486,6 +587,11 @@ void ui_performance_tabs_update_hot_cues(void)
         s_config.actions.update_overview_cue_markers(deck);
     }
     anlz_snapshot_release(snapshot);
+    s_display_id = id;
+    s_display_deck = deck;
+    s_display_version = version;
+    s_display_revision = revision;
+    s_display_valid = true;
 }
 
 #endif

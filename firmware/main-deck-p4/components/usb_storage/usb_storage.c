@@ -10,6 +10,9 @@
 #include "usb/usb_host.h"
 #include "usb/msc_host.h"
 #include "usb_media_mount.h"
+#ifdef ESP_PLATFORM
+#include "firmware_resources.h"
+#endif
 
 #include <dirent.h>
 #include <errno.h>
@@ -528,6 +531,9 @@ static void storage_task(void *arg)
 
     for (;;) {
         usb_storage_session_t desired = desired_snapshot();
+#ifdef ESP_PLATFORM
+        firmware_resources_sample_task(FW_RESOURCE_STORAGE);
+#endif
 
         if (!desired.connected) {
             bool had_device = s_announced_mounted || s_mount || s_msc_dev;

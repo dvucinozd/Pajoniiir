@@ -9,20 +9,18 @@ provides isolated SD idle/DMA A/B experiments, bounded diagnostics and recorder
 fault/ownership tests. Regular builds keep recorder and SD wait experiments off.
 Card latency, fault injection and MAIN/cue listening remain NOT RUN; acceptance
 requires exact-image measurements.
-[H migration preview](validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md)
-provides both native layouts and opt-in Overview/Library/Hot Cues bridges. H remains open:
-Settings binding, complete touch parity, layout polish and removal
-of duplicate legacy presentation allocations remain open. The operator prefers
-the previous design; retain it as the product basis and keep dj_ui optional.
+[H software closure](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
+retains the previous design in both native layouts, with artwork/key/status,
+effective hot cues and memory cues. Touch holds, deletion and explicit restore
+use the shared semantic path. Only the selected presentation is constructed;
+both modes use the same Settings. The dj_ui preview remains optional/default-off.
 H3 installation failed Wi-Fi/USB acceptance due to internal heap pressure;
 Recovery is complete. Pending OTA startup now waits for saved-enabled AP/HTTP
 readiness within 60 seconds before confirmation; failure requests rollback.
-The next product work removes duplicate presentation allocations and adds new
-features to the previous design. Runtime memory and exact-image acceptance
-remain open; no production channel change follows from software verification.
-Library owner/actions now operate without legacy table widgets in the preview;
-its duplicate Library tree and artwork copy buffer are no longer created.
-Overview, Hot Cues and Settings ownership still need separate migration steps.
+Runtime allocation, startup-phase, heap and critical-stack diagnostics now have
+host coverage and an executable physical evidence gate. Runtime memory and
+exact-image acceptance remain open; no production channel change follows from
+software verification. Next: qualify an ordinary JC4880 candidate, then I-L.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5
@@ -41,7 +39,7 @@ Physical bring-up remains NOT RUN; layouts belong to H.
 [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
 descriptor-selected four-channel UAC1 and consumer-paced USB MAIN/cue, preserving
 the default JC4880 PCM5102A path. DDJ-400 audio and FLX4 regression acceptance
-remain NOT RUN. Next software work is G; production remains unchanged.
+remain NOT RUN. Packages G/H are software verified; production remains unchanged.
 
 - Production tag: `M2.4`
 - Frozen source: `9d0c954fc502ae237fabedb764368cd9b10f10dc`

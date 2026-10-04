@@ -1,19 +1,19 @@
-{
-  "schema": 1,
-  "width": 800,
-  "height": 480,
-  "lvgl_commit": "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
-  "captures": {
-    "overview_deck1": "4a773c8f3a57ce7e763728328a87d9208f4397fb89bc25964d7449ae0492272b",
-    "overview_deck2": "4656903a203bbec817afa3a420895a39ae00be6c6d51b0d438a0ce19e2870ba1",
-    "library": "16e36336caff896b87db940608a29cb3bdcdbf6584e26612e7316b2089c0d397",
-    "library_playlist_root": "2f4f7f363cf44438efd71d80eae4609f820dcfaa77c7316c5e3689905bf38213",
-    "library_playlist_folder": "80d8c329980d12122976c7fa9f69fdbb0839e51d1a702202a59a36f3cc2fb36c",
-    "library_playlist_tracks": "0dd2ccfbfccbfe8503a118d79004e532c8096a57fc17d37f6e72022a3886e518",
-    "overview_color_pwv4": "47886f326a1de3ec32d7a8dbce11d070751701efbf2b81215f126a43ece62cc3",
-    "hot_cues": "8e7ff502439c34038a84b04fcd72a9e840e74074204c494889bb53eec06b2701",
-    "settings": "dc304010c2b4351402cedf6cd7ffe8714548c4132ecf7ee04d209b0ea2fd0a7f",
-    "screensaver": "7e9453cab819729a397139df400f1dbdcd70b656b0a3ce267811581aa9b75118",
-    "settings_restored": "dc304010c2b4351402cedf6cd7ffe8714548c4132ecf7ee04d209b0ea2fd0a7f"
-  }
+﻿{
+    "schema":  1,
+    "width":  800,
+    "height":  480,
+    "lvgl_commit":  "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
+    "captures":  {
+                     "overview_deck1":  "e5ce32c2d0b2546ef3a3228bb27ff030851753467da3ba5a44f587d81b0ced31",
+                     "overview_deck2":  "da5f558600c4dea5ea59f894f2382c9e9088a57e34c62883797664418c0a4a29",
+                     "library":  "16e36336caff896b87db940608a29cb3bdcdbf6584e26612e7316b2089c0d397",
+                     "library_playlist_root":  "2f4f7f363cf44438efd71d80eae4609f820dcfaa77c7316c5e3689905bf38213",
+                     "library_playlist_folder":  "80d8c329980d12122976c7fa9f69fdbb0839e51d1a702202a59a36f3cc2fb36c",
+                     "library_playlist_tracks":  "0dd2ccfbfccbfe8503a118d79004e532c8096a57fc17d37f6e72022a3886e518",
+                     "overview_color_pwv4":  "3eb54ba17ab93534bc259eae0727a756b0e34e3ee125c3756fa9652a87543528",
+                     "hot_cues":  "2ddc4224254acd25b1aa0887d14924d2ad961c07366fed5b113938578791878c",
+                     "settings":  "1a522c60c5c3d06f9f089fe49d08a9ea756130077dfa13e5fc5c06a877a6d5e2",
+                     "screensaver":  "7e9453cab819729a397139df400f1dbdcd70b656b0a3ce267811581aa9b75118",
+                     "settings_restored":  "1a522c60c5c3d06f9f089fe49d08a9ea756130077dfa13e5fc5c06a877a6d5e2"
+                 }
 }

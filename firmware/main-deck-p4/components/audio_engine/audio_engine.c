@@ -101,6 +101,7 @@ static const char *TAG = "audio";
 /* Firmware (ESP32-P4): real-time I2S output through the PCM5102A MAIN out */
 #if !AE_PC
 #   define AE_FW 1
+#   include "firmware_resources.h"
 #   include "freertos/FreeRTOS.h"
 #   include "freertos/task.h"
 #   include "freertos/semphr.h"
@@ -2886,6 +2887,8 @@ static size_t ae_fw_cache_read_at(void *ctx, size_t offset,
  * bounded READ under media_io_gate, while the PCM timeline absorbs I/O latency. */
 static void ae_loader_task(void *arg)
 {
+    firmware_resources_sample_task(((audio_fw_task_context_t *)arg)->deck == 0
+        ? FW_RESOURCE_LOADER1 : FW_RESOURCE_LOADER2);
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
     if (!audio_fw_task_context_is_current(ctx)) {
         xSemaphoreGive(ctx_tasks_done(ctx));
@@ -2966,7 +2969,10 @@ static void ae_loader_task(void *arg)
              (unsigned)AUDIO_FW_CACHE_PAGE_COUNT);
 
 park:
-    while (runtime->run) vTaskDelay(pdMS_TO_TICKS(20));   /* stay alive until stop() */
+    while (runtime->run) {
+        firmware_resources_sample_task(ctx->deck == 0 ? FW_RESOURCE_LOADER1 : FW_RESOURCE_LOADER2);
+        vTaskDelay(pdMS_TO_TICKS(20)); /* stay alive until stop() */
+    }
     runtime->loader_task = NULL;
     xSemaphoreGive(ctx_tasks_done(ctx));
     vTaskDelete(NULL);
@@ -3092,7 +3098,10 @@ static void ae_decode_task(void *arg)
     }
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
+    uint32_t resource_sample_blocks = 0;
     while (runtime->run) {
+        if ((resource_sample_blocks++ & 255u) == 0u)
+            firmware_resources_sample_task(ctx->deck == 0 ? FW_RESOURCE_DECODE1 : FW_RESOURCE_DECODE2);
         if (eng->seek_requested) {
             /* Snapshot briefly under the audio lock, perform header IO outside
              * it, then recheck the request/preroll before accepting the result. */
@@ -3750,6 +3759,8 @@ static void ae_output_task(void *arg)
         s_audio_wdt_block++;
         ae_wdt_trace_begin_block();
         if (!s_output_codec_open) {
+            if ((s_audio_wdt_block & 1023u) == 0u)
+                firmware_resources_sample_task(FW_RESOURCE_OUTPUT);
             ae_wdt_trace(AUDIO_WDT_PHASE_WAIT_CODEC, 0u);
             vTaskDelay(pdMS_TO_TICKS(5));
 #if !defined(AUDIO_ENGINE_PC_TEST)
@@ -3762,6 +3773,8 @@ static void ae_output_task(void *arg)
             complete_eof_drain_if_ready(d);
         }
         int64_t block_start_us = esp_timer_get_time();
+        if ((s_audio_wdt_block & 1023u) == 0u)
+            firmware_resources_sample_task(FW_RESOURCE_OUTPUT); /* included in deadline timing */
 
         /* Scratch handoff (4b): once the resumed forward audio has faded up to
          * full gain, hand the deck back to the resampler + ring. Done here, before

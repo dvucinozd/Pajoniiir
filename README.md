@@ -36,13 +36,12 @@ acceptance remains NOT RUN.
 adds isolated SDMMC A/B builds, SD/gate diagnostics and a fail-closed experimental
 recorder. Recorder and SD workaround remain disabled in ordinary builds;
 physical card latency, power-loss and audio acceptance are NOT RUN.
-[Package H migration preview](docs/validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md)
-adds the shared dj_ui presentation and opt-in Overview/Library/Hot Cues bridges
-at both native resolutions. Settings retains the legacy runtime until its
-functional parity is implemented. H remains open; this preview is default-off.
-The preview Library now runs without a duplicate legacy widget tree or row-art
-copy buffer; ordinary builds retain the previous presentation.
-The operator prefers the previous design, which remains the product basis.
+[Package H software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
+retains the previous product design at native 800x480 and 1024x600, with artwork,
+key, effective hot cues, memory cues, load lock and loading/error state. Each
+build creates only its selected presentation; both use the shared Settings.
+The alternative dj_ui preview remains default-off. Allocation/stack diagnostics
+and an executable runtime resource gate support the separate physical acceptance.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
