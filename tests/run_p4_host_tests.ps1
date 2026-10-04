@@ -2454,6 +2454,21 @@ $tests = @(
         )
     },
     @{
+        Name = "hot_cue_store"
+        Dir = "tests/hot_cue_store"
+        Target = "test_hot_cue_store.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DHOT_CUE_STORE_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-o", "test_hot_cue_store.exe",
+            "test_hot_cue_store.c",
+            "../../firmware/main-deck-p4/components/hot_cue_store/hot_cue_store.c",
+            "../../firmware/main-deck-p4/components/media_identity/media_identity.c"
+        )
+    },
+    @{
         Name = "deck_core_dual"
         Dir = "tests/deck_core_dual"
         Target = "test_deck_core_dual.exe"

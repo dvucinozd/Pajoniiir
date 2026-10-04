@@ -30,9 +30,21 @@ typedef struct {
 typedef struct {
     uint32_t version;
     uint32_t valid_mask;
+    /* Set bits replace the corresponding source cue, including an empty slot. */
+    uint32_t override_mask;
     hot_cue_store_slot_t slots[HOT_CUE_STORE_SLOT_COUNT];
 } hot_cue_store_blob_t;
 
+/* Source is the imported Rekordbox pad bank. Local overrides take precedence. */
+void hot_cue_store_merge(const hot_cue_store_blob_t *source,
+                         const hot_cue_store_blob_t *local,
+                         hot_cue_store_blob_t *out);
 esp_err_t hot_cue_store_load(const media_persistent_id_t *id, hot_cue_store_blob_t *out_blob);
 esp_err_t hot_cue_store_save(const media_persistent_id_t *id, const hot_cue_store_blob_t *blob);
 esp_err_t hot_cue_store_clear(const media_persistent_id_t *id);
+/* Shadows any legacy v2 record with an empty v3 override bank. */
+esp_err_t hot_cue_store_reset_to_source(const media_persistent_id_t *id);
+#if defined(HOT_CUE_STORE_STANDALONE_TEST)
+esp_err_t hot_cue_store_test_seed_v2(const media_persistent_id_t *id,
+                                     const hot_cue_store_blob_t *blob);
+#endif

@@ -34,6 +34,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   playback; verify artwork matches each track after page changes and USB
   removal, PWV4 falls back on missing/corrupt EXT, and MAIN/cue remain clean.
   These physical checks are **NOT RUN**.
+- [ ] On the fork improvements branch, compare Rekordbox hot cues with pad LEDs
+  and the Hot Cues screen. Delete a source cue, reload the track and confirm it
+  stays deleted; verify local cues do not appear on a second export sharing a
+  raw track ID. Physical confirmation remains **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

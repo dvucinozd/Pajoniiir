@@ -311,6 +311,29 @@ void ui_performance_tabs_update_hot_cues(void)
         ui_performance_tabs_acquire_active_anlz();
     const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
     bool has_anlz = meta != NULL;
+    hot_cue_store_blob_t source = {0};
+    hot_cue_store_blob_t local = {0};
+    hot_cue_store_blob_t effective = {0};
+    if (meta) {
+        for (uint8_t j = 0; j < meta->cue_count; ++j) {
+            const anlz_cue_t *cue = &meta->cues[j];
+            if (cue->index >= UI_PERFORMANCE_TAB_COUNT_HOT_CUES ||
+                (cue->type != ANLZ_CUE_SINGLE && cue->type != ANLZ_CUE_LOOP)) continue;
+            const uint32_t bit = 1u << cue->index;
+            source.valid_mask |= bit;
+            source.slots[cue->index] = (hot_cue_store_slot_t) {
+                .pos_ms = cue->start_ms,
+                .end_ms = cue->type == ANLZ_CUE_LOOP ? cue->end_ms : 0u,
+                .type = cue->type == ANLZ_CUE_LOOP ?
+                    HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE,
+            };
+        }
+    }
+    media_persistent_id_t id = {0};
+    bool has_identity = s_config.actions.active_persistent_id &&
+        s_config.actions.active_persistent_id(&id);
+    bool has_local = has_identity && hot_cue_store_load(&id, &local) == ESP_OK;
+    hot_cue_store_merge(&source, has_local ? &local : NULL, &effective);
 
     for (int i = 0; i < UI_PERFORMANCE_TAB_COUNT_HOT_CUES; i++) {
         bool found = false;
@@ -318,16 +341,11 @@ void ui_performance_tabs_update_hot_cues(void)
         uint32_t end_pos = 0;
         uint8_t type = UI_CONTROLS_HOT_CUE_SINGLE;
 
-        if (has_anlz) {
-            for (int j = 0; j < meta->cue_count; j++) {
-                if (meta->cues[j].index == i) {
-                    pos = meta->cues[j].start_ms;
-                    end_pos = meta->cues[j].end_ms;
-                    type = (uint8_t)meta->cues[j].type;
-                    found = true;
-                    break;
-                }
-            }
+        if ((effective.valid_mask & (1u << i)) != 0u) {
+            pos = effective.slots[i].pos_ms;
+            end_pos = effective.slots[i].end_ms;
+            type = effective.slots[i].type;
+            found = true;
         }
 
         if (found) {
@@ -351,7 +369,7 @@ void ui_performance_tabs_update_hot_cues(void)
                 lv_label_set_text_fmt(lbl_pad, "%s %c", is_loop ? "LOOP" : "CUE", 'A' + i);
             }
             ui_performance_tabs_style_hot_cue_pad(i, is_loop, false);
-        } else if (has_anlz) {
+        } else if (has_anlz || has_identity) {
             ui_controls_set_hot_cue(ui_performance_tabs_controls(),
                                     (uint8_t)i,
                                     0,

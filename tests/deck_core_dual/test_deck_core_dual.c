@@ -2605,6 +2605,7 @@ static void test_hot_cue_pad_recalls_existing_slot_on_requested_deck(void)
 
     hot_cue_store_blob_t blob = {0};
     blob.valid_mask = (1u << 4);
+    blob.override_mask = (1u << 4);
     blob.slots[4].pos_ms = 5555;
     blob.slots[4].type = HOT_CUE_STORE_TYPE_SINGLE;
     media_persistent_id_t id = persistent_id_for_key(2002u);
@@ -2630,6 +2631,7 @@ static void test_shift_hot_cue_pad_clears_requested_slot(void)
 
     hot_cue_store_blob_t blob = {0};
     blob.valid_mask = (1u << 1) | (1u << 6);
+    blob.override_mask = blob.valid_mask;
     blob.slots[1].pos_ms = 1111;
     blob.slots[1].type = HOT_CUE_STORE_TYPE_SINGLE;
     blob.slots[6].pos_ms = 6666;
@@ -2913,6 +2915,49 @@ static void test_load_lock_uses_actual_target_deck_transport(void)
     assert(deck_core_load_allowed(CTRL_DECK_2));
 }
 
+static void test_imported_hot_cues_recall_and_local_deletion_survive_reload(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    const uint32_t key = 7070u;
+    media_persistent_id_t id = persistent_id_for_key(key);
+    (void)hot_cue_store_clear(&id);
+    anlz_metadata_t meta = {0};
+    meta.cue_count = 2;
+    meta.cues[0] = (anlz_cue_t) {
+        .type = ANLZ_CUE_SINGLE, .index = 0, .start_ms = 1250u,
+    };
+    meta.cues[1] = (anlz_cue_t) {
+        .type = ANLZ_CUE_SINGLE, .index = 1, .start_ms = 2450u,
+    };
+    publish_loaded_track(CTRL_DECK_1, key, 120u, &meta);
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, false, true);
+    deck_core_test_apply_event(&pad);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1250u);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, true, true);
+    deck_core_test_apply_event(&pad);
+    hot_cue_store_blob_t local = {0};
+    assert(hot_cue_store_load(&id, &local) == ESP_OK);
+    assert((local.override_mask & 1u) != 0u);
+    assert((local.valid_mask & 1u) == 0u);
+
+    assert(deck_core_clear_loaded_track(CTRL_DECK_1, 1u) == ESP_OK);
+    publish_loaded_track(CTRL_DECK_1, key, 120u, &meta);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 1, false, true);
+    deck_core_test_apply_event(&pad);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 2450u);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, false, true);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 3500u;
+    deck_core_test_apply_event(&pad);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 2);
+    assert(hot_cue_store_load(&id, &local) == ESP_OK);
+    assert((local.valid_mask & 1u) != 0u);
+    assert(local.slots[0].pos_ms == 3500u);
+}
+
 int main(void)
 {
     test_load_lock_uses_actual_target_deck_transport();
@@ -3016,6 +3061,7 @@ int main(void)
     test_hot_cue_pad_set_and_clear_updates_pad_led();
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();
+    test_imported_hot_cues_recall_and_local_deletion_survive_reload();
     test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
     test_beat_jump_pad_maps_pad_index_to_jump_size();
     test_shifted_beat_jump_changes_global_size_page();

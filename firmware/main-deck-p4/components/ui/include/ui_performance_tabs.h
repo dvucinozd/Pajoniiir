@@ -13,6 +13,7 @@ uint32_t ui_performance_tabs_calculate_jump_target(uint32_t position_ms,
 
 #include "anlz_snapshot.h"
 #include "deck_core.h"
+#include "hot_cue_store.h"
 #include "lvgl.h"
 #include "rekordbox_anlz.h"
 #include "ui_controls.h"
@@ -27,6 +28,7 @@ typedef struct {
 typedef struct {
     uint16_t (*active_bpm)(void);
     anlz_snapshot_t *(*acquire_active_anlz)(void);
+    bool (*active_persistent_id)(media_persistent_id_t *out);
     deck_state_t (*active_state)(void);
     uint32_t (*deck_position_ms)(uint8_t deck);
     void (*seek)(uint8_t deck, uint32_t position_ms);

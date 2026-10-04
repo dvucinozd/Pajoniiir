@@ -261,6 +261,22 @@ static anlz_snapshot_t *ui_performance_anlz_acquire(void)
     return ui_deck_anlz_acquire(ui_controls_active_deck(&s_controls));
 }
 
+static bool ui_performance_persistent_id(media_persistent_id_t *out)
+{
+#ifndef WIN32
+    if (!out) return false;
+    deck_loaded_track_summary_t loaded = {0};
+    uint8_t deck = ui_controls_active_deck(&s_controls);
+    if (!deck_core_get_loaded_track(deck, &loaded) || !loaded.valid ||
+        !loaded.persistent_id.valid) return false;
+    *out = loaded.persistent_id;
+    return true;
+#else
+    (void)out;
+    return false;
+#endif
+}
+
 static deck_state_t ui_performance_deck_state(void)
 {
     uint8_t deck = ui_controls_active_deck(&s_controls);
@@ -830,6 +846,7 @@ esp_err_t ui_init(void) {
         .actions = {
             .active_bpm = ui_performance_bpm,
             .acquire_active_anlz = ui_performance_anlz_acquire,
+            .active_persistent_id = ui_performance_persistent_id,
             .active_state = ui_performance_deck_state,
             .deck_position_ms = ui_performance_deck_position_ms,
             .seek = ui_performance_seek,

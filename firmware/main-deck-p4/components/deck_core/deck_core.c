@@ -687,6 +687,34 @@ static bool loaded_track_identity_for_deck(uint8_t deck,
     return loaded.persistent_id.valid;
 }
 
+static void source_hot_cues_for_deck(uint8_t deck,
+                                    const media_persistent_id_t *id,
+                                    hot_cue_store_blob_t *source)
+{
+    memset(source, 0, sizeof(*source));
+    deck_loaded_track_summary_t summary = {0};
+    anlz_snapshot_t *snapshot = NULL;
+    if (deck_loaded_track_store_acquire(&s_loaded_tracks, deck, &summary, &snapshot)) {
+        const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
+        if (meta && media_persistent_id_equal(&summary.persistent_id, id)) {
+            for (uint8_t i = 0; i < meta->cue_count; ++i) {
+                const anlz_cue_t *cue = &meta->cues[i];
+                if (cue->index >= HOT_CUE_STORE_SLOT_COUNT) continue;
+                if (cue->type != ANLZ_CUE_SINGLE && cue->type != ANLZ_CUE_LOOP) continue;
+                const uint32_t bit = 1u << cue->index;
+                source->valid_mask |= bit;
+                source->slots[cue->index] = (hot_cue_store_slot_t) {
+                    .pos_ms = cue->start_ms,
+                    .end_ms = cue->type == ANLZ_CUE_LOOP ? cue->end_ms : 0u,
+                    .type = cue->type == ANLZ_CUE_LOOP ?
+                        HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE,
+                };
+            }
+        }
+    }
+    anlz_snapshot_release(snapshot);
+}
+
 static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
 {
     media_persistent_id_t id = {0};
@@ -698,11 +726,19 @@ static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
         return s_hot_cue_mask_cache_value[deck];
     }
 
-    hot_cue_store_blob_t blob = {0};
-    uint8_t mask = 0;
-    if (hot_cue_store_load(&id, &blob) == ESP_OK) {
-        mask = (uint8_t)(blob.valid_mask & 0xFFu);
+    hot_cue_store_blob_t source = {0};
+    source_hot_cues_for_deck(deck, &id, &source);
+
+    hot_cue_store_blob_t local = {0};
+    hot_cue_store_blob_t effective = {0};
+    esp_err_t rc = hot_cue_store_load(&id, &local);
+    if (rc != ESP_OK && rc != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "deck %u hot cue merge skipped: %s", (unsigned)deck + 1,
+                 esp_err_to_name(rc));
+        return 0;
     }
+    hot_cue_store_merge(&source, rc == ESP_OK ? &local : NULL, &effective);
+    uint8_t mask = (uint8_t)effective.valid_mask;
     hot_cue_mask_cache_store(deck, &id, mask);
     return mask;
 }
@@ -732,19 +768,26 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         return;
     }
 
+    hot_cue_store_blob_t source = {0};
+    hot_cue_store_blob_t effective = {0};
+    source_hot_cues_for_deck(deck, &id, &source);
+    hot_cue_store_merge(&source, &blob, &effective);
+
     uint32_t bit = (1u << pad);
     if (shifted) {
-        if ((blob.valid_mask & bit) == 0) {
+        if ((effective.valid_mask & bit) == 0) {
             ESP_LOGI(TAG, "deck %u hot cue %u clear ignored: empty",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
             return;
         }
+        blob.override_mask |= bit;
         blob.valid_mask &= ~bit;
         memset(&blob.slots[pad], 0, sizeof(blob.slots[pad]));
         rc = hot_cue_store_save(&id, &blob);
         if (rc == ESP_OK) {
-            hot_cue_mask_cache_store(deck, &id, (uint8_t)(blob.valid_mask & 0xFFu));
+            hot_cue_mask_cache_store(deck, &id,
+                                     (uint8_t)(effective.valid_mask & ~bit));
             ESP_LOGI(TAG, "deck %u hot cue %u cleared",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
@@ -758,8 +801,8 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         return;
     }
 
-    if ((blob.valid_mask & bit) != 0) {
-        uint32_t pos_ms = blob.slots[pad].pos_ms;
+    if ((effective.valid_mask & bit) != 0) {
+        uint32_t pos_ms = effective.slots[pad].pos_ms;
         rc = audio_engine_deck_seek(deck, pos_ms);
         if (rc == ESP_OK) {
             state->position_ms = pos_ms;
@@ -777,6 +820,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
     }
 
     uint32_t pos_ms = current_deck_position_ms(deck, state);
+    blob.override_mask |= bit;
     blob.valid_mask |= bit;
     blob.slots[pad] = (hot_cue_store_slot_t) {
         .pos_ms = pos_ms,
@@ -785,7 +829,8 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
     };
     rc = hot_cue_store_save(&id, &blob);
     if (rc == ESP_OK) {
-        hot_cue_mask_cache_store(deck, &id, (uint8_t)(blob.valid_mask & 0xFFu));
+        hot_cue_mask_cache_store(deck, &id,
+                                 (uint8_t)(effective.valid_mask | bit));
         ESP_LOGI(TAG, "deck %u hot cue %u set -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned)pad + 1,

@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B7 software verified; local cue merge, transport and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B8 software verified; source-restore UI, transport and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -270,6 +270,22 @@ This step does not merge imported cues with local edits, store deletions or
 change transport controls; those remain package B work. Synthetic host cases
 cover separation, export order, truncation, clone and transactional rejection.
 Real Rekordbox memory cues and physical display/control acceptance: **NOT RUN**.
+
+## B8: Source hot cues with persistent local overrides
+
+The performance-pad bank now merges imported ANLZ hot cues with local edits by
+the full 32-byte media identity. A v3 `hotcue_v3` record stores separate valid
+and override masks: an override with no valid bit is a durable deletion of an
+imported cue. The existing v2 namespace remains readable and its eight slots,
+including empty ones, remain authoritative. New writes use v3; v2 data is not
+deleted. `hot_cue_store_reset_to_source` can shadow either version with an
+empty v3 override bank for the future explicit restore action.
+
+Deck pad recall and LED presence now use the merged bank. The Hot Cues screen
+uses the same source/local precedence when refreshing. Host tests cover v2
+compatibility, v3 round-trip, deletion, restore semantics, full-ID collision,
+source recall, local deletion and reload. The user-facing restore control,
+touch/MIDI transport parity and physical Rekordbox cue check remain open.
 
 ## C1: Bounded optional PWV4 color preview
 
