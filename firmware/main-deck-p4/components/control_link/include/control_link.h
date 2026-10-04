@@ -192,6 +192,7 @@ typedef enum {
     CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT,
     CTRL_DECK_EXT_ACTION_QUANTIZE,
     CTRL_DECK_EXT_ACTION_SYNC_OFF,
+    CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES,
 } ctrl_deck_ext_action_t;
 
 #define CTRL_DECK_EXT_VALUE(action, pressed) \

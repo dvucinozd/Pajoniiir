@@ -225,6 +225,14 @@ static void hot_cue_event_cb(lv_event_t *event)
     }
 }
 
+static void restore_source_cues_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_config.actions.restore_source_cues) {
+        s_config.actions.restore_source_cues(ui_performance_tabs_active_deck());
+    }
+}
+
 static lv_obj_t *ui_performance_tabs_create_screen(lv_obj_t *parent)
 {
     lv_obj_t *screen = lv_obj_create(parent);
@@ -297,8 +305,21 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
                                     COL_GREEN, COL_PANEL_DK, COL_GREEN);
     ui_performance_tabs_static_tile(status_strip, 278, 12, 104, 36, "LOOP CUES",
                                     COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_performance_tabs_static_tile(status_strip, 394, 12, 112, 36, "ANLZ DATA",
-                                    COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
+    lv_obj_t *restore = lv_button_create(status_strip);
+    lv_obj_remove_style_all(restore);
+    lv_obj_set_style_bg_color(restore, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(restore, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(restore, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(restore, 1, LV_PART_MAIN);
+    lv_obj_set_size(restore, 112, 36);
+    lv_obj_set_pos(restore, 394, 12);
+    lv_obj_add_event_cb(restore, restore_source_cues_event_cb,
+                        LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_t *restore_label = lv_label_create(restore);
+    lv_label_set_text(restore_label, "HOLD RESTORE");
+    lv_obj_set_style_text_font(restore_label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(restore_label, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_center(restore_label);
     ui_performance_tabs_static_tile(status_strip, 518, 12, 142, 36, "D1/D2 TARGET",
                                     COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
     return screen;
@@ -332,7 +353,14 @@ void ui_performance_tabs_update_hot_cues(void)
     media_persistent_id_t id = {0};
     bool has_identity = s_config.actions.active_persistent_id &&
         s_config.actions.active_persistent_id(&id);
-    bool has_local = has_identity && hot_cue_store_load(&id, &local) == ESP_OK;
+    esp_err_t local_rc = has_identity ? hot_cue_store_load(&id, &local) : ESP_ERR_NOT_FOUND;
+    bool has_local = local_rc == ESP_OK;
+    if (has_identity && local_rc != ESP_OK && local_rc != ESP_ERR_NOT_FOUND) {
+        /* Match deck_core's fail-closed bank on a corrupt/colliding edit record. */
+        source.valid_mask = 0u;
+        ESP_LOGW(TAG, "D%u hot cue refresh failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(local_rc));
+    }
     hot_cue_store_merge(&source, has_local ? &local : NULL, &effective);
 
     for (int i = 0; i < UI_PERFORMANCE_TAB_COUNT_HOT_CUES; i++) {

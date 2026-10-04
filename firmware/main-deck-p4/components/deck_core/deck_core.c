@@ -235,6 +235,7 @@ static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
  * refreshed on save and only misses once per loaded track. */
 static media_persistent_id_t s_hot_cue_mask_cache_id[DECK_CORE_DECK_COUNT];
 static uint8_t  s_hot_cue_mask_cache_value[DECK_CORE_DECK_COUNT];
+static uint32_t s_hot_cue_revision;
 
 static void hot_cue_mask_cache_invalidate(uint8_t deck)
 {
@@ -715,6 +716,16 @@ static void source_hot_cues_for_deck(uint8_t deck,
     anlz_snapshot_release(snapshot);
 }
 
+uint32_t deck_core_hot_cue_revision(void)
+{
+    return __atomic_load_n(&s_hot_cue_revision, __ATOMIC_ACQUIRE);
+}
+
+static void hot_cue_revision_advance(void)
+{
+    __atomic_add_fetch(&s_hot_cue_revision, 1u, __ATOMIC_RELEASE);
+}
+
 static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
 {
     media_persistent_id_t id = {0};
@@ -788,6 +799,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         if (rc == ESP_OK) {
             hot_cue_mask_cache_store(deck, &id,
                                      (uint8_t)(effective.valid_mask & ~bit));
+            hot_cue_revision_advance();
             ESP_LOGI(TAG, "deck %u hot cue %u cleared",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
@@ -831,6 +843,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
     if (rc == ESP_OK) {
         hot_cue_mask_cache_store(deck, &id,
                                  (uint8_t)(effective.valid_mask | bit));
+        hot_cue_revision_advance();
         ESP_LOGI(TAG, "deck %u hot cue %u set -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned)pad + 1,
@@ -2377,6 +2390,32 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             }
             ESP_LOGI(TAG, "deck %u sync -> OFF", (unsigned)deck + 1);
             return true;
+        case CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES: {
+            media_persistent_id_t id = {0};
+            if (!loaded_track_identity_for_deck(deck, &id)) {
+                ESP_LOGW(TAG, "deck %u source cue restore ignored: no track identity",
+                         (unsigned)deck + 1);
+                return true;
+            }
+            esp_err_t rc = hot_cue_store_reset_to_source(&id);
+            if (rc != ESP_OK) {
+                ESP_LOGW(TAG, "deck %u source cue restore failed: %s",
+                         (unsigned)deck + 1, esp_err_to_name(rc));
+                return true;
+            }
+            for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; ++d) {
+                media_persistent_id_t loaded_id = {0};
+                if (loaded_track_identity_for_deck(d, &loaded_id) &&
+                    media_persistent_id_equal(&loaded_id, &id)) {
+                    hot_cue_mask_cache_invalidate(d);
+                    publish_loaded_track_hot_cue_leds(d);
+                }
+            }
+            hot_cue_revision_advance();
+            ESP_LOGI(TAG, "deck %u hot cues restored from source",
+                     (unsigned)deck + 1);
+            return true;
+        }
         default:
             return true;
         }

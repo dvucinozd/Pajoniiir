@@ -166,6 +166,8 @@ esp_err_t deck_core_clear_loaded_track(uint8_t deck,
 esp_err_t deck_core_clear_loaded_tracks(uint32_t media_generation);
 bool deck_core_get_loaded_track(uint8_t deck,
                                 deck_loaded_track_summary_t *out);
+/* Increments after a successful local hot-cue edit or source restore. */
+uint32_t deck_core_hot_cue_revision(void);
 
 /*
  * Drain controller-originated UI commands. ui_update() is the sole firmware

@@ -2958,6 +2958,42 @@ static void test_imported_hot_cues_recall_and_local_deletion_survive_reload(void
     assert(local.slots[0].pos_ms == 3500u);
 }
 
+static void test_restore_source_cues_event_clears_local_tombstone(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    const uint32_t key = 7171u;
+    media_persistent_id_t id = persistent_id_for_key(key);
+    (void)hot_cue_store_clear(&id);
+    anlz_metadata_t meta = {0};
+    meta.cue_count = 1;
+    meta.cues[0] = (anlz_cue_t) {
+        .type = ANLZ_CUE_SINGLE, .index = 0, .start_ms = 1250u,
+    };
+    publish_loaded_track(CTRL_DECK_1, key, 120u, &meta);
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, true, true);
+    uint32_t revision = deck_core_hot_cue_revision();
+    deck_core_test_apply_event(&pad);
+    assert(deck_core_hot_cue_revision() == revision + 1u);
+
+    ctrl_event_t restore = deck_button(CTRL_ID_DECK1_EXT_ACTION);
+    restore.value = CTRL_DECK_EXT_VALUE(
+        CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, false);
+    deck_core_test_apply_event(&restore);
+    assert(deck_core_hot_cue_revision() == revision + 1u);
+    restore.value = CTRL_DECK_EXT_VALUE(
+        CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true);
+    deck_core_test_apply_event(&restore);
+    assert(deck_core_hot_cue_revision() == revision + 2u);
+    hot_cue_store_blob_t local = {0};
+    assert(hot_cue_store_load(&id, &local) == ESP_OK);
+    assert(local.override_mask == 0u);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 0, false, true);
+    deck_core_test_apply_event(&pad);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1250u);
+}
+
 int main(void)
 {
     test_load_lock_uses_actual_target_deck_transport();
@@ -3062,6 +3098,7 @@ int main(void)
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();
     test_imported_hot_cues_recall_and_local_deletion_survive_reload();
+    test_restore_source_cues_event_clears_local_tombstone();
     test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
     test_beat_jump_pad_maps_pad_index_to_jump_size();
     test_shifted_beat_jump_changes_global_size_page();

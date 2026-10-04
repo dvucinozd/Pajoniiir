@@ -38,6 +38,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   and the Hot Cues screen. Delete a source cue, reload the track and confirm it
   stays deleted; verify local cues do not appear on a second export sharing a
   raw track ID. Physical confirmation remains **NOT RUN**.
+- [ ] Hold `HOLD RESTORE` on Hot Cues and confirm source cues return for the
+  selected deck, with refreshed labels and LEDs. A short tap must preserve
+  local edits. Physical confirmation remains **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

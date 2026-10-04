@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B8 software verified; source-restore UI, transport and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B9 software verified; transport and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -286,6 +286,21 @@ uses the same source/local precedence when refreshing. Host tests cover v2
 compatibility, v3 round-trip, deletion, restore semantics, full-ID collision,
 source recall, local deletion and reload. The user-facing restore control,
 touch/MIDI transport parity and physical Rekordbox cue check remain open.
+
+## B9: Explicit source restore and cue refresh
+
+Holding `HOLD RESTORE` on the Hot Cues screen queues a semantic source-restore
+action for the selected deck. The deck task writes an empty v3 override bank,
+refreshes cue LEDs for both decks using that identity, and advances an atomic
+cue revision. The LVGL task notices that revision and refreshes the pad labels
+and overview markers after restore or a MIDI pad edit. Failed storage does not
+advance the revision. A corrupt local record produces the same empty,
+fail-closed bank in the UI and deck core.
+
+The host regression deletes an imported cue, restores the source and recalls
+its original position; release events cannot trigger restore. The 800x480
+Hot Cues capture was visually reviewed before updating its baseline. Real
+touch long press, NVS power interruption and FLX4 LED acceptance: **NOT RUN**.
 
 ## C1: Bounded optional PWV4 color preview
 

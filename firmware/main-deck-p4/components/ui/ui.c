@@ -341,6 +341,27 @@ static void ui_performance_clear_loop(uint8_t deck)
 #endif
 }
 
+static void ui_performance_restore_source_cues(uint8_t deck)
+{
+#ifndef WIN32
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION,
+                                  CTRL_ID_DECK2_EXT_ACTION),
+        .deck = deck,
+        .value = CTRL_DECK_EXT_VALUE(
+            CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true),
+    };
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u source cue restore queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+#else
+    (void)deck;
+#endif
+}
+
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
                                uint32_t start_ms,
@@ -853,6 +874,7 @@ esp_err_t ui_init(void) {
             .play = ui_performance_play,
             .set_loop = ui_performance_set_loop,
             .clear_loop = ui_performance_clear_loop,
+            .restore_source_cues = ui_performance_restore_source_cues,
             .update_overview_cue_markers = ui_update_overview_cue_markers,
         },
         .hor_res = UI_HOR_RES,
@@ -1159,6 +1181,14 @@ void ui_update(void) {
     ui_idle_service(&ctx);
 #endif
     ui_library_update(&ctx);
+#ifndef WIN32
+    static uint32_t last_hot_cue_revision;
+    uint32_t hot_cue_revision = deck_core_hot_cue_revision();
+    if (hot_cue_revision != last_hot_cue_revision) {
+        last_hot_cue_revision = hot_cue_revision;
+        ui_performance_tabs_update_hot_cues();
+    }
+#endif
     /* A completed load/USB clear can publish a new immutable ANLZ snapshot
      * during ui_library_update(). Refresh the frame so overview/status never
      * re-publish the pre-update handle for one extra tick. */
