@@ -300,6 +300,7 @@ esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);
 esp_err_t audio_engine_toggle_smart_cfx(void);
 bool audio_engine_get_smart_cfx_enabled(void);
+void audio_engine_set_filter_requires_smart_cfx(bool requires);
 esp_err_t audio_engine_toggle_smart_fader(void);
 bool audio_engine_get_smart_fader_enabled(void);
 esp_err_t audio_engine_toggle_master_cue(void);

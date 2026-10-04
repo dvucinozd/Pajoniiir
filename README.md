@@ -18,7 +18,9 @@ current P4 target. [Package B is software verified](docs/validation/FORK_IMPROVE
 through B19: seek/duration/loop/cue behavior, load lock and VINYL/CDJ touch/profile
 actions. Its physical acceptance remains NOT RUN. JC1060,
 DDJ-400 and Pro DJ Link are planned;
-their hardware acceptance has not run.
+their hardware acceptance has not run. [Package D software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md)
+adds compatible S3CP v4 and a normalized DDJ-400 MIDI profile. Its hardware
+acceptance remains NOT RUN; UAC generalization belongs to package F.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

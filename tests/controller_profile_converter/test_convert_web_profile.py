@@ -22,6 +22,45 @@ def profile(controls=None, feedback_outputs=None):
 
 
 class ConverterTests(unittest.TestCase):
+    def test_web_v4_roundtrip_matches_shared_golden(self):
+        p = profile([
+            {"id": "fx.target.master", "semanticId": "CTRL_ID_BEAT_FX_TARGET",
+             "midi": {"message": "note", "status": 0x94, "number": 20, "mode": "select", "selectValue": 2}},
+            {"id": "deck1.play", "deck": 1, "semanticId": "CTRL_ID_DECK1_PLAY",
+             "midi": {"message": "note", "mode": "button", "status": 0x90, "number": 11},
+             "feedback": {"type": "led", "source": "deck1.playing",
+                          "midi": {"message": "note", "status": 0x90, "number": 11, "valueScale": 150}}}
+        ])
+        p["firmwareAbi"].update(version=4, initSysex=[240, 1, 247], capabilities={"channelFilterRequiresSmartCfx": False, "ledFeedback": False})
+        converted = convert_profile(p)
+        # Browser compiler only sets explicitly declared capabilities.
+        self.assertEqual(compile_profile(converted).hex(),
+                         (pathlib.Path(__file__).parent / "s3cp-v4-golden.hex").read_text().strip())
+
+    def test_ddj400_generated_binary_is_reproducible(self):
+        import json
+        path = ROOT / "controllers/pioneer_ddj_400/profile.json"
+        self.assertEqual(compile_profile(json.loads(path.read_text())), path.with_suffix(".s3bin").read_bytes())
+
+    def test_v4_layout_and_oldest_version(self):
+        import struct
+        p = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,
+             "inputs": [{"type": "note_select", "event": "system.beat_fx_target",
+                         "status": 0x94, "data1": 0x14, "value": 2}],
+             "outputs": [{"kind": "cc_value", "led": "vu_meter", "deck": "any",
+                          "status": 0xB0, "data1": 2, "value_scale": 254}],
+             "init_sysex": [0xF0, 1, 0xF7],
+             "capabilities": {"channel_filter_requires_smart_cfx": False}}
+        b = compile_profile(p)
+        self.assertEqual(struct.unpack_from("<H", b, 4)[0], 4)
+        self.assertEqual(b[34], 9)
+        self.assertEqual(struct.unpack_from("<H", b, 30)[0], 3)
+        self.assertEqual(struct.unpack_from("<H", b, 56)[0], 254)
+        self.assertEqual(b[-3:], bytes([0xF0, 1, 0xF7]))
+        for sysex in ([0xF0], [0xF0, 0x80, 0xF7], [0xF0] + [1] * 127 + [0xF7]):
+            p["init_sysex"] = sysex
+            with self.assertRaises(ValueError): compile_profile(p)
+
     def test_jog_modes_use_existing_packed_action_format(self):
         import struct
         for deck in (1, 2):

@@ -132,8 +132,70 @@ static usb_midi_message_t midi(uint8_t status, uint8_t data1, uint8_t data2)
     };
 }
 
+static unsigned s_packets;
+static unsigned s_reject_after;
+static uint8_t s_packet_bytes[43][4];
+static bool init_packet(const uint8_t packet[4], void *ctx)
+{
+    (void)ctx;
+    if (s_packets == s_reject_after) return false; /* stale binding / queue full */
+    memcpy(s_packet_bytes[s_packets++], packet, 4);
+    return true;
+}
+
+static void test_initialization(void)
+{
+    uint8_t blob[CP_HEADER_SIZE + CP_INPUT_ENTRY_SIZE + CP_OUTPUT_ENTRY_SIZE + 8];
+    size_t len = build_profile(blob);
+    const uint8_t sysex[] = {0xf0, 1, 2, 3, 4, 5, 6, 0xf7};
+    memcpy(blob + len, sysex, sizeof(sysex));
+    len += sizeof(sysex);
+    wr_u16(blob + 30, sizeof(sysex));
+    wr_u32(blob + 8, (uint32_t)len);
+    wr_u32(blob + 20, CP_PF_FILTER_ALWAYS);
+    wr_u32(blob + 12, cp_crc32(blob + 16, len - 16));
+    CHECK(controller_profile_runtime_activate(blob, len, 0x1234, 0x5678));
+    CHECK(!controller_profile_runtime_ready());
+    uint8_t packet[4];
+    CHECK(!controller_profile_runtime_map_led(1, 0, 1, packet));
+    s_packets = 0; s_reject_after = 4;
+    CHECK(controller_profile_runtime_initialize(init_packet, NULL));
+    CHECK(s_packets == 3 && s_packet_bytes[0][0] == 4 && s_packet_bytes[2][0] == 6);
+    CHECK(s_packet_bytes[2][1] == 6 && s_packet_bytes[2][2] == 0xf7 && s_packet_bytes[2][3] == 0);
+    CHECK(controller_profile_runtime_ready());
+    CHECK(!controller_profile_runtime_filter_requires_smart_cfx());
+    CHECK(controller_profile_runtime_initialize(init_packet, NULL) && s_packets == 3);
+    CHECK(controller_profile_runtime_activate(blob, len, 0x1234, 0x5678));
+    s_packets = 0; s_reject_after = 1;
+    CHECK(!controller_profile_runtime_initialize(init_packet, NULL));
+    CHECK(!controller_profile_runtime_active());
+    CHECK(controller_profile_runtime_filter_requires_smart_cfx());
+    CHECK(!controller_profile_runtime_initialize(init_packet, NULL));
+    /* All USB-MIDI terminal CINs and the maximum-length message. */
+    for (unsigned n = 2; n <= 128; ++n) {
+        uint8_t full[CP_HEADER_SIZE + CP_INPUT_ENTRY_SIZE + CP_OUTPUT_ENTRY_SIZE + 128];
+        size_t base = build_profile(full);
+        memset(full + base, 1, n);
+        full[base] = 0xf0; full[base + n - 1] = 0xf7;
+        wr_u16(full + 30, (uint16_t)n);
+        wr_u32(full + 8, (uint32_t)(base + n));
+        wr_u32(full + 12, cp_crc32(full + 16, base + n - 16));
+        CHECK(controller_profile_runtime_activate(full, base + n, 0x1234, 0x5678));
+        s_packets = 0; s_reject_after = 44;
+        CHECK(controller_profile_runtime_initialize(init_packet, NULL));
+        CHECK(s_packets == (n + 2) / 3);
+        CHECK(s_packet_bytes[s_packets - 1][0] == 5 + (n - 1) % 3);
+        unsigned recovered = 0;
+        for (unsigned i = 0; i < s_packets; ++i)
+            for (unsigned k = 1; k < 4 && recovered < n; ++k)
+                CHECK(s_packet_bytes[i][k] == full[base + recovered++]);
+        CHECK(recovered == n);
+    }
+}
+
 int main(void)
 {
+    test_initialization();
     const controller_runtime_config_t config = {
         .event_cb = event_cb,
         .callback_ctx = NULL,

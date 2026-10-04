@@ -411,8 +411,69 @@ static void test_jog_mode_profile_actions(void)
     printf("  jog mode packed profile actions on both decks      PASS\n");
 }
 
+static void test_v4(void)
+{
+    blob_builder_t b;
+    cp_profile_t p;
+    cp_runtime_t rt;
+    cp_event_t ev;
+    uint8_t midi[3];
+    blob_init(&b);
+    blob_add_input(&b, 0x94, 0x14, CP_IN_NOTE_SELECT, 0xff, 1, 0x77, 0, 2, 0, NULL);
+    blob_add_output(&b, 5, 0xff, CP_OUT_CC_VALUE, 0xb0, 2, 0, 127, 127);
+    wr_u16(b.buf + 32 + 16 + 8, 254);
+    b.buf[b.len++] = 0xf0;
+    b.buf[b.len++] = 1;
+    b.buf[b.len++] = 0xf7;
+    blob_finish(&b, 1, 2, CP_PF_FILTER_ALWAYS);
+    wr_u16(b.buf + 30, 3);
+    wr_u32(b.buf + 12, cp_crc32(b.buf + 16, b.len - 16));
+    assert(cp_profile_parse(b.buf, b.len, &p) == CP_OK);
+    assert(p.init_sysex_len == 3 && p.init_sysex[2] == 0xf7);
+    cp_runtime_init(&rt);
+    assert(cp_runtime_process(&p, &rt, 0x94, 0x14, 127, &ev) && ev.value == 2);
+    assert(!cp_runtime_process(&p, &rt, 0x94, 0x14, 0, &ev));
+    assert(cp_profile_map_led(&p, 5, 0, 40, midi) && midi[2] == 80);
+    assert(cp_profile_map_led(&p, 5, 0, 100, midi) && midi[2] == 127);
+    b.buf[b.len - 2] = 0x80;
+    wr_u32(b.buf + 12, cp_crc32(b.buf + 16, b.len - 16));
+    assert(cp_profile_parse(b.buf, b.len, &p) == CP_ERR_BOUNDS);
+    b.buf[b.len - 2] = 1;
+    wr_u16(b.buf + 30, 129);
+    wr_u32(b.buf + 12, cp_crc32(b.buf + 16, b.len - 16));
+    assert(cp_profile_parse(b.buf, b.len, &p) == CP_ERR_BOUNDS);
+    wr_u16(b.buf + 30, 3);
+    wr_u16(b.buf + 4, 3);
+    assert(cp_profile_parse(b.buf, b.len, &p) != CP_OK);
+    printf("  v4 selection, scaling, SysEx and malformed data     PASS\n");
+}
+
+static void test_ddj400_fixture(void)
+{
+    uint8_t blob[8192];
+    cp_profile_t p;
+    cp_runtime_t rt;
+    cp_event_t ev;
+    FILE *f = fopen("../../controllers/pioneer_ddj_400/profile.s3bin", "rb");
+    assert(f);
+    size_t len = fread(blob, 1, sizeof(blob), f); fclose(f);
+    assert(cp_profile_parse(blob, len, &p) == CP_OK);
+    assert(p.vid == 0x2b73 && p.pid == 0x0026 && p.init_sysex_len == 12);
+    assert(p.flags & CP_PF_FILTER_ALWAYS);
+    cp_runtime_init(&rt);
+    const uint8_t notes[] = {0x10, 0x11, 0x14};
+    for (unsigned i = 0; i < 3; ++i) {
+        assert(cp_runtime_process(&p, &rt, 0x94, notes[i], 127, &ev));
+        assert(ev.type == CTRL_TYPE_BUTTON && ev.id == CTRL_ID_BEAT_FX_TARGET && ev.value == (int)i);
+        assert(!cp_runtime_process(&p, &rt, 0x94, notes[i], 0, &ev));
+    }
+    printf("  normalized DDJ400 fixture and FX target selector    PASS\n");
+}
+
 int main(void)
 {
+    test_v4();
+    test_ddj400_fixture();
     test_jog_mode_profile_actions();
     printf("=== controller_profile format/runtime tests ===\n");
     test_parse_validation();

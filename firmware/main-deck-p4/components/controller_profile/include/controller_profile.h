@@ -18,7 +18,9 @@ extern "C" {
 #endif
 
 #define CP_MAGIC            "S3CP"
-#define CP_VERSION          3
+#define CP_VERSION          4
+#define CP_VERSION_SCALED   3
+#define CP_MAX_INIT_SYSEX   128
 #define CP_VERSION_LEGACY   2
 #define CP_HEADER_SIZE      32
 #define CP_INPUT_ENTRY_SIZE 16
@@ -48,6 +50,7 @@ typedef enum {
     CP_IN_CC7_ABS = 6,
     CP_IN_NOTE_STATE_PAIR = 7,
     CP_IN_CC7_TO14 = 8, /* v3: 0/64/127 -> 0/8192/16383 */
+    CP_IN_NOTE_SELECT = 9, /* v4: base_value on press; release ignored */
 } cp_raw_type_t;
 
 /* Input entry flags. */
@@ -68,6 +71,7 @@ typedef enum {
 #define CP_PF_USB_AUDIO    (1u << 1)
 #define CP_PF_JOG_TOUCH    (1u << 2)
 #define CP_PF_PITCH_14BIT  (1u << 3)
+#define CP_PF_FILTER_ALWAYS (1u << 4) /* v4: channel filter bypasses Smart CFX gate */
 
 typedef struct {
     uint8_t match_status;
@@ -91,6 +95,7 @@ typedef struct {
     uint8_t off_value;
     uint8_t on_value;
     uint8_t blink_value;
+    uint16_t value_scale;
 } cp_output_entry_t;
 
 typedef struct {
@@ -101,6 +106,8 @@ typedef struct {
     uint16_t output_count;
     uint8_t pair_slot_count;
     uint8_t decks;
+    uint16_t init_sysex_len;
+    uint8_t init_sysex[CP_MAX_INIT_SYSEX];
     cp_input_entry_t inputs[CP_MAX_INPUTS];
     cp_output_entry_t outputs[CP_MAX_OUTPUTS];
 } cp_profile_t;

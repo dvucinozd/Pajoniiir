@@ -306,6 +306,13 @@ boundary, handler wiring, failed-mutation behavior and single-shot seek rule.
 
 ## Data-Driven Multi-Controller Platform
 
+The fork-improvements branch accepts S3CP v4 alongside unchanged v2/v3.
+Initial SysEx, press-only selectors, output scale and channel filter policy
+are declared in the profile. USB generation and connection epoch bind worker
+initialization; LED/MIDI mapping waits for initialization enqueue completion.
+Storage replacement queues worker reactivation. See
+[package D evidence](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md).
+
 The P4-local runtime supports controllers other than the DDJ-FLX4 **without a
 firmware rebuild**, using data-driven controller profiles. The FLX4 remains the
 first supported controller and its built-in C map stays as a fallback. Format

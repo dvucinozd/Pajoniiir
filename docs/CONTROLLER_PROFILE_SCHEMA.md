@@ -164,7 +164,41 @@ LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `hot_cue_pads`, `pad_fx1_pads`, `pad_fx2_pads`, `beat_jump_pads`,
 `beat_loop_pads`, `beat_jump_shift_helpers`.
 
-## profile.s3bin compatibility format (S3CP v2/v3)
+## profile.s3bin compatibility format (S3CP v2/v3/v4)
+
+The fork-improvements parser and SD/upload validators also accept v4. The
+compiler chooses the oldest representable version. V2/v3 golden bytes and
+record sizes remain unchanged; raw 8 is CC7_TO14. Donor extended-v2 binaries
+are not imported.
+
+V4 raw **9 NOTE_SELECT** requires Note On, no pair slot, flags/press mask zero
+and nonnegative signed-16-bit base_value. Positive velocity emits that value;
+zero velocity is ignored. JSON: `type: "note_select"`, `event`, `status`,
+`data1`, `value`.
+
+Header offset 30 stores initial SysEx length (0..128); payload follows both
+tables and participates in size/CRC. Nonempty payload must be F0, 7-bit data,
+F7. JSON: `init_sysex`. Output offset 8 stores `value_scale`: zero retains old
+behavior; otherwise the selected value becomes `min(127, value * scale / 127)`.
+Offset 10 stays reserved; v2/v3 continue ignoring their reserved fields.
+
+Capability bit 4 (`CP_PF_FILTER_ALWAYS`) bypasses the channel filter Smart CFX
+enable gate. JSON `capabilities.channel_filter_requires_smart_cfx` defaults
+true; false sets the v4 bit. This does not enable the Smart CFX response curve.
+Disconnect, missing profiles and older profiles retain the FLX4 policy.
+No controller-name checks implement this policy.
+
+MIDI/LED mapping waits for one initial SysEx enqueue per activation. The
+controller worker rechecks its binding epoch on every packet; USB output also
+checks its captured generation. Failure disables the activation and reports
+FAILED, requiring reconnect or a new activation. Initializer callbacks cannot
+reenter the profile runtime. Upload queues worker reactivation. Successful
+enqueue does not prove that hardware accepted the command.
+
+Web equivalents: `firmwareAbi.initSysex`, capability
+`channelFilterRequiresSmartCfx`, note `midi.mode: "select"` with `selectValue`,
+and feedback MIDI `valueScale`. Python conversion retains these extensions;
+shared golden bytes test both compilers. Public web deployment is separate.
 
 The M2.5 development parser accepts v2 and v3. The compiler emits v3 only
 when a `cc7_to14` input is present; unchanged profiles remain byte-compatible
@@ -194,7 +228,7 @@ bytes from offset 16 to the end of the file.
 | Offset | Size | Field |
 | ---: | ---: | --- |
 | 0 | 4 | magic `"S3CP"` |
-| 4 | 2 | version (2, or 3 for scaled CC) |
+| 4 | 2 | version (2, 3 for scaled CC, 4 for extensions) |
 | 6 | 2 | header_size (32) |
 | 8 | 4 | profile_size (total file bytes) |
 | 12 | 4 | crc32 over bytes `[16, profile_size)` |
@@ -205,7 +239,7 @@ bytes from offset 16 to the end of the file.
 | 26 | 2 | output_count |
 | 28 | 1 | pair_slot_count |
 | 29 | 1 | decks |
-| 30 | 2 | reserved (0) |
+| 30 | 2 | v4 initial SysEx length; reserved in v2/v3 |
 
 Input entries follow the header; output entries follow the inputs.
 
@@ -250,7 +284,7 @@ Input entries follow the header; output entries follow the inputs.
 | 5 | 1 | off_value |
 | 6 | 1 | on_value |
 | 7 | 1 | blink_value |
-| 8 | 2 | flags (0) |
+| 8 | 2 | v4 value_scale; reserved in v2/v3 |
 | 10 | 2 | reserved (0) |
 
 Runtime lookup key is `(led_id, deck)`; entries with `deck = 0xFF` match any

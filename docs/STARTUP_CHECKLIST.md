@@ -17,6 +17,12 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] [Package D](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md):
+  confirm DDJ-400 initial SysEx, MIDI/LED behavior, CH1/CH2/MASTER selector,
+  filter travel and reconnect on the exact candidate. NOT RUN. MASTER uses
+  both-deck FX; UAC acceptance awaits F. V4 requires development firmware;
+  M2.4 rejects it. Recompile JSON for rollback; never patch version bytes.
+
 - [ ] For the [fork improvements branch](FORK_IMPROVEMENTS.md), verify titles
   against the real Rekordbox export and confirm beat number 1 is accented,
   including a grid starting on beat 3. Host fixtures are not physical acceptance.

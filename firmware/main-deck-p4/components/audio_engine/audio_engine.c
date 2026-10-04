@@ -472,6 +472,7 @@ static float           *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_applied[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
+static bool             s_channel_filter_always;
 static bool             s_smart_fader_enabled;
 /* Transient jog pitch-bend (nudge) per deck: a jog while playing bumps this, the
  * output task adds it on top of pitch_factor and decays it back to 0, so tempo
@@ -3839,7 +3840,8 @@ static void ae_output_task(void *arg)
         audio_engine_get_stage_gains(&deck0_pre, &deck1_pre,
                                      &deck0_gain, &deck1_gain);
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 1u);
-        bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
+        bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled) ||
+                                 atomic_load_bool(&s_channel_filter_always);
         bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AE_DECK_0]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
         bool master_cue_enabled = atomic_load_bool(&s_master_cue_enabled);
@@ -6299,6 +6301,11 @@ esp_err_t audio_engine_toggle_smart_cfx(void)
 bool audio_engine_get_smart_cfx_enabled(void)
 {
     return atomic_load_bool(&s_smart_cfx_enabled);
+}
+
+void audio_engine_set_filter_requires_smart_cfx(bool requires)
+{
+    atomic_store_bool(&s_channel_filter_always, !requires);
 }
 
 esp_err_t audio_engine_toggle_smart_fader(void)

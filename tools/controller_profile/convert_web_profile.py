@@ -246,7 +246,8 @@ def convert_profile(web_data):
             "led_feedback": bool_field(caps, "ledFeedback", True),
             "usb_audio": bool_field(caps, "usbAudio", False),
             "jog_touch": bool_field(caps, "jogTouch", False),
-            "pitch_14bit": bool_field(caps, "pitch14bit", False)
+            "pitch_14bit": bool_field(caps, "pitch14bit", False),
+            "channel_filter_requires_smart_cfx": bool_field(caps, "channelFilterRequiresSmartCfx", True)
         },
         "inputs": [],
         "outputs": [],
@@ -256,6 +257,9 @@ def convert_profile(web_data):
             "preferred_sample_rate": 44100
         })
     }
+
+    if "initSysex" in abi:
+        firmware_profile["init_sysex"] = abi["initSysex"]
 
     # Mapiranje kontrola u inpute
     controls = web_data.get("controls", [])
@@ -361,6 +365,13 @@ def convert_profile(web_data):
         if not isinstance(midi, dict):
             raise ValueError("control.midi must be an object")
         status = midi_status(midi, "control.midi.status")
+        if mode == "select":
+            firmware_profile["inputs"].append({
+                "type": "note_select", "event": event, "status": status,
+                "data1": midi_data1(midi, "control.midi.number"),
+                "value": parse_int(midi.get("selectValue"), "control.midi.selectValue", 0, 32767)
+            })
+            continue
         
         # Ako je event deckX.ext_action, pretvaramo ga u ext_action tip
         if event.endswith(".ext_action"):
@@ -484,6 +495,8 @@ def convert_profile(web_data):
     # Generiranje state_pair za Pioneer target sklopke
     for c in controls:
         c_id = c.get("id", "").lower()
+        if c.get("midi", {}).get("mode") == "select":
+            continue
         if "fx.beat.target" in c_id or "beat_fx_target" in c.get("semanticId", "") or ("beat" in c_id and "target" in c_id):
             midi = c.get("midi", {})
             if not isinstance(midi, dict):
@@ -511,14 +524,14 @@ def convert_profile(web_data):
     # LED izlazi (outputs)
     led_groups = {}
 
-    def record_led(led_name, deck, kind, status, data1):
+    def record_led(led_name, deck, kind, status, data1, midi):
         if status is None or data1 is None:
             raise ValueError(f"LED {led_name} needs explicit status and number")
         group = led_groups.setdefault(led_name, {"kind": kind, "entries": {}})
         if group["kind"] != kind:
             raise ValueError(f"LED {led_name} mixes note and CC output kinds")
         previous = group["entries"].get(deck)
-        address = (status, data1)
+        address = (status, data1, parse_int(midi.get("valueScale", 0), "feedback valueScale", 0, 65535))
         if previous is not None and previous != address:
             raise ValueError(f"LED {led_name} deck {deck} has conflicting MIDI addresses")
         group["entries"][deck] = address
@@ -575,7 +588,7 @@ def convert_profile(web_data):
         if midi.get("message") == "cc" or "vu_meter" in led_name:
             kind = "cc_value"
             
-        record_led(led_name, deck, kind, status, data1)
+        record_led(led_name, deck, kind, status, data1, midi)
 
     # 2. Skeniranje feedbackOutputs sekcije na vrhu (npr. Numark)
     feedback_outputs = web_data.get("feedbackOutputs", [])
@@ -602,7 +615,7 @@ def convert_profile(web_data):
         if out.get("type") == "cc" or midi.get("message") == "cc" or "vu_meter" in led_name:
             kind = "cc_value"
             
-        record_led(led_name, deck, kind, status, data1)
+        record_led(led_name, deck, kind, status, data1, midi)
 
     # Formiranje konačnih outputa za firmware
     for led_name, group in led_groups.items():
@@ -612,26 +625,28 @@ def convert_profile(web_data):
         if "any" in entries:
             if len(entries) != 1:
                 raise ValueError(f"LED {led_name} mixes deck-specific and any-deck addresses")
-            status, data1 = entries["any"]
+            status, data1, scale = entries["any"]
             firmware_profile["outputs"].append({
                 "kind": kind,
                 "led": led_name,
                 "deck": "any",
                 "status": status,
-                "data1": data1
+                "data1": data1,
+                **({"value_scale": scale} if scale else {})
             })
         else:
             # Preserve each controller-specific address independently. The
             # source schema permits Deck 1/2 to use different status *and*
             # data1 bytes, and either side may be absent.
             for deck in sorted(entries):
-                status, data1 = entries[deck]
+                status, data1, scale = entries[deck]
                 firmware_profile["outputs"].append({
                     "kind": kind,
                     "led": led_name,
                     "deck": deck,
                     "status": status,
-                    "data1": data1
+                    "data1": data1,
+                    **({"value_scale": scale} if scale else {})
                 })
 
     # Never invent vendor-specific LED addresses from input pad ranges. Every

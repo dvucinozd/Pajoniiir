@@ -33,7 +33,9 @@ extern "C" {
 
 /* S3CP header layout (little-endian). Must match the schema/compiler. */
 #define CPM_MAGIC        "S3CP"
-#define CPM_VERSION      3
+#define CPM_VERSION      4
+#define CPM_VERSION_SCALED 3
+#define CPM_MAX_INIT_SYSEX 128
 #define CPM_VERSION_LEGACY 2
 #define CPM_HEADER_SIZE  32
 #define CPM_INPUT_ENTRY_SIZE  16
@@ -42,7 +44,7 @@ extern "C" {
 #define CPM_MAX_OUTPUTS       160
 #define CPM_MAX_PAIR_SLOTS    40
 #define CPM_PAIR_SLOT_NONE    0xFF
-#define CPM_MAX_RAW_TYPE      8
+#define CPM_MAX_RAW_TYPE      9
 #define CPM_MAX_OUTPUT_KIND   1
 
 typedef struct {
@@ -85,6 +87,9 @@ typedef struct {
 
 /* Reset the singleton registry. */
 esp_err_t controller_profile_manager_init(void);
+/* Rescans request activation on the controller worker, including SysEx. */
+void controller_profile_manager_set_reactivate_callback(void (*callback)(void));
+void controller_profile_manager_initialization_failed(uint32_t epoch);
 
 /* Scan CONFIG_CONTROLLER_PROFILE_SD_PATH and log the discovered profiles. */
 esp_err_t controller_profile_manager_scan_storage(void);

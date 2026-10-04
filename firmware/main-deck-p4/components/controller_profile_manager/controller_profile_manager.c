@@ -64,7 +64,7 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
         return ESP_ERR_INVALID_ARG;
     }
     uint16_t version = rd_u16(data + 4);
-    if ((version != CPM_VERSION && version != CPM_VERSION_LEGACY) ||
+    if ((version != CPM_VERSION && version != CPM_VERSION_SCALED && version != CPM_VERSION_LEGACY) ||
         rd_u16(data + 6) != CPM_HEADER_SIZE) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -80,6 +80,11 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
     uint16_t input_count = rd_u16(data + 24);
     uint16_t output_count = rd_u16(data + 26);
     uint8_t pair_slot_count = data[28];
+    uint16_t sysex_len = version >= 4 ? rd_u16(data + 30) : 0;
+    if (sysex_len > CPM_MAX_INIT_SYSEX ||
+        (version < 4 && (rd_u32(data + 20) & (1u << 4)))) {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (input_count > CPM_MAX_INPUTS || output_count > CPM_MAX_OUTPUTS ||
         pair_slot_count > CPM_MAX_PAIR_SLOTS) {
         return ESP_ERR_INVALID_ARG;
@@ -87,7 +92,7 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
 
     size_t expected_size = CPM_HEADER_SIZE +
                            (size_t)input_count * CPM_INPUT_ENTRY_SIZE +
-                           (size_t)output_count * CPM_OUTPUT_ENTRY_SIZE;
+                           (size_t)output_count * CPM_OUTPUT_ENTRY_SIZE + sysex_len;
     if (expected_size != len) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -97,7 +102,14 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
          i++, entry += CPM_INPUT_ENTRY_SIZE) {
         uint8_t raw_type = entry[2];
         uint8_t pair_slot = entry[3];
-        if (raw_type > CPM_MAX_RAW_TYPE || (version == CPM_VERSION_LEGACY && raw_type > 7)) {
+        if (raw_type > CPM_MAX_RAW_TYPE || (version < 4 && raw_type == 9) ||
+            (version == CPM_VERSION_LEGACY && raw_type > 7)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (raw_type == 9 && ((entry[0] & 0xF0) != 0x90 ||
+                             pair_slot != CPM_PAIR_SLOT_NONE ||
+                             rd_u16(entry + 6) != 0 || rd_u16(entry + 10) != 0 ||
+                             rd_u16(entry + 8) > 32767)) {
             return ESP_ERR_INVALID_ARG;
         }
         if (raw_type == 8 && ((entry[0] & 0xF0) != 0xB0 || entry[4] != 0x03 ||
@@ -111,11 +123,19 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
             return ESP_ERR_INVALID_ARG;
         }
     }
+
     for (uint16_t i = 0; i < output_count;
          i++, entry += CPM_OUTPUT_ENTRY_SIZE) {
         if (entry[2] > CPM_MAX_OUTPUT_KIND) {
             return ESP_ERR_INVALID_ARG;
         }
+    }
+
+    if (sysex_len) {
+        if (sysex_len < 2 || entry[0] != 0xF0 || entry[sysex_len - 1] != 0xF7)
+            return ESP_ERR_INVALID_ARG;
+        for (uint16_t i = 1; i + 1 < sysex_len; ++i)
+            if (entry[i] > 0x7F) return ESP_ERR_INVALID_ARG;
     }
 
     meta->vid = rd_u16(data + 16);
@@ -621,6 +641,21 @@ static bool cpm_read_profile(const controller_profile_meta_t *m,
     return true;
 }
 
+static void (*s_reactivate_callback)(void);
+
+void controller_profile_manager_set_reactivate_callback(void (*callback)(void))
+{
+    s_reactivate_callback = callback; /* Registered before USB bootstrap. */
+}
+
+void controller_profile_manager_initialization_failed(uint32_t epoch)
+{
+    if (!cpm_lock()) return;
+    if (s_registry.controller_present && s_registry.connected_epoch == epoch)
+        controller_profile_registry_mark_transfer_failed(&s_registry, s_registry.matched_index);
+    cpm_unlock();
+}
+
 static int cpm_activate_bound_profile(void)
 {
     if (!cpm_lock()) {
@@ -771,7 +806,7 @@ esp_err_t controller_profile_manager_install_profile(
         ESP_LOGI(TAG, "profile '%s' installed (%u B), registry rescanned",
                  id, (unsigned)installed.size);
         if (reactivate) {
-            (void)cpm_activate_bound_profile();
+            if (s_reactivate_callback) s_reactivate_callback();
         }
     }
     return rc;

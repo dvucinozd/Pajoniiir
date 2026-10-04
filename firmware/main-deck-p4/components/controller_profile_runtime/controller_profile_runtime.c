@@ -25,6 +25,7 @@ static const char *TAG = "ctrl_profile_rt";
 static cp_profile_t s_profile;
 static cp_runtime_t s_runtime;
 static bool s_active;
+static bool s_ready;
 
 void controller_profile_runtime_init(void)
 {
@@ -34,6 +35,7 @@ void controller_profile_runtime_init(void)
     }
 #endif
     s_active = false;
+    s_ready = false;
 }
 
 bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
@@ -69,6 +71,7 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
     s_profile = *parsed;
     cp_runtime_init(&s_runtime);
     s_active = true;
+    s_ready = s_profile.init_sysex_len == 0;
     RT_UNLOCK();
     free(parsed);
     RT_LOGI("dynamic profile active: VID=0x%04X PID=0x%04X inputs=%u",
@@ -80,7 +83,45 @@ void controller_profile_runtime_clear(void)
 {
     RT_LOCK();
     s_active = false;
+    s_ready = false;
     RT_UNLOCK();
+}
+
+bool controller_profile_runtime_ready(void)
+{
+    RT_LOCK();
+    bool ready = !s_active || s_ready;
+    RT_UNLOCK();
+    return ready;
+}
+
+bool controller_profile_runtime_filter_requires_smart_cfx(void)
+{
+    RT_LOCK();
+    bool requires = !s_active || !(s_profile.flags & CP_PF_FILTER_ALWAYS);
+    RT_UNLOCK();
+    return requires;
+}
+
+bool controller_profile_runtime_initialize(controller_profile_packet_cb_t cb, void *ctx)
+{
+    bool ok = true;
+    RT_LOCK();
+    if (!s_active) ok = false;
+    else if (!s_ready) {
+        for (size_t off = 0; off < s_profile.init_sysex_len; off += 3) {
+            size_t remaining = s_profile.init_sysex_len - off;
+            size_t count = remaining < 3 ? remaining : 3;
+            uint8_t packet[4] = {remaining > 3 ? 4 : (uint8_t)(4 + count), 0, 0, 0};
+            memcpy(packet + 1, s_profile.init_sysex + off, count);
+            if (!cb || !cb(packet, ctx)) { ok = false; break; }
+        }
+        /* Failed/partial initialization cannot be retried as an active profile. */
+        s_ready = ok;
+        if (!ok) s_active = false;
+    }
+    RT_UNLOCK();
+    return ok;
 }
 
 bool controller_profile_runtime_active(void)
@@ -96,7 +137,7 @@ bool controller_profile_runtime_map(uint8_t status, uint8_t data1, uint8_t data2
 {
     bool matched = false;
     RT_LOCK();
-    if (s_active) {
+    if (s_active && s_ready) {
         cp_event_t ev;
         if (cp_runtime_process(&s_profile, &s_runtime, status, data1, data2, &ev)) {
             if (type) *type = ev.type;
@@ -114,7 +155,7 @@ bool controller_profile_runtime_map_led(uint8_t led, uint8_t deck, uint8_t state
 {
     bool ok = false;
     RT_LOCK();
-    if (s_active) {
+    if (s_active && s_ready) {
         uint8_t midi[3];
         if (cp_profile_map_led(&s_profile, led, deck, state, midi)) {
             /* USB-MIDI event packet: CIN = the MIDI status nibble (0x9 Note On,
@@ -135,7 +176,7 @@ size_t controller_profile_runtime_emit_snapshot(controller_profile_runtime_emit_
 {
     size_t n = 0;
     RT_LOCK();
-    if (s_active) {
+    if (s_active && s_ready) {
         n = cp_runtime_emit_snapshot(&s_profile, &s_runtime, cb, ctx);
     }
     RT_UNLOCK();

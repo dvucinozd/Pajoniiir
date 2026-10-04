@@ -19,6 +19,8 @@ import zlib
 S3CP_MAGIC = b"S3CP"
 S3CP_VERSION = 2
 S3CP_SCALED_VERSION = 3
+S3CP_EXTENDED_VERSION = 4
+MAX_INIT_SYSEX = 128
 HEADER_SIZE = 32
 INPUT_ENTRY_SIZE = 16
 OUTPUT_ENTRY_SIZE = 12
@@ -46,6 +48,7 @@ RAW_CC14_LSB = 5
 RAW_CC7_ABS = 6
 RAW_NOTE_STATE_PAIR = 7
 RAW_CC7_TO14 = 8
+RAW_NOTE_SELECT = 9
 
 RAW_TYPE_NAMES = {
     RAW_NOTE_BUTTON: "note_button",
@@ -57,6 +60,7 @@ RAW_TYPE_NAMES = {
     RAW_CC7_ABS: "cc7_abs",
     RAW_NOTE_STATE_PAIR: "note_state_pair",
     RAW_CC7_TO14: "cc7_to14",
+    RAW_NOTE_SELECT: "note_select",
 }
 
 FLAG_REPLAY = 0x0001
@@ -70,6 +74,7 @@ PF_LED_FEEDBACK = 1 << 0
 PF_USB_AUDIO = 1 << 1
 PF_JOG_TOUCH = 1 << 2
 PF_PITCH_14BIT = 1 << 3
+PF_FILTER_ALWAYS = 1 << 4
 
 # control_link.h namespaces
 NS_DECK1 = 0x10
@@ -222,7 +227,7 @@ class Entry:
 
 class Output:
     def __init__(self, led_id, deck, kind, status, data1,
-                 off=0x00, on=0x7F, blink=0x7F):
+                 off=0x00, on=0x7F, blink=0x7F, value_scale=0):
         self.led_id = led_id
         self.deck = deck
         self.kind = kind
@@ -231,11 +236,12 @@ class Output:
         self.off = off
         self.on = on
         self.blink = blink
+        self.value_scale = value_scale
 
     def pack(self):
         return struct.pack("<BBBBBBBBHH", self.led_id, self.deck, self.kind,
                            self.status, self.data1, self.off, self.on,
-                           self.blink, 0, 0)
+                           self.blink, self.value_scale, 0)
 
 
 def compile_inputs(inputs):
@@ -257,6 +263,13 @@ def compile_inputs(inputs):
             t, i = resolve_event(item["event"])
             entries.append(Entry(num(item["status"]), num(item["data1"]),
                                  RAW_NOTE_BUTTON, t, i))
+        elif kind == "note_select":
+            t, i = resolve_event(item["event"])
+            value = num(item["value"])
+            if num(item["status"]) & 0xF0 != 0x90 or not 0 <= value <= 32767:
+                raise ValueError("note_select requires Note On and value 0..32767")
+            entries.append(Entry(num(item["status"]), num(item["data1"]),
+                                 RAW_NOTE_SELECT, t, i, base_value=value))
         elif kind == "ext_action":
             deck = int(item["deck"])
             event = "deck%d.ext_action" % deck
@@ -327,6 +340,9 @@ def compile_outputs(outputs):
     entries = []
     for item in outputs:
         kind = item["kind"]
+        scale = num(item.get("value_scale", 0))
+        if not 0 <= scale <= 65535:
+            raise ValueError("value_scale must be 0..65535")
         if kind == "note_bank":
             first_led, count = LED_BANKS[item["led_bank"]]
             if int(item["count"]) != count:
@@ -340,7 +356,7 @@ def compile_outputs(outputs):
                 for deck, status in enumerate(statuses):
                     entries.append(Output(first_led + i, deck, OUT_NOTE_ONOFF,
                                           status, first_data1 + i,
-                                          off, on, blink))
+                                          off, on, blink, scale))
             continue
 
         led_id = LED_IDS[item["led"]]
@@ -351,7 +367,7 @@ def compile_outputs(outputs):
         if "deck_status" in item:
             for deck, status in enumerate(item["deck_status"]):
                 entries.append(Output(led_id, deck, out_kind, num(status),
-                                      num(item["data1"]), off, on, blink))
+                                      num(item["data1"]), off, on, blink, scale))
         else:
             deck_value = item.get("deck")
             if deck_value == "any":
@@ -361,7 +377,7 @@ def compile_outputs(outputs):
             else:
                 raise ValueError("output needs deck_status, deck:0/1, or deck:'any'")
             entries.append(Output(led_id, deck, out_kind, num(item["status"]),
-                                   num(item["data1"]), off, on, blink))
+                                   num(item["data1"]), off, on, blink, scale))
     return entries
 
 
@@ -389,19 +405,30 @@ def compile_profile(profile):
         flags |= PF_JOG_TOUCH
     if caps.get("pitch_14bit"):
         flags |= PF_PITCH_14BIT
+    if caps.get("channel_filter_requires_smart_cfx", True) is False:
+        flags |= PF_FILTER_ALWAYS
+    sysex_values = [num(v) for v in profile.get("init_sysex", [])]
+    if sysex_values and (not 2 <= len(sysex_values) <= MAX_INIT_SYSEX or
+                         sysex_values[0] != 0xF0 or sysex_values[-1] != 0xF7 or
+                         any(not 0 <= v <= 127 for v in sysex_values[1:-1])):
+        raise ValueError("init_sysex must be F0, 7-bit data, F7; max 128 bytes")
+    sysex = bytes(sysex_values)
 
     body = b"".join(e.pack() for e in entries)
     body += b"".join(o.pack() for o in outputs)
+    body += sysex
 
     profile_size = HEADER_SIZE + len(body)
     tail = struct.pack("<HHIHHBBH", num(profile["vid"]), num(profile["pid"]),
                        flags, len(entries), len(outputs), pair_slots,
-                       int(profile.get("decks", 2)), 0)
+                       int(profile.get("decks", 2)), len(sysex))
     if profile_size > MAX_PROFILE_SIZE:
         raise ValueError("profile too large (%d > %d bytes)" %
                          (profile_size, MAX_PROFILE_SIZE))
     crc = zlib.crc32(tail + body) & 0xFFFFFFFF
     version = S3CP_SCALED_VERSION if any(e.raw_type == RAW_CC7_TO14 for e in entries) else S3CP_VERSION
+    if sysex or flags & PF_FILTER_ALWAYS or any(e.raw_type == RAW_NOTE_SELECT for e in entries) or any(o.value_scale for o in outputs):
+        version = S3CP_EXTENDED_VERSION
     header = S3CP_MAGIC + struct.pack("<HHII", version, HEADER_SIZE,
                                       profile_size, crc) + tail
     assert len(header) == HEADER_SIZE
@@ -412,7 +439,7 @@ def dump(blob):
     if blob[:4] != S3CP_MAGIC:
         raise ValueError("bad magic")
     version, header_size, profile_size, crc = struct.unpack_from("<HHII", blob, 4)
-    vid, pid, flags, in_count, out_count, slots, decks, _ = \
+    vid, pid, flags, in_count, out_count, slots, decks, sysex_len = \
         struct.unpack_from("<HHIHHBBH", blob, 16)
     actual_crc = zlib.crc32(blob[16:profile_size]) & 0xFFFFFFFF
     print("S3CP v%d size=%d crc=0x%08X (%s)" %
@@ -430,7 +457,7 @@ def dump(blob):
             extra += " slot=%d" % slot
         if fl:
             extra += " flags=0x%04X" % fl
-        if raw == RAW_NOTE_VALUE:
+        if raw in (RAW_NOTE_VALUE, RAW_NOTE_SELECT):
             extra += " base=0x%04X mask=0x%04X" % (base & 0xFFFF, mask)
         if raw == RAW_NOTE_STATE_PAIR:
             extra += " lut=[%d,%d,%d,%d]" % (l0, l1, l2, l3)
@@ -438,7 +465,7 @@ def dump(blob):
               (n, status, data1, RAW_TYPE_NAMES.get(raw, "?"), st, sid, extra))
         off += INPUT_ENTRY_SIZE
     for n in range(out_count):
-        led, deck, kind, status, data1, offv, onv, blinkv, _, _ = \
+        led, deck, kind, status, data1, offv, onv, blinkv, scale, _ = \
             struct.unpack_from("<BBBBBBBBHH", blob, off)
         deck_s = "any" if deck == 0xFF else str(deck)
         print("  out[%3d] led=%-26s deck=%-3s %s %02X %02X off=%02X on=%02X blink=%02X" %
@@ -446,6 +473,10 @@ def dump(blob):
                "cc " if kind == OUT_CC_VALUE else "note", status, data1,
                offv, onv, blinkv))
         off += OUTPUT_ENTRY_SIZE
+        if version >= 4 and scale:
+            print("    value_scale=%d" % scale)
+    if version >= 4 and sysex_len:
+        print("  init_sysex=" + blob[off:off + sysex_len].hex(" "))
 
 
 def main():

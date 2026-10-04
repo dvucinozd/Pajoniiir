@@ -110,6 +110,8 @@ typedef struct {
 
 esp_err_t controller_usb_host_init(const controller_usb_host_config_t *config);
 esp_err_t controller_usb_host_send_packet(const uint8_t packet[4]);
+uint32_t controller_usb_host_output_generation(void);
+esp_err_t controller_usb_host_send_packet_for_generation(const uint8_t packet[4], uint32_t generation);
 bool controller_usb_host_is_connected(void);
 bool controller_usb_host_get_identity(controller_usb_identity_t *identity_out);
 void controller_usb_host_get_diagnostics(

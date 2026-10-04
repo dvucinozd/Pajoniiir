@@ -22,6 +22,12 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
                                          uint16_t vid, uint16_t pid);
 void controller_profile_runtime_clear(void);
 bool controller_profile_runtime_active(void);
+/* Initialization runs in the profile worker. Callback must reject stale USB
+ * epochs and enqueue without blocking. LED mapping is held until completion. */
+typedef bool (*controller_profile_packet_cb_t)(const uint8_t packet[4], void *ctx);
+bool controller_profile_runtime_initialize(controller_profile_packet_cb_t cb, void *ctx);
+bool controller_profile_runtime_ready(void);
+bool controller_profile_runtime_filter_requires_smart_cfx(void);
 bool controller_profile_runtime_map(uint8_t status, uint8_t data1,
                                     uint8_t data2, uint8_t *type,
                                     uint8_t *id, int16_t *value);

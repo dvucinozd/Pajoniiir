@@ -5,6 +5,7 @@
 #include <stdatomic.h>
 
 #include "control_link.h"
+#include "audio_engine.h"
 #include "controller_led_runtime.h"
 #include "controller_profile_manager.h"
 #include "controller_profile_runtime.h"
@@ -43,6 +44,7 @@ static int32_t s_last_bootstrap_error = ESP_ERR_INVALID_STATE;
 typedef struct {
     controller_usb_identity_t identity;
     uint32_t epoch;
+    uint32_t output_generation;
 } local_profile_work_t;
 
 static inline void count_inc(uint32_t *value)
@@ -106,6 +108,15 @@ static void drain_runtime_before_disconnect(void)
     }
 }
 
+static bool local_init_packet(const uint8_t packet[4], void *ctx)
+{
+    const local_profile_work_t *work = ctx;
+    if (!atomic_load_explicit(&s_local_connected, memory_order_acquire) ||
+        work->epoch != atomic_load_explicit(&s_connection_epoch, memory_order_acquire))
+        return false;
+    return controller_usb_host_send_packet_for_generation(packet, work->output_generation) == ESP_OK;
+}
+
 static void local_profile_task(void *arg)
 {
     (void)arg;
@@ -139,7 +150,7 @@ static void local_profile_task(void *arg)
             atomic_load_explicit(&s_local_connected, memory_order_acquire) &&
             work.epoch == atomic_load_explicit(&s_connection_epoch,
                                                memory_order_acquire);
-        const bool active = current &&
+        bool active = current &&
             controller_profile_manager_get_registry_snapshot(&registry) ==
                 ESP_OK &&
             registry.connected_epoch == work.epoch &&
@@ -147,6 +158,20 @@ static void local_profile_task(void *arg)
         if (!current) {
             continue;
         }
+        if (active) {
+            active = controller_profile_runtime_initialize(local_init_packet, &work);
+            if (!active) {
+                controller_profile_manager_initialization_failed(work.epoch);
+                ESP_LOGE(TAG, "profile initialization failed; reconnect required");
+            }
+        }
+        if (!atomic_load_explicit(&s_local_connected, memory_order_acquire) ||
+            work.epoch != atomic_load_explicit(&s_connection_epoch, memory_order_acquire)) {
+            controller_profile_runtime_clear();
+            continue;
+        }
+        audio_engine_set_filter_requires_smart_cfx(
+            !active || controller_profile_runtime_filter_requires_smart_cfx());
 
         const bool builtin_flx4 = work.identity.vid == 0x2B73u &&
                                   work.identity.pid == 0x0045u;
@@ -186,6 +211,7 @@ static void local_connection_callback(bool connected,
         const local_profile_work_t work = {
             .identity = *identity,
             .epoch = epoch,
+            .output_generation = controller_usb_host_output_generation(),
         };
         if (!s_profile_queue ||
             xQueueOverwrite(s_profile_queue, &work) != pdTRUE) {
@@ -200,6 +226,7 @@ static void local_connection_callback(bool connected,
     }
 
     atomic_store_explicit(&s_local_connected, false, memory_order_release);
+    audio_engine_set_filter_requires_smart_cfx(true);
     set_semantic_connection(false);
     controller_runtime_set_builtin_flx4_enabled(false);
     controller_led_runtime_set_builtin_flx4_enabled(false);
@@ -207,6 +234,18 @@ static void local_connection_callback(bool connected,
     controller_profile_runtime_clear();
     (void)controller_profile_manager_on_disconnect();
     ESP_LOGW(TAG, "direct controller disconnected");
+}
+
+static void local_reactivate(void)
+{
+    local_profile_work_t work = {
+        .epoch = atomic_load_explicit(&s_connection_epoch, memory_order_acquire),
+        .output_generation = controller_usb_host_output_generation(),
+    };
+    if (s_profile_queue && atomic_load_explicit(&s_local_connected, memory_order_acquire) &&
+        controller_usb_host_get_identity(&work.identity)) {
+        (void)xQueueOverwrite(s_profile_queue, &work);
+    }
 }
 
 static void local_dispatch_task(void *arg)
@@ -257,6 +296,7 @@ static void local_bootstrap_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(LOCAL_BOOTSTRAP_RETRY_MS));
         }
     }
+    controller_profile_manager_set_reactivate_callback(local_reactivate);
     while (!s_profile_task) {
         if (xTaskCreate(local_profile_task, "p4_ctrl_profile", 6144u,
                         NULL, 3u, &s_profile_task) != pdPASS) {

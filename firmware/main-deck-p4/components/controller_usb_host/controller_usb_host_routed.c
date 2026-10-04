@@ -52,11 +52,20 @@ static BaseType_t routed_queue_reset(QueueHandle_t queue)
 #undef xQueueReset
 #undef usb_host_interface_claim
 
-esp_err_t controller_usb_host_send_packet(const uint8_t packet[4])
+uint32_t controller_usb_host_output_generation(void)
+{
+    return controller_midi_out_gate_generation(&s_output_gate);
+}
+
+esp_err_t controller_usb_host_send_packet_for_generation(const uint8_t packet[4], uint32_t expected)
 {
     uint32_t generation = 0u;
     if (!controller_midi_out_gate_begin(&s_output_gate, &generation)) {
         return packet ? ESP_ERR_INVALID_STATE : ESP_ERR_INVALID_ARG;
+    }
+    if (generation != expected) {
+        controller_midi_out_gate_end(&s_output_gate);
+        return ESP_ERR_INVALID_STATE;
     }
     const esp_err_t rc = controller_usb_host_send_packet_unsafe(packet);
     controller_midi_out_gate_end(&s_output_gate);
@@ -68,6 +77,12 @@ esp_err_t controller_usb_host_send_packet(const uint8_t packet[4])
         return ESP_ERR_INVALID_STATE;
     }
     return rc;
+}
+
+esp_err_t controller_usb_host_send_packet(const uint8_t packet[4])
+{
+    return controller_usb_host_send_packet_for_generation(packet,
+        controller_usb_host_output_generation());
 }
 
 void controller_usb_host_output_gate_set_connected(bool connected)

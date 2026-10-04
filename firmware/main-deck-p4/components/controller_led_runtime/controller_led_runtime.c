@@ -27,6 +27,7 @@ bool controller_led_runtime_build_packet(uint8_t led,
     }
 
     const bool profile_active = controller_profile_runtime_active();
+    if (!controller_profile_runtime_ready()) return false;
     const bool builtin_enabled =
         __atomic_load_n(&s_builtin_flx4_enabled, __ATOMIC_ACQUIRE);
     const bool authoritative = builtin_enabled &&

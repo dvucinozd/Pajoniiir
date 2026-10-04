@@ -530,8 +530,43 @@ static void cleanup_tree(void)
 #endif
 }
 
+static void test_v4_upload(void)
+{
+    uint8_t b[CPM_HEADER_SIZE + CPM_INPUT_ENTRY_SIZE + CPM_OUTPUT_ENTRY_SIZE + 3] = {0};
+    controller_profile_meta_t meta;
+    memcpy(b, "S3CP", 4);
+    wr_u16(b + 4, 4); wr_u16(b + 6, 32);
+    wr_u32(b + 8, sizeof(b));
+    wr_u16(b + 24, 1); wr_u16(b + 26, 1); wr_u16(b + 30, 3);
+    b[29] = 2;
+    b[32] = 0x94; b[34] = 9; b[35] = 0xff; b[36] = 1; b[37] = 0x77; b[40] = 2;
+    b[48 + 2] = 1; b[48 + 8] = 150;
+    b[60] = 0xf0; b[61] = 1; b[62] = 0xf7;
+    refresh_crc(b, sizeof(b));
+    assert(controller_profile_meta_parse(b, sizeof(b), &meta) == ESP_OK);
+    (void)make_dir(INSTALL_ROOT);
+    assert(controller_profile_storage_install(INSTALL_ROOT, "v4", b, sizeof(b), false, &meta) == ESP_OK);
+    b[61] = 0x80; refresh_crc(b, sizeof(b));
+    assert(controller_profile_storage_install(INSTALL_ROOT, "v4", b, sizeof(b), true, &meta) == ESP_ERR_INVALID_ARG);
+    b[61] = 1; refresh_crc(b, sizeof(b));
+    b[4] = 3;
+    assert(controller_profile_meta_parse(b, sizeof(b), &meta) == ESP_ERR_INVALID_ARG);
+    b[4] = 4; wr_u16(b + 30, 129); refresh_crc(b, sizeof(b));
+    assert(controller_profile_meta_parse(b, sizeof(b), &meta) == ESP_ERR_INVALID_ARG);
+    remove(INSTALL_ROOT "/v4/profile.s3bin");
+#ifdef _WIN32
+    (void)_rmdir(INSTALL_ROOT "/v4");
+    (void)_rmdir(INSTALL_ROOT);
+#else
+    (void)rmdir(INSTALL_ROOT "/v4");
+    (void)rmdir(INSTALL_ROOT);
+#endif
+    printf("  v4 storage/upload validation and rejection       PASS\n");
+}
+
 int main(void)
 {
+    test_v4_upload();
     printf("=== controller_profile_manager tests ===\n");
     load_fixture();
     test_meta_parse();

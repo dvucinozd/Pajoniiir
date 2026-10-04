@@ -53,7 +53,7 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
     uint32_t profile_size = rd_u32(data + 8);
     uint32_t crc = rd_u32(data + 12);
 
-    if ((version != CP_VERSION && version != CP_VERSION_LEGACY) ||
+    if ((version != CP_VERSION && version != CP_VERSION_SCALED && version != CP_VERSION_LEGACY) ||
         header_size != CP_HEADER_SIZE) {
         return CP_ERR_VERSION;
     }
@@ -72,6 +72,11 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
     out->output_count = rd_u16(data + 26);
     out->pair_slot_count = data[28];
     out->decks = data[29];
+    out->init_sysex_len = version >= 4 ? rd_u16(data + 30) : 0;
+    if (out->init_sysex_len > CP_MAX_INIT_SYSEX ||
+        (version < 4 && (out->flags & CP_PF_FILTER_ALWAYS))) {
+        return CP_ERR_BOUNDS;
+    }
 
     if (out->input_count > CP_MAX_INPUTS ||
         out->output_count > CP_MAX_OUTPUTS ||
@@ -81,7 +86,7 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
 
     size_t need = CP_HEADER_SIZE +
                   (size_t)out->input_count * CP_INPUT_ENTRY_SIZE +
-                  (size_t)out->output_count * CP_OUTPUT_ENTRY_SIZE;
+                  (size_t)out->output_count * CP_OUTPUT_ENTRY_SIZE + out->init_sysex_len;
     if (need != len) {
         return CP_ERR_SIZE;
     }
@@ -101,8 +106,14 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         for (int b = 0; b < 4; b++) {
             e->lut[b] = (int8_t)p[12 + b];
         }
-        if (e->raw_type > CP_IN_CC7_TO14 ||
+        if (e->raw_type > CP_IN_NOTE_SELECT ||
+            (version < 4 && e->raw_type == CP_IN_NOTE_SELECT) ||
             (version == CP_VERSION_LEGACY && e->raw_type > CP_IN_NOTE_STATE_PAIR)) {
+            return CP_ERR_BOUNDS;
+        }
+        if (e->raw_type == CP_IN_NOTE_SELECT &&
+            ((e->match_status & 0xF0) != 0x90 || e->pair_slot != CP_PAIR_SLOT_NONE ||
+             e->flags != 0 || e->press_mask != 0 || e->base_value < 0)) {
             return CP_ERR_BOUNDS;
         }
         if (e->raw_type == CP_IN_CC7_TO14 &&
@@ -131,9 +142,21 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         o->off_value = p[5];
         o->on_value = p[6];
         o->blink_value = p[7];
+        o->value_scale = version >= 4 ? rd_u16(p + 8) : 0;
         if (o->out_kind > CP_OUT_CC_VALUE) {
             return CP_ERR_BOUNDS;
         }
+    }
+
+    if (out->init_sysex_len) {
+        if (out->init_sysex_len < 2 || p[0] != 0xF0 ||
+            p[out->init_sysex_len - 1] != 0xF7) {
+            return CP_ERR_BOUNDS;
+        }
+        for (uint16_t i = 1; i + 1 < out->init_sysex_len; ++i) {
+            if (p[i] > 0x7F) return CP_ERR_BOUNDS;
+        }
+        memcpy(out->init_sysex, p, out->init_sysex_len);
     }
 
     return CP_OK;
@@ -190,6 +213,10 @@ bool cp_runtime_process(const cp_profile_t *profile, cp_runtime_t *rt,
         out->id = e->semantic_id;
 
         switch (e->raw_type) {
+        case CP_IN_NOTE_SELECT:
+            if (!pressed) return false;
+            out->value = e->base_value;
+            return true;
         case CP_IN_NOTE_BUTTON:
             out->value = pressed ? 1 : 0;
             return true;
@@ -325,6 +352,10 @@ bool cp_profile_map_led(const cp_profile_t *profile, uint8_t led, uint8_t deck,
             midi_out[2] = o->blink_value;
         } else {
             midi_out[2] = o->on_value;
+        }
+        if (o->value_scale) {
+            uint32_t value = (uint32_t)midi_out[2] * o->value_scale / 127u;
+            midi_out[2] = (uint8_t)(value > 127u ? 127u : value);
         }
         return true;
     }
