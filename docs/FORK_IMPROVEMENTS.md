@@ -17,7 +17,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
-| C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
+| C | Hierarchical playlists, bounded artwork, PWV4 | C1 PWV4 parser software verified; playlists, artwork and UI rendering pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
@@ -257,7 +257,31 @@ Verification on 2026-10-04:
 - Real touch/FLX4/Web Remote load rejection, PLAY-during-worker race and
   operator audio confirmation on JC4880: **NOT RUN**.
 
+## C1: Bounded optional PWV4 color preview
+
+The existing ANLZ parser now reads PWV4 from `.EXT` after the required PWV3
+waveform. It checks the 24-byte header, six-byte entry size, declared count and
+section payload before allocating at most 7,200 bytes (1,200 columns). A larger
+valid preview is explicitly marked truncated. Missing or malformed PWV4 is
+ignored so a usable PWV3 waveform still loads. Re-parsing clears stale color;
+metadata clones own their color bytes and `anlz_free` releases them. The format
+was checked against donor `428b97dd`, but this step uses the current strict
+section walker and transactional metadata lifecycle.
+
+This is parser data only: no color waveform is rendered yet, and no playlist or
+artwork work is claimed complete. Real exported `.EXT` files, visual inspection
+and dual-deck hardware playback remain **NOT RUN**.
+
+Verification on 2026-10-04:
+
+- Focused ANLZ and library ANLZ suites: PASS, including valid, malformed,
+  truncated, oversized, missing and clone cases.
+- Complete P4 host runner: PASS (exit 0).
+- ESP-IDF 6.0.2 P4 build: PASS; application 2,511,616 bytes, 1,158,400 below
+  the `0x380000` budget; dependency lock unchanged.
+
 ## Provenance and rollback
+
 
 Package A reimplements the donor's title/downbeat correction in the current
 upstream components; it does not replace components with older fork copies.

@@ -516,6 +516,43 @@ static esp_err_t parse_pwv3(FILE *fp, anlz_metadata_t *meta)
     return complete ? ESP_OK : ESP_FAIL;
 }
 
+/* PWV4 carries six bytes per color-preview column. The tag is optional and
+ * cannot invalidate a usable PWV3 parse. Section bounds are checked by the
+ * walker; count and payload are checked again before the bounded allocation. */
+static esp_err_t parse_pwv4(FILE *fp, anlz_metadata_t *meta)
+{
+    const uint32_t header_size = read_be32(fp);
+    const uint32_t segment_size = read_be32(fp);
+    if (header_size < 24u || segment_size < header_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    const uint32_t entry_size = read_be32(fp);
+    const uint32_t entry_count = read_be32(fp);
+    const uint32_t payload_size = segment_size - header_size;
+    if (entry_size != ANLZ_COLOR_PREVIEW_ENTRY || entry_count == 0u ||
+        entry_count > UINT32_MAX / ANLZ_COLOR_PREVIEW_ENTRY ||
+        payload_size < entry_count * ANLZ_COLOR_PREVIEW_ENTRY) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (fseek(fp, (long)(header_size - 20u), SEEK_CUR) != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint32_t preview_bytes = entry_count * ANLZ_COLOR_PREVIEW_ENTRY;
+    const uint32_t bytes = preview_bytes > ANLZ_COLOR_PREVIEW_MAX
+        ? ANLZ_COLOR_PREVIEW_MAX : preview_bytes;
+    uint8_t *preview = (uint8_t *)malloc(bytes);
+    if (!preview) return ESP_ERR_NO_MEM;
+    if (!anlz_read_exact(preview, bytes, fp)) {
+        free(preview);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    free(meta->color_preview);
+    meta->color_preview = preview;
+    meta->color_preview_len = bytes;
+    meta->color_preview_truncated = preview_bytes > bytes;
+    return ESP_OK;
+}
+
 /* ── Public API ───────────────────────────────────────────────────────────── *
  *
  * Parsing is transactional. Every section is walked and parsed into a temporary
@@ -549,6 +586,7 @@ static esp_err_t parse_one_strict(FILE *fp,
     case ANLZ_TAG_PWAV: rc = parse_pwav(fp, meta); break;
     case ANLZ_TAG_PCOB: rc = parse_pcob(fp, meta); break;
     case ANLZ_TAG_PWV3: rc = parse_pwv3(fp, meta); break;
+    case ANLZ_TAG_PWV4: rc = parse_pwv4(fp, meta); break;
     default: break;
     }
     if (s_anlz_short_read && rc == ESP_OK) rc = ESP_ERR_INVALID_SIZE;
@@ -629,6 +667,19 @@ esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta)
         result = parse_one_strict(fp, ANLZ_TAG_PWV3, &next, &found);
         if (result == ESP_OK && !found) result = ESP_ERR_NOT_FOUND;
     }
+    if (result == ESP_OK) {
+        /* A reparse must not keep color data from a prior EXT. PWV4 errors
+         * degrade to the still-valid PWV3 waveform. */
+        free(next.color_preview);
+        next.color_preview = NULL;
+        next.color_preview_len = 0u;
+        next.color_preview_truncated = false;
+        bool found4 = false;
+        esp_err_t color_rc = parse_one_strict(fp, ANLZ_TAG_PWV4, &next, &found4);
+        if (color_rc != ESP_OK) {
+            ANLZ_LOGW(TAG, "PWV4 ignored: %d", color_rc);
+        }
+    }
     fclose(fp);
 
     if (result != ESP_OK) {
@@ -653,6 +704,7 @@ esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out)
     *out = *src;
     out->beats = NULL;
     out->waveform_high = NULL;
+    out->color_preview = NULL;
 
     if (src->beat_count > 0u) {
         if (!src->beats) {
@@ -681,6 +733,20 @@ esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out)
         }
         memcpy(out->waveform_high, src->waveform_high, src->waveform_high_len);
     }
+    if (src->color_preview_len > 0u) {
+        if (!src->color_preview || src->color_preview_len > ANLZ_COLOR_PREVIEW_MAX) {
+            anlz_free(out);
+            memset(out, 0, sizeof(*out));
+            return ESP_ERR_INVALID_ARG;
+        }
+        out->color_preview = (uint8_t *)malloc(src->color_preview_len);
+        if (!out->color_preview) {
+            anlz_free(out);
+            memset(out, 0, sizeof(*out));
+            return ESP_ERR_NO_MEM;
+        }
+        memcpy(out->color_preview, src->color_preview, src->color_preview_len);
+    }
     return ESP_OK;
 }
 
@@ -698,5 +764,11 @@ void anlz_free(anlz_metadata_t *meta)
         meta->waveform_high     = NULL;
         meta->waveform_high_len = 0;
     }
+    if (meta->color_preview) {
+        free(meta->color_preview);
+        meta->color_preview = NULL;
+    }
+    meta->color_preview_len = 0u;
+    meta->color_preview_truncated = false;
 }
 

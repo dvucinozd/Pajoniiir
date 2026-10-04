@@ -63,6 +63,7 @@ extern "C" {
 #define ANLZ_TAG_PWV2  0x50575632u  /* 'PWV2' — waveform tiny          */
 #define ANLZ_TAG_PCOB  0x50434F42u  /* 'PCOB' — cue objects container  */
 #define ANLZ_TAG_PWV3  0x50575633u  /* 'PWV3' — waveform high-res      */
+#define ANLZ_TAG_PWV4  0x50575634u  /* 'PWV4' — color preview          */
 
 /* ── Sizes ────────────────────────────────────────────────────────────────── */
 #define ANLZ_WAVEFORM_LOW_LEN    400u   /* PWAV: always 400 bytes          */
@@ -70,6 +71,8 @@ extern "C" {
 #define ANLZ_VBR_TABLE_LEN       400u   /* PVBR: 400 × uint32_t offsets    */
 #define ANLZ_MAX_CUES              8u   /* hot cues 0–7                    */
 #define ANLZ_WAVEFORM_HIGH_MAX 131072u  /* PWV3: up to 128 KB (observed max ~62 KB) */
+#define ANLZ_COLOR_PREVIEW_ENTRY    6u   /* PWV4 bytes per color column    */
+#define ANLZ_COLOR_PREVIEW_MAX   7200u   /* first 1200 color columns       */
 #define ANLZ_PATH_MAX            512u   /* audio path buffer               */
 
 /* ── Beat grid entry (8 bytes, big-endian in file) ────────────────────────── */
@@ -108,6 +111,7 @@ typedef struct {
  * Heap allocations:
  *   beats         — heap-allocated array of beat_count entries, or NULL
  *   waveform_high — heap-allocated array of waveform_high_len bytes, or NULL
+ *   color_preview — heap-allocated PWV4 bytes, or NULL
  *
  * All other fields are inline.  Call anlz_free() when done.
  */
@@ -135,6 +139,12 @@ typedef struct anlz_metadata {
     /* High-resolution waveform (from PWV3 in .EXT) — heap */
     uint8_t  *waveform_high;     /* heap; NULL until anlz_parse_ext() called */
     uint32_t  waveform_high_len; /* number of valid bytes in waveform_high   */
+
+    /* Optional PWV4 color preview from .EXT. PWAV/PWV3 remain available when
+     * this tag is absent or malformed. */
+    uint8_t  *color_preview;
+    uint32_t  color_preview_len;
+    bool      color_preview_truncated;
 } anlz_metadata_t;
 
 /* ── Public API ───────────────────────────────────────────────────────────── */
@@ -152,7 +162,7 @@ typedef struct anlz_metadata {
 esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out);
 
 /**
- * Parse ANLZ0000.EXT and populate the high-res waveform field.
+ * Parse ANLZ0000.EXT and populate PWV3 plus optional PWV4 color preview.
  *
  * Must be called after anlz_parse_dat().  Reads the PWV3 tag.
  * waveform_high is heap-allocated; anlz_free() will release it.

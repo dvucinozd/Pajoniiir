@@ -65,6 +65,7 @@ static void w_str(FILE *fp, const char *s) { fputs(s, fp); }
  */
 static const char *SYNTH_DAT = "test_synth.dat";
 static const char *SYNTH_EXT = "test_synth.ext";
+static const char *COLOR_EXT = "test_color.ext";
 static const char *SYNTH_UNICODE_DAT = "test_unicode_ppth.dat";
 
 static void build_synthetic_dat(void)
@@ -180,6 +181,27 @@ static void build_synthetic_ext(void)
 
     fclose(fp);
     (void)w_str; /* suppress unused warning */
+}
+
+static void build_color_ext(uint32_t entry_size, uint32_t claimed_entries,
+                            uint32_t actual_entries)
+{
+    FILE *fp = fopen(COLOR_EXT, "wb");
+    if (!fp) { perror("fopen color.ext"); exit(1); }
+    w_tag(fp, ANLZ_TAG_PWV3);
+    w_be32(fp, 12u);
+    w_be32(fp, 812u);
+    for (int i = 0; i < 800; ++i) fputc((i * 3) & 0x1f, fp);
+    w_tag(fp, ANLZ_TAG_PWV4);
+    w_be32(fp, 24u);
+    w_be32(fp, 24u + claimed_entries * ANLZ_COLOR_PREVIEW_ENTRY);
+    w_be32(fp, entry_size);
+    w_be32(fp, claimed_entries);
+    w_be32(fp, 0u);
+    for (uint32_t i = 0; i < actual_entries * ANLZ_COLOR_PREVIEW_ENTRY; ++i) {
+        fputc((int)(i & 0xffu), fp);
+    }
+    fclose(fp);
 }
 
 static void build_unicode_ppth_dat(void)
@@ -587,6 +609,63 @@ static bool duplicate_hot_cue_slot_is_rejected(void)
     return rc == ESP_ERR_INVALID_SIZE && out.beats == NULL && out.cue_count == 0u;
 }
 
+static void test_optional_pwv4_color_preview(void)
+{
+    build_synthetic_dat();
+    anlz_metadata_t meta = {0};
+    if (anlz_parse_dat(SYNTH_DAT, &meta) != ESP_OK) {
+        FAIL("color fixture DAT failed");
+        return;
+    }
+
+    build_color_ext(ANLZ_COLOR_PREVIEW_ENTRY, 12u, 12u);
+    esp_err_t rc = anlz_parse_ext(COLOR_EXT, &meta);
+    TEST("PWV4 valid preview and PWV3 load together");
+    CHECK(rc == ESP_OK && meta.waveform_high_len == 800u &&
+          meta.color_preview_len == 72u && !meta.color_preview_truncated &&
+          meta.color_preview && meta.color_preview[71] == 71u,
+          "color preview or fallback missing");
+
+    anlz_metadata_t copy = {0};
+    rc = anlz_clone(&meta, &copy);
+    TEST("PWV4 clone owns independent bounded bytes");
+    CHECK(rc == ESP_OK && copy.color_preview &&
+          copy.color_preview != meta.color_preview &&
+          memcmp(copy.color_preview, meta.color_preview, 72u) == 0,
+          "color preview not cloned");
+    anlz_free(&copy);
+
+    build_color_ext(5u, 12u, 12u);
+    rc = anlz_parse_ext(COLOR_EXT, &meta);
+    TEST("wrong PWV4 entry size keeps PWV3 but clears prior color");
+    CHECK(rc == ESP_OK && meta.waveform_high_len == 800u &&
+          meta.color_preview == NULL && meta.color_preview_len == 0u,
+          "invalid color replaced high waveform or leaked stale color");
+
+    build_color_ext(ANLZ_COLOR_PREVIEW_ENTRY, 12u, 5u);
+    rc = anlz_parse_ext(COLOR_EXT, &meta);
+    TEST("truncated optional PWV4 retains PWV3");
+    CHECK(rc == ESP_OK && meta.waveform_high_len == 800u &&
+          meta.color_preview == NULL, "truncated color invalidated high waveform");
+
+    build_color_ext(ANLZ_COLOR_PREVIEW_ENTRY, 1201u, 1201u);
+    rc = anlz_parse_ext(COLOR_EXT, &meta);
+    TEST("oversized PWV4 is bounded and reports truncation");
+    CHECK(rc == ESP_OK && meta.color_preview_len == ANLZ_COLOR_PREVIEW_MAX &&
+          meta.color_preview_truncated, "oversized color preview not bounded");
+
+    build_synthetic_ext();
+    rc = anlz_parse_ext(SYNTH_EXT, &meta);
+    TEST("missing PWV4 clears old color while PWV3 remains");
+    CHECK(rc == ESP_OK && meta.waveform_high_len == 800u &&
+          meta.color_preview == NULL && meta.color_preview_len == 0u,
+          "missing color retained stale bytes");
+    anlz_free(&meta);
+    remove(SYNTH_DAT);
+    remove(SYNTH_EXT);
+    remove(COLOR_EXT);
+}
+
 int main(int argc, char *argv[])
 {
     printf("Pajoniiir ANLZ Parser Test\n");
@@ -601,6 +680,7 @@ int main(int argc, char *argv[])
 
     /* Synthetic unit test mode */
     run_unit_tests();
+    test_optional_pwv4_color_preview();
 
     printf("\n=== Strict truncation corpus ===\n");
     TEST("DAT header/section/payload truncations rejected transactionally");
