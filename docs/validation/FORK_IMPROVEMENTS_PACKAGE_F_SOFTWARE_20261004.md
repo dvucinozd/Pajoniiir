@@ -3,6 +3,9 @@
 Status: **software verified; hardware acceptance NOT RUN**.
 Production M2.4, public OTA channels, partitions and APTA remain unchanged.
 Integration branch: `codex/fork-improvements`, following package E `9729de5`.
+Implementation commit: `51ac8dab4ad22747740f9c6b26bedcefd48c2a46`, pushed and
+verified against the remote branch. A subsequent documentation-only checkpoint
+records CI and linker comparisons; it does not change firmware source.
 Donor behavior reference: kayrozen/Pajoniiir
 `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323). This adapts the existing
 P4 UAC owner, ring and audio lifecycle instead of importing a second engine.
@@ -94,7 +97,7 @@ DAC latency and must not be used as measured sink compensation for K.
 | ESP-IDF 6.0.2 JC1060 build | PASS, 2,542,912 bytes |
 | Separate dependency locks, board identity, LVGL pin and 0x380000 budget | PASS |
 | Diff/documentation checks | PASS |
-| Hosted CI | Recorded in the integration checkpoint after push |
+| Hosted CI on `51ac8da` | PASS, host regression and both clean firmware jobs |
 | Physical MAIN/cue listening, descriptor capture, reconnect, deadline/heap/stack measurement | NOT RUN |
 | Installed image, 180-minute physical soak, signing, OTA/publication | NOT RUN |
 
@@ -103,6 +106,12 @@ SDKCONFIG inside that directory so inherited E bring-up ES8311 state cannot
 override its USB-only defaults. One concurrent incremental reconfigure collided
 on the local ComponentManager Git cache index lock; a sequential retry passed
 without dependency changes. Both lock files remain unchanged.
+
+[Hosted run 37197203523](https://github.com/dvucinozd/Pajoniiir/actions/runs/37197203523)
+completed successfully on the exact implementation commit. Both container builds
+passed lock stability, embedded project identity, BSP isolation, LVGL9.5.0,
+binary budget and linked USB wrapper/resampler checks. The Linux host job includes
+the actual UAC stream suite and simulator. No hardware or OTA action was run.
 
 The local software checkpoint was built from E HEAD `9729de5` plus the F diff;
 its embedded Git-derived version is `M2.4-42-g9729de5-dirty`. Commit-bound hosted
@@ -119,6 +128,16 @@ Run the normal host runner, `tests/controller_usb_audio/run_tests.ps1`,
 `tools/check_board_build.py` for each image. CI runs the same board/lock/budget
 checks. Runtime internal/DMA heap, PSRAM fragmentation, CPU deadlines and stack
 headroom cannot be inferred from a host test or image size.
+
+`esp_idf_size --format json2` on the local E2/F maps gives the following static
+linker comparison. DIRAM used/free includes linker layout reservations; it is
+not an available DMA heap measurement. External address-window size is not
+reported as physical PSRAM capacity.
+
+| Target | E2 DIRAM used/free | F DIRAM used/free | E2/F internal `.text` |
+| --- | --- | --- | --- |
+| JC4880 | 296,712 / 275,656 bytes | 296,744 / 275,624 bytes | 82,556 / 82,556 bytes |
+| JC1060 | 294,077 / 278,291 bytes | 293,389 / 278,979 bytes | 80,960 / 80,312 bytes |
 
 `controller_usb_audio_stream` is registered as a selectable functional suite in
 the shared runner, so the actual stream owner executes on Windows and Linux CI,
