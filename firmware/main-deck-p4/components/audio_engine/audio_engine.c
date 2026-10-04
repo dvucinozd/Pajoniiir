@@ -312,6 +312,8 @@ typedef struct {
     uint32_t analysis_span_ms;
     /* Best known file length, used for seek bounds and tail extrapolation. */
     uint32_t duration_ms;
+    /* Captured by the LOAD owner; status readers never wait on a loader join. */
+    uint32_t loaded_session_generation;
     audio_pvbr_geometry_t pvbr_geom;
     size_t   mp3_audio_start;
     bool     pvbr_geometry_exact;
@@ -4303,6 +4305,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 #endif
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
+    eng->loaded_session_generation = s_lifecycle_session_generation[deck];
     eng->load_progress = 0;
     eng->analysis_span_ms = duration_ms;
 
@@ -4875,6 +4878,11 @@ esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t 
     out->last_error = eng->last_error;
     snprintf(out->last_error_text, sizeof(out->last_error_text), "%s", eng->last_error_text);
     out->loaded = eng->loaded;
+    if (eng->loaded) {
+        out->analysis_span_ms = eng->analysis_span_ms;
+        out->duration_ms = eng->duration_ms;
+        out->session_generation = eng->loaded_session_generation;
+    }
     out->playing = atomic_load_bool(&eng->playing) &&
                    !atomic_load_bool(&eng->paused);
     if (!eng->loaded || eng->sample_rate == 0) {

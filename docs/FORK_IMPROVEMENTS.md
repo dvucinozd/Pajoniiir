@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B9 software verified; transport and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B10 software verified; transport and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -301,6 +301,21 @@ The host regression deletes an imported cue, restores the source and recalls
 its original position; release events cannot trigger restore. The 800x480
 Hot Cues capture was visually reviewed before updating its baseline. Real
 touch long press, NVS power interruption and FLX4 LED acceptance: **NOT RUN**.
+
+## B10: Session-owned duration snapshot
+
+The audio status API now publishes the fixed `analysis_span_ms`, the best
+currently known `duration_ms` and the LOAD session generation which owns them.
+All three come from the engine snapshot; stopped or failed decks expose no
+old duration. Status does not acquire the lifecycle mutex or wait for loader
+teardown. A WAV regression uses a 100 ms file with a deliberately wrong
+120,000 ms analysis hint and verifies both values remain distinct, the session
+matches, and STOP removes the old duration.
+
+This is a duration-publication foundation. The remaining work is to consume
+the live file duration in UI time/seek bounds while preserving the original
+waveform/PVBR time base, refine valid PWV3 spans and measure MP3 EOF without
+trusting an estimated seek coordinate. Physical duration/seek A/B: **NOT RUN**.
 
 ## C1: Bounded optional PWV4 color preview
 

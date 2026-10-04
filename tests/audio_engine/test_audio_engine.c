@@ -1147,6 +1147,48 @@ static void test_wav_load_populates_deck_metadata(void)
     remove(path);
 }
 
+static void test_duration_status_keeps_analysis_and_session_separate(void)
+{
+    puts("\n[Test 4d2] Duration and session snapshot");
+    const char *path = "duration_status.wav";
+    EXPECT(audio_engine_init() == ESP_OK, "duration status resets engine");
+    EXPECT(write_test_wav(path), "duration status WAV fixture created");
+    FILE *fp = fopen(path, "r+b");
+    EXPECT(fp != NULL, "duration status fixture can be extended");
+    if (!fp) return;
+    const uint32_t frames = 4410u;
+    const uint32_t bytes = frames * 4u;
+    fseek(fp, 4, SEEK_SET);
+    wr_u32(fp, 36u + bytes);
+    fseek(fp, 40, SEEK_SET);
+    wr_u32(fp, bytes);
+    fseek(fp, 44, SEEK_SET);
+    for (uint32_t i = 0; i < frames; ++i) wr_u32(fp, 0u);
+    fclose(fp);
+
+    uint32_t session = 0u;
+    EXPECT(audio_engine_deck_load_session(0, path, NULL, 120000u, &session) == ESP_OK,
+           "duration status loads misleading analysis duration");
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK,
+           "duration snapshot is readable");
+    EXPECT(status.analysis_span_ms == 120000u,
+           "analysis duration stays unchanged");
+    EXPECT(status.duration_ms == 100u,
+           "WAV duration follows actual decoded frame count");
+    EXPECT(session != 0u && status.session_generation == session,
+           "duration snapshot belongs to the loaded session");
+    EXPECT(audio_engine_deck_stop_session(0, session) == ESP_OK,
+           "duration session can be retired");
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK && !status.loaded,
+           "stopped session is not loaded");
+    EXPECT(status.duration_ms == 0u && status.analysis_span_ms == 0u,
+           "stopped status does not expose old duration");
+    EXPECT(status.session_generation != session,
+           "stop advances duration ownership");
+    remove(path);
+}
+
 static void test_wav_decode_to_wav_preserves_pcm(void)
 {
     puts("\n[Test 4e] WAV decode path");
@@ -1563,6 +1605,7 @@ int main(int argc, char *argv[])
     test_diagnostics_snapshot_reports_audio_health_state();
     test_missing_timeline_keeps_ring_playback_and_disables_scratch();
     test_wav_load_populates_deck_metadata();
+    test_duration_status_keeps_analysis_and_session_separate();
     test_wav_decode_to_wav_preserves_pcm();
     test_pfl_state_api();
     test_cue_mode_api();

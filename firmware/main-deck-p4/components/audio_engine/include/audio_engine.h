@@ -352,6 +352,10 @@ typedef struct {
     bool loaded;
     bool playing;
     uint32_t position_ms;
+    /* Metadata time base stays fixed when the decoder discovers a longer file. */
+    uint32_t analysis_span_ms;
+    uint32_t duration_ms;
+    uint32_t session_generation;
 } audio_engine_deck_status_t;
 
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
