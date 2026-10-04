@@ -754,6 +754,9 @@ static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
     return mask;
 }
 
+static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
+static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state);
+
 static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || pad >= HOT_CUE_STORE_SLOT_COUNT || !state) {
@@ -818,6 +821,15 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         rc = audio_engine_deck_seek(deck, pos_ms);
         if (rc == ESP_OK) {
             state->position_ms = pos_ms;
+            const hot_cue_store_slot_t *cue = &effective.slots[pad];
+            if (cue->type == HOT_CUE_STORE_TYPE_LOOP && cue->end_ms > pos_ms) {
+                set_deck_loop(deck, pos_ms, cue->end_ms);
+            } else {
+                (void)audio_engine_deck_clear_loop(deck);
+                publish_flx4_led_snapshot(false);
+            }
+            state->loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+            publish_loop_adjust_leds(deck, state);
             ESP_LOGI(TAG, "deck %u hot cue %u recall -> %lu ms",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1,

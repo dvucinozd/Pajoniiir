@@ -183,10 +183,14 @@ static void hot_cue_event_cb(lv_event_t *event)
 {
     lv_obj_t *btn = lv_event_get_target(event);
     int cue_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    uint8_t deck = ui_performance_tabs_active_deck();
+    if (s_config.actions.hot_cue_pad) {
+        s_config.actions.hot_cue_pad(deck, (uint8_t)cue_idx);
+        return;
+    }
     ui_controls_hot_cue_t cue =
         ui_controls_hot_cue(ui_performance_tabs_controls(), (uint8_t)cue_idx);
     uint32_t pos = cue.position_ms;
-    uint8_t deck = ui_performance_tabs_active_deck();
 
     if (cue.empty || pos == UI_CONTROLS_EMPTY_HOT_CUE_MS) {
         ESP_LOGI(TAG, "D%u Hot Cue %c is empty, ignoring click",

@@ -362,6 +362,25 @@ static void ui_performance_restore_source_cues(uint8_t deck)
 #endif
 }
 
+#ifndef WIN32
+static void ui_performance_hot_cue_pad(uint8_t deck, uint8_t pad)
+{
+    if (pad >= HOT_CUE_STORE_SLOT_COUNT) return;
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
+                                  CTRL_ID_DECK2_PAD_ACTION),
+        .deck = deck,
+        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, false, true),
+    };
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u hot cue queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+}
+#endif
+
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
                                uint32_t start_ms,
@@ -875,6 +894,9 @@ esp_err_t ui_init(void) {
             .set_loop = ui_performance_set_loop,
             .clear_loop = ui_performance_clear_loop,
             .restore_source_cues = ui_performance_restore_source_cues,
+#ifndef WIN32
+            .hot_cue_pad = ui_performance_hot_cue_pad,
+#endif
             .update_overview_cue_markers = ui_update_overview_cue_markers,
         },
         .hor_res = UI_HOR_RES,

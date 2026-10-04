@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B10 software verified; transport and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B11 software verified; CDJ CUE/jog mode and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -293,7 +293,7 @@ Holding `HOLD RESTORE` on the Hot Cues screen queues a semantic source-restore
 action for the selected deck. The deck task writes an empty v3 override bank,
 refreshes cue LEDs for both decks using that identity, and advances an atomic
 cue revision. The LVGL task notices that revision and refreshes the pad labels
-and overview markers after restore or a MIDI pad edit. Failed storage does not
+after restore or a MIDI pad edit. Failed storage does not
 advance the revision. A corrupt local record produces the same empty,
 fail-closed bank in the UI and deck core.
 
@@ -316,6 +316,34 @@ This is a duration-publication foundation. The remaining work is to consume
 the live file duration in UI time/seek bounds while preserving the original
 waveform/PVBR time base, refine valid PWV3 spans and measure MP3 EOF without
 trusting an estimated seek coordinate. Physical duration/seek A/B: **NOT RUN**.
+
+## B11: Shared hot-cue pad actions and imported loop recall
+
+Firmware touch hot-cue pads now queue the same semantic pad press as the
+controller. The deck core decides whether to recall an effective source/local
+cue or store the current position in an empty slot. Both paths preserve the
+current play/pause state; the touch path no longer automatically starts PLAY.
+A loop cue recalls its start and activates its stored end; recalling a single
+cue exits the active loop. Loop-adjust mode is cleared and its LEDs refreshed.
+
+Host regressions cover imported loop bounds, single-cue loop exit, paused-state
+preservation and second-deck isolation. The simulator keeps its explicit PC
+transport adapter and verifies the shared presentation; physical touch/MIDI
+parity, loop continuity and operator audio acceptance are **NOT RUN**. CDJ CUE
+hold behavior and an explicit VINYL/CDJ jog mode remain separate pending work.
+Waveform cue overlays still consume the source ANLZ bank; integrating local
+overrides into the render snapshot remains an explicit UI/package H gate.
+
+Verification on 2026-10-04 for B8-B11:
+
+- Full P4 host runner and focused hot-cue, dual-deck/scratch and audio-engine
+  suites: PASS. The production hot-cue serializer is now included in the runner.
+- Shared 800x480 UI simulator and all 11 screenshot captures: PASS. Only the
+  reviewed B9 Hot Cues baseline changed.
+- ESP-IDF 6.0.2 JC4880 build: PASS; 2,533,344 bytes, 1,136,672 bytes below the
+  `0x380000` application budget. Dependency lock unchanged.
+- Documentation integrity and whitespace checks: PASS.
+- Hardware smoke, installed image, physical soak and OTA: NOT RUN.
 
 ## C1: Bounded optional PWV4 color preview
 
