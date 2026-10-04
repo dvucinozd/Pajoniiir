@@ -2,7 +2,9 @@
 param(
     [switch]$UpdateBaselines,
     [switch]$KeepArtifacts,
-    [string]$LvglPath
+    [string]$LvglPath,
+    [ValidateSet('legacy','native-compact','native-wide','runtime-compact','runtime-wide')]
+    [string]$Presentation = 'legacy'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +16,16 @@ $BuildDir = Join-Path $CacheRoot 'build'
 $OutputDir = Join-Path $CacheRoot 'screenshots'
 $ManifestPath = Join-Path $ScriptDir 'baselines.json'
 $LvglCommit = '263ae5e13dec1e525109aed556cec1bbdfdecd5a'
+$Width = 800
+$Height = 480
+$Target = 'ui_simulator_e2e'
+if ($Presentation -ne 'legacy') {
+    $parts = $Presentation.Split('-')
+    $Target = if ($parts[0] -eq 'native') { "dj_ui_$($parts[1])_e2e" } else { "dj_ui_runtime_$($parts[1])_e2e" }
+    $OutputDir = Join-Path $CacheRoot "screenshots-$Presentation"
+    $ManifestPath = Join-Path $ScriptDir "baselines-$Presentation.json"
+    if ($parts[1] -eq 'wide') { $Width = 1024; $Height = 600 }
+}
 
 function Resolve-Tool {
     param(
@@ -82,7 +94,7 @@ if ($LvglChanges.Count -ne 0) {
 New-Item -ItemType Directory -Force -Path $BuildDir, $OutputDir | Out-Null
 
 $OldPath = $env:PATH
-$env:PATH = "$(Split-Path -Parent $Gcc);$(Split-Path -Parent $Ninja);$env:PATH"
+$env:PATH = "$env:PATH;$(Split-Path -Parent $Gcc);$(Split-Path -Parent $Ninja)"
 try {
     & $CMake -S $ScriptDir -B $BuildDir -G Ninja `
         "-DLVGL_DIR=$($ResolvedLvgl -replace '\\','/')" `
@@ -94,14 +106,14 @@ try {
         throw 'UI simulator CMake configure failed.'
     }
 
-    & $CMake --build $BuildDir --target ui_simulator_e2e
+    & $CMake --build $BuildDir --target $Target
     if ($LASTEXITCODE -ne 0) {
         throw 'UI simulator build failed.'
     }
 
-    $Executable = Join-Path $BuildDir 'ui_simulator_e2e.exe'
+    $Executable = Join-Path $BuildDir "$Target.exe"
     if (-not (Test-Path -LiteralPath $Executable)) {
-        $Executable = Join-Path $BuildDir 'ui_simulator_e2e'
+        $Executable = Join-Path $BuildDir $Target
     }
     & $Executable ($OutputDir -replace '\\','/')
     if ($LASTEXITCODE -ne 0) {
@@ -126,6 +138,9 @@ $Captures = @(
 )
 
 $Actual = [ordered]@{}
+if ($Presentation.StartsWith('native-')) {
+    $Captures = @('dj_overview','dj_library','dj_hotcues','dj_settings','dj_screensaver','dj_settings_restored','dj_empty','dj_error','dj_loading')
+}
 foreach ($name in $Captures) {
     $path = Join-Path $OutputDir "$name.ppm"
     if (-not (Test-Path -LiteralPath $path)) {
@@ -137,8 +152,8 @@ foreach ($name in $Captures) {
 if ($UpdateBaselines) {
     $Manifest = [ordered]@{
         schema = 1
-        width = 800
-        height = 480
+        width = $Width
+        height = $Height
         lvgl_commit = $LvglCommit
         captures = $Actual
     }
@@ -151,7 +166,7 @@ if ($UpdateBaselines) {
     $Expected = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
     if ($Expected.schema -ne 1 -or
         $Expected.lvgl_commit -ne $LvglCommit -or
-        $Expected.width -ne 800 -or $Expected.height -ne 480) {
+        $Expected.width -ne $Width -or $Expected.height -ne $Height) {
         throw 'Baseline metadata does not match the pinned simulator configuration.'
     }
     $Mismatch = $false

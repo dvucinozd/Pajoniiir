@@ -33,6 +33,10 @@ acceptance remains NOT RUN.
 adds isolated SDMMC A/B builds, SD/gate diagnostics and a fail-closed experimental
 recorder. Recorder and SD workaround remain disabled in ordinary builds;
 physical card latency, power-loss and audio acceptance are NOT RUN.
+[Package H migration preview](docs/validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md)
+adds the shared dj_ui presentation and an opt-in Overview bridge at both native
+resolutions. Library, Hot Cues and Settings retain the legacy runtime until their
+functional parity is implemented. H remains open; this preview is default-off.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

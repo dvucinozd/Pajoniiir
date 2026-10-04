@@ -1,5 +1,8 @@
 idf_component_register(
     SRCS "ui.c"
+         "dj_ui.c"
+         "ui_dj_bridge.c"
+         "ui_color_preview.c"
          "splash_screen.c"
          "Musieer_80.c"
          "Musieer_48.c"

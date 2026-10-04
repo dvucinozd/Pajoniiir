@@ -19,6 +19,9 @@
 #include "ui_status.h"
 #include "splash_screen.h"
 #include "ui_idle.h"
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+#include "ui_dj_bridge.h"
+#endif
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,8 +61,13 @@ void deck_core_test_apply_event(const ctrl_event_t *event);
 #endif
 
 #ifndef UI_HOR_RES
+#ifdef DISPLAY_WIDTH
+#define UI_HOR_RES   DISPLAY_WIDTH
+#define UI_VER_RES   DISPLAY_HEIGHT
+#else
 #define UI_HOR_RES   800
 #define UI_VER_RES   480
+#endif
 #define UI_TOPBAR_H   46
 #define UI_CONTENT_Y  UI_TOPBAR_H
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
@@ -102,6 +110,9 @@ typedef enum {
 // ─── UI State and Variables ──────────────────────────────────────────────────
 static lv_obj_t *s_main_screen = NULL;
 static lv_obj_t *s_root_container = NULL;
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+static lv_obj_t *s_dj_container;
+#endif
 static lv_obj_t *s_header_container = NULL;
 static lv_obj_t *s_footer_container = NULL;
 static lv_obj_t *s_screens[UI_TAB_COUNT];
@@ -466,6 +477,18 @@ static void ui_switch_tab(int target_idx)
         }
     }
     s_active_tab = target_idx;
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_container) {
+        if (target_idx == UI_TAB_OVERVIEW) {
+            lv_obj_add_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
+            dj_ui_show_tab(DJ_TAB_OVERVIEW);
+        } else {
+            lv_obj_add_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+#endif
     ESP_LOGD(TAG, "Switched to tab %d (%s)", target_idx, s_tab_names[target_idx]);
 }
 
@@ -529,6 +552,81 @@ static void ui_overview_action_toggle_master_tempo(uint8_t deck)
 {
     deck_core_toggle_master_tempo(deck);
 }
+
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+/* Use exactly the controller event path. The simulator applies the same event
+ * synchronously instead of substituting a Deck-1-only button emulation. */
+static void ui_dj_button(uint8_t deck, uint8_t id, uint16_t value)
+{
+    ctrl_event_t event = {.type=CTRL_EV_BUTTON,.deck=deck,.id=id,.value=value};
+#ifdef WIN32
+    deck_core_test_apply_event(&event);
+#else
+    deck_core_queue_event(&event);
+#endif
+}
+static void ui_dj_tab(dj_tab_t tab) { ui_switch_tab((int)tab); }
+static void ui_dj_play(uint8_t deck)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY,
+                                          CTRL_ID_DECK2_PLAY), 1);
+}
+static void ui_dj_cue(uint8_t deck, bool pressed)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_CUE,
+                                          CTRL_ID_DECK2_CUE), pressed);
+}
+static void ui_dj_sync(uint8_t deck)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_SYNC,
+                                          CTRL_ID_DECK2_SYNC), 1);
+}
+static void ui_dj_hotcue(uint8_t deck, uint8_t pad, bool pressed)
+{
+    if (deck >= DJ_DECKS || pad >= DJ_HOTCUES) return;
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
+        CTRL_ID_DECK2_PAD_ACTION),
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, false, pressed));
+}
+static void ui_dj_seek(uint8_t deck, uint32_t position, dj_wave_t wave)
+{
+    (void)wave;
+#ifdef WIN32
+    /* The PC audio engine exposes the same per-deck seek entry point. */
+    audio_engine_deck_seek(deck, position);
+#else
+    ui_overview_action_seek(deck, position);
+#endif
+}
+static void ui_dj_wake(void) { (void)ui_activity_notice(); }
+static void ui_dj_fx_toggle(void) { ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_ON, 1); }
+static void ui_dj_fx_select(void) { ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_SELECT_NEXT, 1); }
+static void ui_dj_fx_channel(void)
+{
+    deck_core_beat_fx_state_t fx = deck_core_get_beat_fx_state();
+    ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_TARGET,
+                 ((uint8_t)fx.target + 1u) % 3u);
+}
+static void ui_dj_fx_beat(uint8_t index)
+{
+    if (index >= 4u) return;
+    int delta = (int)index - (int)deck_core_get_beat_fx_state().beat;
+    for (int i = 0; i < (delta < 0 ? -delta : delta); ++i)
+        ui_dj_button(CTRL_DECK_NONE, delta < 0 ? CTRL_ID_BEAT_FX_BEAT_DEC :
+                                             CTRL_ID_BEAT_FX_BEAT_INC, 1);
+}
+static void ui_dj_fx_level(uint8_t percent)
+{
+    if (percent > 100u) percent = 100u;
+    ctrl_event_t event = {.type=CTRL_EV_PITCH,.deck=CTRL_DECK_NONE,
+        .id=CTRL_ID_BEAT_FX_DEPTH,.value=(int16_t)((uint32_t)percent * 127u / 100u)};
+#ifdef WIN32
+    deck_core_test_apply_event(&event);
+#else
+    deck_core_queue_event(&event);
+#endif
+}
+#endif
 
 // ─── Component Initialization Helpers ────────────────────────────────────────
 
@@ -1004,6 +1102,33 @@ esp_err_t ui_init(void) {
     }
     s_active_tab = 0;
 
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_dj_container = lv_obj_create(s_main_screen);
+    lv_obj_remove_style_all(s_dj_container);
+    lv_obj_set_size(s_dj_container, UI_HOR_RES, UI_VER_RES);
+    const dj_ui_callbacks_t dj_callbacks = {
+        .on_tab=ui_dj_tab, .on_play=ui_dj_play, .on_cue=ui_dj_cue,
+        .on_master_tempo=ui_overview_action_toggle_master_tempo,
+        .on_sync=ui_dj_sync, .on_hotcue=ui_dj_hotcue,
+        .on_seek=ui_dj_seek, .on_target=ui_set_performance_deck,
+        .on_wake=ui_dj_wake,
+        .on_fx_toggle=ui_dj_fx_toggle, .on_fx_select=ui_dj_fx_select,
+        .on_fx_channel=ui_dj_fx_channel, .on_fx_beat=ui_dj_fx_beat,
+        .on_fx_level=ui_dj_fx_level,
+    };
+#ifdef WIN32
+    bool ethernet = UI_HOR_RES == 1024;
+#else
+    bool ethernet = board_capabilities_get()->ethernet;
+#endif
+    bool recorder = false;
+#if CONFIG_AUDIO_RECORDER_ENABLED
+    recorder = true;
+#endif
+    ui_dj_bridge_init(s_dj_container, &dj_callbacks, ethernet, recorder);
+    ui_switch_tab(UI_TAB_OVERVIEW);
+#endif
+
     ui_library_load_initial_track();
 
 #ifndef WIN32
@@ -1185,11 +1310,19 @@ static void ui_idle_service(const ui_frame_context_t *ctx)
 
     switch (ui_idle_tick(&s_idle, now, playing, recording)) {
     case UI_IDLE_ACTION_SHOW:
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        dj_ui_set_screensaver(true);
+#else
         splash_screen_screensaver_show();
+#endif
         s_idle_shown_pub = true;
         break;
     case UI_IDLE_ACTION_HIDE:
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        dj_ui_set_screensaver(false);
+#else
         splash_screen_screensaver_hide();
+#endif
         s_idle_shown_pub = false;
         /* LVGL repaints the restored tab, which erases the direct-PPA
          * waveforms exactly as a tab switch does. */
@@ -1260,7 +1393,12 @@ void ui_update(void) {
 #endif
 
     ui_status_update(&ctx);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (ctx.active_tab == UI_TAB_OVERVIEW) ui_dj_bridge_update(&ctx);
+    else ui_overview_update(&ctx);
+#else
     ui_overview_update(&ctx);
+#endif
     ui_settings_update(&ctx);
     ui_release_frame_context(&ctx);
 

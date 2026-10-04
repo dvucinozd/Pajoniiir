@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "width": 1024,
+  "height": 600,
+  "lvgl_commit": "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
+  "captures": {
+    "overview_deck1": "d8c0717844cf5348f1f4b830c10cc69f0ca745ab845408970c1f1452026fc657",
+    "overview_deck2": "70ad4a404f5a7f29603052e5a7fa576f215f501596ee743e1b460d09e4fe5e2f",
+    "library": "38bb0e72b55fe6cbbdfc9f498e9056e9a6b136b70d8fc891fd05198d0eb28a84",
+    "library_playlist_root": "2e51c95a57b8d67add3d7f6162a2335edaa57905913efed0e505715d2ce9cabe",
+    "library_playlist_folder": "0a39290763b3ab4bf2a5fd7e13a3951410a9e02cfb5c92bbc7b0ac69e8cfa5a0",
+    "library_playlist_tracks": "4c1de7576becd3e6dbdbfcfe07a8f0993c61ee0154b62723b4922362b81788c1",
+    "overview_color_pwv4": "1f222383fd5b3f18f568f126bf61e984a60fed493a0abf4b96f5c11f76fb55d5",
+    "hot_cues": "e08d09c308e42424557d5af7b9090751279b44cd944a15662830661c3ba6fd6a",
+    "settings": "60ac67eb0598b0865e6aaae747e42b19337f59dfa841bb2adf7b17f025a23a66",
+    "screensaver": "ebef1da480aca395f88c76ca69c51f63e64e793379c4ab001ba52b40e5fb51f8",
+    "settings_restored": "60ac67eb0598b0865e6aaae747e42b19337f59dfa841bb2adf7b17f025a23a66"
+  }
+}

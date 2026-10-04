@@ -1,0 +1,10 @@
+menu "Pajoniiir UI migration"
+config PAJONIIIR_DJ_OVERVIEW
+    bool "Use dj_ui Overview presentation (migration preview)"
+    default n
+    help
+        Incremental package H migration. Overview uses the common dj_ui
+        presentation and existing transport/library state. Other screens still
+        use the qualified legacy presentation until their parity gates pass.
+        This is a development preview, not hardware acceptance.
+endmenu

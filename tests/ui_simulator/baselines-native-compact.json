@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "width": 800,
+  "height": 480,
+  "lvgl_commit": "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
+  "captures": {
+    "dj_overview": "4d128af083950a7f4f4c76052ba33024008c150e53880778284946566bb90c27",
+    "dj_library": "b5c07512d846dce117f39f8da60af15708644340a60f3b9908380d06e2e9d230",
+    "dj_hotcues": "c1361614c6fc14ae0b976a3266a7502fcad4e71369c9cc35e0339e8fc7f5a6a0",
+    "dj_settings": "7a95289e4424ceebbe74522b1e40c414a5b13d866608f299a0b5402dae3be142",
+    "dj_screensaver": "2a2de83c2813613f1c41cb39194f1876245ed1368a88abe36f4c2584dbfaa375",
+    "dj_settings_restored": "7a95289e4424ceebbe74522b1e40c414a5b13d866608f299a0b5402dae3be142",
+    "dj_empty": "799363b35aba876ed2084a2d202cf36bc6653be8dc901a359043a488285fe1de",
+    "dj_error": "1f5f49d85e2f0556a3594dae276e886a46e0d03a33c693ff5ca0a81d5ad251c3",
+    "dj_loading": "79377729ecf8c7b0674bcdcaa2fdbed6d286536222d9d85499979fa5017f669b"
+  }
+}

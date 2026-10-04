@@ -37,6 +37,7 @@ add_executable(ui_simulator_e2e
     "${CMAKE_CURRENT_SOURCE_DIR}/simulator_artwork.c"
     "${UI_DIR}/ui_load_gate.c"
     "${UI_DIR}/ui_overview.c"
+    "${UI_DIR}/ui_color_preview.c"
     "${UI_DIR}/ui_active_deck_leds.c"
     "${UI_DIR}/ui_controls.c"
     "${UI_DIR}/ui_deck_anlz_store.c"
@@ -99,6 +100,50 @@ target_include_directories(ui_simulator_e2e PRIVATE
 )
 
 target_link_libraries(ui_simulator_e2e PRIVATE lvgl m)
+
+foreach(layout IN ITEMS compact wide)
+    add_executable(dj_ui_${layout}_e2e dj_ui_native_e2e.c "${UI_DIR}/dj_ui.c"
+        "${UI_DIR}/ui_artwork_thumb.c" "${UI_DIR}/ui_dj_bridge.c"
+        "${UI_DIR}/ui_color_preview.c"
+        "${UI_DIR}/ui_beat_fx_format.c"
+        "${UI_DIR}/ui_position_interpolator.c"
+        "${UI_DIR}/ui_overview_wave_cache.c" "${UI_DIR}/ui_overview_renderer.c"
+        "${UI_DIR}/ui_waveform_model.c" "${UI_DIR}/ui_overview_grid.c"
+        "${UI_DIR}/ui_overlay_map.c" "${UI_DIR}/ui_overview_window.c"
+        "${UI_DIR}/ui_beat_indicator.c" "${LIBRARY_DIR}/anlz_snapshot.c"
+        "${LIBRARY_DIR}/rekordbox_anlz.c" simulator_artwork.c
+        "${REPO_ROOT}/tests/deck_core_dual/hot_cue_store_stub.c"
+        "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/media_identity.c")
+    target_include_directories(dj_ui_${layout}_e2e PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}" "${UI_DIR}/include" "${LIBRARY_DIR}/include"
+        "${REPO_ROOT}/tests/support/stubs" "${REPO_ROOT}/tests/deck_core_dual/stubs"
+        "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/include"
+        "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/include"
+        "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/include"
+        "${REPO_ROOT}/firmware/main-deck-p4/components/audio_engine/include")
+    target_include_directories(dj_ui_${layout}_e2e PRIVATE
+        "${REPO_ROOT}/firmware/main-deck-p4/components/hot_cue_store/include")
+    target_compile_definitions(dj_ui_${layout}_e2e PRIVATE WIN32=1 REKORDBOX_PDB_STANDALONE_TEST=1)
+    if(layout STREQUAL "wide")
+        target_compile_definitions(dj_ui_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
+    endif()
+    target_link_libraries(dj_ui_${layout}_e2e PRIVATE lvgl m)
+endforeach()
+
+get_target_property(runtime_sources ui_simulator_e2e SOURCES)
+get_target_property(runtime_includes ui_simulator_e2e INCLUDE_DIRECTORIES)
+get_target_property(runtime_definitions ui_simulator_e2e COMPILE_DEFINITIONS)
+foreach(layout IN ITEMS compact wide)
+    add_executable(dj_ui_runtime_${layout}_e2e ${runtime_sources}
+        "${UI_DIR}/dj_ui.c" "${UI_DIR}/ui_dj_bridge.c")
+    target_include_directories(dj_ui_runtime_${layout}_e2e PRIVATE ${runtime_includes})
+    target_compile_definitions(dj_ui_runtime_${layout}_e2e PRIVATE
+        ${runtime_definitions} CONFIG_PAJONIIIR_DJ_OVERVIEW=1)
+    if(layout STREQUAL "wide")
+        target_compile_definitions(dj_ui_runtime_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
+    endif()
+    target_link_libraries(dj_ui_runtime_${layout}_e2e PRIVATE lvgl m)
+endforeach()
 
 if(MINGW)
     target_link_options(ui_simulator_e2e PRIVATE -static-libgcc -static-libstdc++)

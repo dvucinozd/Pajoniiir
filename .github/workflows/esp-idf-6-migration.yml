@@ -127,10 +127,15 @@ jobs:
       - name: Run UI simulator screenshot gate
         shell: pwsh
         run: |
-          & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
-          $ui = $LASTEXITCODE
+          foreach ($presentation in @('legacy','native-compact','native-wide','runtime-compact','runtime-wide')) {
+              & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 -Presentation $presentation *>> ui-simulator.log
+              if ($LASTEXITCODE -ne 0) {
+                  Get-Content ui-simulator.log | Select-Object -Last 100
+                  exit $LASTEXITCODE
+              }
+          }
           Get-Content ui-simulator.log | Select-Object -Last 100
-          exit $ui
+          exit 0
 
       - name: Upload host-test logs
         if: always()
@@ -146,7 +151,7 @@ jobs:
     name: ESP32-P4 firmware (${{ matrix.variant }})
     strategy:
       matrix:
-        variant: [regular, recorder]
+        variant: [regular, recorder, dj-ui]
     runs-on: ubuntu-latest
     steps:
       - name: Check out tested revision
@@ -174,9 +179,11 @@ jobs:
               rm -rf build sdkconfig sdkconfig.old managed_components
               flags=""
               if [ "${{ matrix.variant }}" = recorder ]; then flags="-D PAJONIIIR_STORAGE_EXPERIMENT=ON"; fi
+              if [ "${{ matrix.variant }}" = dj-ui ]; then flags="-D PAJONIIIR_DJ_UI_PREVIEW=ON"; fi
               idf.py $flags set-target esp32p4
               idf.py $flags reconfigure
               test -f build/config/sdkconfig.h
+              if [ "${{ matrix.variant }}" = dj-ui ]; then grep -q "^#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1$" build/config/sdkconfig.h; fi
               grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
               grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
               echo "Verified ESP32-P4 production silicon gate: pre-v3 selector enabled, minimum revision 1.0."
@@ -291,7 +298,7 @@ jobs:
     name: ESP32-P4 JC1060 firmware (${{ matrix.variant }})
     strategy:
       matrix:
-        variant: [regular, recorder, psram]
+        variant: [regular, recorder, psram, dj-ui]
     runs-on: ubuntu-latest
     steps:
       - name: Check out tested revision
@@ -318,11 +325,13 @@ jobs:
               idf.py --version
               rm -rf build sdkconfig sdkconfig.old managed_components
               flags=""
-              if [ "${{ matrix.variant }}" != regular ]; then flags="-D PAJONIIIR_STORAGE_EXPERIMENT=ON"; fi
+              if [ "${{ matrix.variant }}" = recorder ] || [ "${{ matrix.variant }}" = psram ]; then flags="-D PAJONIIIR_STORAGE_EXPERIMENT=ON"; fi
+              if [ "${{ matrix.variant }}" = dj-ui ]; then flags="-D PAJONIIIR_DJ_UI_PREVIEW=ON"; fi
               if [ "${{ matrix.variant }}" = psram ]; then flags="$flags -D PAJONIIIR_STORAGE_VARIANT=/project/firmware/main-deck-p4/sdkconfig.storage_psram"; fi
               idf.py $flags set-target esp32p4
               idf.py $flags reconfigure
               test -f build/config/sdkconfig.h
+              if [ "${{ matrix.variant }}" = dj-ui ]; then grep -q "^#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1$" build/config/sdkconfig.h; fi
               grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
               grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
               echo "Verified ESP32-P4 production silicon gate: pre-v3 selector enabled, minimum revision 1.0."
@@ -344,7 +353,7 @@ jobs:
           exit $code
 
       - name: Verify board isolation and embedded identity
-        run: python3 tools/check_board_build.py --build firmware/main-deck-jc1060/build --project main-deck-jc1060 ${{ matrix.variant != 'regular' && '--experimental-recorder' || '' }}
+        run: python3 tools/check_board_build.py --build firmware/main-deck-jc1060/build --project main-deck-jc1060 ${{ (matrix.variant == 'recorder' || matrix.variant == 'psram') && '--experimental-recorder' || '' }}
 
       - name: Verify committed dependency lock is unchanged
         run: |

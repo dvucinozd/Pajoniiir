@@ -17,8 +17,10 @@ extern uint32_t audio_engine_stub_duration_ms[2];
 extern uint32_t audio_engine_stub_session_generation[2];
 extern bool audio_engine_stub_deck_loaded[2];
 
+#ifndef DISPLAY_WIDTH
 #define DISPLAY_WIDTH 800
 #define DISPLAY_HEIGHT 480
+#endif
 #define TICK_STEP_MS 16u
 
 static uint32_t s_framebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
@@ -118,6 +120,11 @@ static bool click_label(const char *text)
     return true;
 }
 
+static bool click_deck(uint8_t deck)
+{
+    return click_label(deck ? "D2" : "D1");
+}
+
 static uint64_t framebuffer_hash(void)
 {
     uint64_t hash = UINT64_C(14695981039346656037);
@@ -195,7 +202,7 @@ int main(int argc, char **argv)
     save_ppm(argv[1], "overview_deck1");
     uint64_t deck1_hash = framebuffer_hash();
 
-    if (!click_label("D2")) {
+    if (!click_deck(CTRL_DECK_2)) {
         fail("could not select Deck 2");
     }
     pump(64);
@@ -203,6 +210,32 @@ int main(int argc, char **argv)
     if (framebuffer_hash() == deck1_hash) {
         fail("Deck 2 selection produced no visible change");
     }
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    /* Exercise actual shared callbacks against deck_core, not callback counters. */
+    lv_obj_t *badge_label = find_visible_label(lv_screen_active(), "D2");
+    lv_obj_t *footer = badge_label ? lv_obj_get_parent(lv_obj_get_parent(badge_label)) : NULL;
+    lv_obj_t *play = find_visible_label(footer, LV_SYMBOL_PLAY);
+    lv_obj_t *cue = find_visible_label(footer, "CUE");
+    if (!play || !cue) fail("Deck 2 transport controls unavailable");
+    else {
+        lv_obj_send_event(lv_obj_get_parent(play), LV_EVENT_CLICKED, NULL);
+        pump(64);
+        if (!deck_core_get_deck_state(CTRL_DECK_2).playing ||
+            deck_core_get_deck_state(CTRL_DECK_1).playing)
+            fail("touch PLAY changed wrong deck");
+        lv_obj_send_event(lv_obj_get_parent(play), LV_EVENT_CLICKED, NULL);
+        pump(64);
+        lv_obj_send_event(lv_obj_get_parent(cue), LV_EVENT_PRESSED, NULL);
+        if (!deck_core_get_deck_state(CTRL_DECK_2).cue_held ||
+            deck_core_get_deck_state(CTRL_DECK_1).cue_held)
+            fail("touch CUE press changed wrong deck");
+        lv_obj_send_event(lv_obj_get_parent(cue), LV_EVENT_RELEASED, NULL);
+        pump(64);
+        if (deck_core_get_deck_state(CTRL_DECK_2).cue_held ||
+            deck_core_get_deck_state(CTRL_DECK_2).playing)
+            fail("touch CUE release retained paused preview");
+    }
+#endif
 
     if (!click_label("LIBRARY") || !ui_is_library_active()) {
         fail("library navigation failed");
@@ -241,10 +274,10 @@ int main(int argc, char **argv)
     if (!deck_core_get_deck_state(CTRL_DECK_2).jog_cdj_mode ||
         deck_core_get_deck_state(CTRL_DECK_1).jog_cdj_mode)
         fail("touch jog selector changed the wrong deck");
-    if (!click_label("D1")) fail("could not inspect Deck 1 jog mode");
+    if (!click_deck(CTRL_DECK_1)) fail("could not inspect Deck 1 jog mode");
     if (!find_visible_label(lv_screen_active(), "D1 JOG: VINYL"))
         fail("Deck 1 inherited Deck 2 jog mode label");
-    if (!click_label("D2")) fail("could not return to Deck 2 jog mode");
+    if (!click_deck(CTRL_DECK_2)) fail("could not return to Deck 2 jog mode");
     if (!find_visible_label(lv_screen_active(), "D2 JOG: CDJ"))
         fail("Deck 2 mode did not survive navigation");
     ctrl_event_t vinyl = {
@@ -294,7 +327,7 @@ int main(int argc, char **argv)
     }
     ui_simulator_deck_set_playing(false);
 
-    if (!click_label("OVERVIEW") || !click_label("D1"))
+    if (!click_label("OVERVIEW") || !click_deck(CTRL_DECK_1))
         fail("could not inspect live duration");
     uint32_t analysis_ms = ui_library_deck_analysis_span_ms(CTRL_DECK_1, 0);
     uint64_t metadata_hash = framebuffer_hash();
