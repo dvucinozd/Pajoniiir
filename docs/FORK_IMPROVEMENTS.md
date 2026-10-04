@@ -17,7 +17,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
-| C | Hierarchical playlists, bounded artwork, PWV4 | C1 PWV4 parser software verified; playlists, artwork and UI rendering pending |
+| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C2 parser work software verified; catalog/UI/workers pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
@@ -280,7 +280,26 @@ Verification on 2026-10-04:
 - ESP-IDF 6.0.2 P4 build: PASS; application 2,511,616 bytes, 1,158,400 below
   the `0x380000` budget; dependency lock unchanged.
 
+## C2: PDB playlist and artwork table parsing
+
+The bounded, page-at-a-time PDB parser now recognizes PlaylistTree (0x07),
+PlaylistEntries (0x08) and Artwork (0x0D), as well as each track's artwork ID.
+It retains up to 256 nodes, 8,192 entries and 1,024 artwork paths. The parser
+keeps export entry order, validates playlist parents and rejects cycles,
+duplicates, folder-as-playlist entries and missing track references. Artwork
+paths must be absolute, fit the bounded buffer and avoid parent traversal.
+Missing tables and rejected optional rows do not prevent track import;
+truncation and invalid-row counts are reported in import stats. Media reads
+remain in the existing 8 KiB-gated P4 path. The table layout is based on donor
+`428b97dd` and adapted to the current parser.
+
+These records are exposed through the PDB handle but are not yet published in
+the live media catalog or displayed in Library. That integration is the next
+part of package C. No real Rekordbox export or hardware was available for this
+step: physical verification is **NOT RUN**.
+
 ## Provenance and rollback
+
 
 
 Package A reimplements the donor's title/downbeat correction in the current

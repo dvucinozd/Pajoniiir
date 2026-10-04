@@ -228,6 +228,138 @@ static void test_paged_track_import_reports_truncation(void)
     CHECK(valid, "count, ordering or truncation metadata");
 }
 
+static void fixture_one_row_page(uint8_t page[512])
+{
+    memset(page, 0, 512u);
+    put_le32(page + 12, UINT32_MAX);
+    put_le32(page + 24, 1u);
+    page[508] = 1u;
+}
+
+static void test_optional_browse_tables(void)
+{
+    const char *path = "test_browse_tables.pdb";
+    uint8_t data[5u * 512u] = {0};
+    put_le32(data + 4, 512u);
+    put_le32(data + 8, 4u);
+    const uint32_t types[] = {0u, 7u, 8u, 13u};
+    for (unsigned i = 0; i < 4; ++i) {
+        put_le32(data + 28u + i * 16u, types[i]);
+        put_le32(data + 36u + i * 16u, i + 1u);
+    }
+    uint8_t *track = data + 512u;
+    fixture_one_row_page(track);
+    put_le16(track + 40u, 0x24u);
+    put_le32(track + 40u + 0x48u, 123u);
+    put_le32(track + 40u + 0x1cu, 77u);
+
+    uint8_t *tree = data + 1024u;
+    fixture_one_row_page(tree);
+    put_le32(tree + 40u + 12u, 10u);
+    put_le32(tree + 40u + 16u, 0u);
+    tree[40u + 20u] = 11u; /* short DeviceSQL string: four chars */
+    memcpy(tree + 40u + 21u, "List", 4u);
+
+    uint8_t *entries = data + 1536u;
+    fixture_one_row_page(entries);
+    put_le32(entries + 40u, 2u);
+    put_le32(entries + 44u, 123u);
+    put_le32(entries + 48u, 10u);
+
+    uint8_t *art = data + 2048u;
+    fixture_one_row_page(art);
+    put_le32(art + 40u, 77u);
+    const char *art_path = "/PIONEER/Artwork/77.jpg";
+    art[44u] = (uint8_t)(((strlen(art_path) + 1u) << 1u) | 1u);
+    memcpy(art + 45u, art_path, strlen(art_path));
+
+    FILE *fp = fopen(path, "wb");
+    TEST("playlist, entry and artwork rows parse from bounded PDB pages");
+    if (!fp) { FAIL("fixture open"); return; }
+    bool written = fwrite(data, 1u, sizeof(data), fp) == sizeof(data);
+    written = fclose(fp) == 0 && written;
+    pdb_t *pdb = NULL;
+    pdb_track_t t = {0};
+    pdb_playlist_t pl = {0};
+    pdb_playlist_entry_t e = {0};
+    pdb_artwork_t a = {0};
+    bool valid = written && pdb_open(path, &pdb) == ESP_OK &&
+        pdb_track_count(pdb) == 1 && pdb_get_track(pdb, 0, &t) == ESP_OK &&
+        t.artwork_id == 77u &&
+        pdb_playlist_count(pdb) == 1 &&
+        pdb_get_playlist(pdb, 0, &pl) == ESP_OK &&
+        pl.id == 10u && strcmp(pl.name, "List") == 0 &&
+        pdb_playlist_entry_count(pdb) == 1 &&
+        pdb_get_playlist_entry(pdb, 0, &e) == ESP_OK &&
+        e.playlist_id == 10u && e.track_id == 123u && e.entry_index == 2u &&
+        pdb_artwork_count(pdb) == 1 &&
+        pdb_get_artwork(pdb, 0, &a) == ESP_OK && a.id == 77u &&
+        strcmp(a.path, art_path) == 0 &&
+        strcmp(pdb_artwork_path(pdb, 77u), art_path) == 0;
+    if (!valid) printf("\n  browse fixture: track_art=%u pl=%d pl_id=%u name=%s entries=%d entry=%u/%u/%u arts=%d art_id=%u path=%s\n",
+                       t.artwork_id, pdb_playlist_count(pdb), pl.id, pl.name,
+                       pdb_playlist_entry_count(pdb), e.playlist_id, e.track_id,
+                       e.entry_index, pdb_artwork_count(pdb), a.id, a.path);
+    pdb_close(pdb);
+    remove(path);
+    CHECK(valid, "optional table parse or lookup");
+}
+
+static void test_playlist_hierarchy_and_missing_references(void)
+{
+    const char *path = "test_playlist_refs.pdb";
+    uint8_t data[8u * 512u] = {0};
+    put_le32(data + 4u, 512u);
+    put_le32(data + 8u, 3u);
+    const uint32_t types[] = {0u, 7u, 8u};
+    const uint32_t starts[] = {1u, 2u, 5u};
+    for (unsigned i = 0; i < 3u; ++i) {
+        put_le32(data + 28u + i * 16u, types[i]);
+        put_le32(data + 36u + i * 16u, starts[i]);
+    }
+    for (unsigned i = 1; i < 8u; ++i) fixture_one_row_page(data + i * 512u);
+    uint8_t *track = data + 512u;
+    put_le16(track + 40u, 0x24u);
+    put_le32(track + 40u + 0x48u, 123u);
+    for (unsigned i = 2; i <= 4; ++i) {
+        uint8_t *page = data + i * 512u;
+        put_le32(page + 12u, i == 4u ? UINT32_MAX : i + 1u);
+        put_le32(page + 40u + 12u, (i - 1u) * 10u);
+        put_le32(page + 40u, i == 2u ? 0u : i == 3u ? 10u : 999u);
+        put_le32(page + 40u + 16u, i == 2u ? 1u : 0u);
+        page[60u] = 11u;
+        memcpy(page + 61u, "Node", 4u);
+    }
+    for (unsigned i = 5; i <= 7; ++i) {
+        uint8_t *page = data + i * 512u;
+        put_le32(page + 12u, i == 7u ? UINT32_MAX : i + 1u);
+        put_le32(page + 40u, i - 5u);
+        put_le32(page + 44u, i == 6u ? 555u : 123u);
+        put_le32(page + 48u, i == 7u ? 10u : 20u);
+    }
+    FILE *fp = fopen(path, "wb");
+    TEST("playlist hierarchy rejects missing parents, tracks and folder entries");
+    if (!fp) { FAIL("fixture open"); return; }
+    bool written = fwrite(data, 1u, sizeof(data), fp) == sizeof(data);
+    written = fclose(fp) == 0 && written;
+    pdb_t *pdb = NULL;
+    pdb_import_stats_t stats = {0};
+    pdb_playlist_t folder = {0}, list = {0};
+    pdb_playlist_entry_t entry = {0};
+    bool opened = written && pdb_open(path, &pdb) == ESP_OK;
+    pdb_get_import_stats(pdb, &stats);
+    bool valid = opened && pdb_playlist_count(pdb) == 2 &&
+        pdb_get_playlist(pdb, 0, &folder) == ESP_OK && folder.id == 10u &&
+        folder.is_folder && pdb_get_playlist(pdb, 1, &list) == ESP_OK &&
+        list.parent_id == 10u && pdb_playlist_entry_count(pdb) == 1 &&
+        pdb_get_playlist_entry(pdb, 0, &entry) == ESP_OK &&
+        entry.playlist_id == 20u && entry.track_id == 123u &&
+        stats.playlist_invalid_rows == 3u;
+    pdb_close(pdb);
+    remove(path);
+    CHECK(valid, "hierarchy/reference filtering");
+}
+
 /* ── Real-file integration test ──────────────────────────────────────────── */
 
 static void test_real_file(const char *pdb_path, int limit)
@@ -319,6 +451,8 @@ int main(int argc, char *argv[])
     test_track_title_fields();
     test_malformed_page_zero_row_groups();
     test_paged_track_import_reports_truncation();
+    test_optional_browse_tables();
+    test_playlist_hierarchy_and_missing_references();
 
     /* Real-file test if a path is provided */
     if (argc >= 2) {

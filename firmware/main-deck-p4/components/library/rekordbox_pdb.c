@@ -86,6 +86,9 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 #define TABLE_TYPE_ARTISTS  0x02u
 #define TABLE_TYPE_ALBUMS   0x03u
 #define TABLE_TYPE_KEYS     0x05u
+#define TABLE_TYPE_PLAYLIST_TREE    0x07u
+#define TABLE_TYPE_PLAYLIST_ENTRIES 0x08u
+#define TABLE_TYPE_ARTWORK          0x0Du
 
 /* Page layout */
 #define PAGE_HEAP_OFFSET    0x28u   /* heap start relative to page base       */
@@ -94,6 +97,7 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 
 /* Track row field offsets (relative to row start) */
 #define TRACK_OFF_KEY_ID    0x20u   /* uint32: id in the Keys table           */
+#define TRACK_OFF_ARTWORK_ID 0x1Cu
 #define TRACK_OFF_TEMPO     0x38u   /* uint32: BPM × 100                      */
 #define TRACK_OFF_ALBUM_ID  0x40u   /* uint32                                 */
 #define TRACK_OFF_ARTIST_ID 0x44u   /* uint32                                 */
@@ -126,6 +130,9 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 /* Limits — embedded memory budget */
 #define PDB_MAX_TRACKS      1024u
 #define PDB_MAX_NAMES        512u
+#define PDB_MAX_PLAYLISTS          256u
+#define PDB_MAX_PLAYLIST_ENTRIES  8192u
+#define PDB_MAX_ARTWORKS          1024u
 
 /* ── Little-endian read helpers ─────────────────────────────────────────── */
 
@@ -304,6 +311,13 @@ struct pdb_s {
     /* Parsed tracks */
     pdb_track_t *tracks;
     int          track_count;
+
+    pdb_playlist_t *playlists;
+    int playlist_count;
+    pdb_playlist_entry_t *entries;
+    int entry_count;
+    pdb_artwork_t *artworks;
+    int artwork_count;
 
     /* Name lookup tables (used only during build_index, freed afterwards) */
     name_entry_t *artists;
@@ -519,6 +533,7 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
     memset(t, 0, sizeof(*t));
 
     t->track_id  = rd_le32(p->data + row + TRACK_OFF_TRACK_ID);
+    t->artwork_id = rd_le32(p->data + row + TRACK_OFF_ARTWORK_ID);
     uint32_t bpm100 = rd_le32(p->data + row + TRACK_OFF_TEMPO);
     /* Round to nearest, matching the ANLZ beat-grid path (rekordbox_anlz.c),
      * so a track's coarse (PDB) and precise (ANLZ) BPM agree on the integer. */
@@ -569,6 +584,222 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
 
     ctx->count++;
     return true;
+}
+
+/* Optional Rekordbox browse tables. Their bounded arrays live in PSRAM when
+ * available, and are retained only in the parsed PDB handle. */
+static void *pdb_alloc_optional(size_t count, size_t item_size)
+{
+#ifndef REKORDBOX_PDB_STANDALONE_TEST
+    void *ptr = heap_caps_calloc(count, item_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return ptr ? ptr : calloc(count, item_size);
+#else
+    return calloc(count, item_size);
+#endif
+}
+
+static bool pdb_has_table(const pdb_t *p, uint32_t type)
+{
+    for (uint32_t i = 0u; i < p->num_tables; ++i) {
+        if (p->tables[i].type == type) return true;
+    }
+    return false;
+}
+
+static bool playlist_tree_cb(const pdb_t *p, uint32_t page, uint32_t heap_off,
+                             void *user)
+{
+    pdb_t *owner = (pdb_t *)user;
+    size_t row = page_base_off(p, page) + PAGE_HEAP_OFFSET + (size_t)heap_off;
+    if (row + 21u > p->data_len) { owner->stats.playlist_invalid_rows++; return true; }
+    uint32_t id = rd_le32(p->data + row + 12u);
+    if (!id) { owner->stats.playlist_invalid_rows++; return true; }
+    if (owner->playlist_count >= (int)PDB_MAX_PLAYLISTS) {
+        owner->stats.playlists_truncated = true;
+        return false;
+    }
+    pdb_playlist_t *node = &owner->playlists[owner->playlist_count];
+    node->id = id;
+    node->parent_id = rd_le32(p->data + row);
+    node->sort_order = rd_le32(p->data + row + 8u);
+    node->is_folder = rd_le32(p->data + row + 16u) != 0u;
+    decode_devicesql(p->data, p->data_len, row + 20u,
+                     node->name, sizeof(node->name));
+    if (!node->name[0]) { owner->stats.playlist_invalid_rows++; return true; }
+    owner->playlist_count++;
+    return true;
+}
+
+static bool playlist_entry_cb(const pdb_t *p, uint32_t page, uint32_t heap_off,
+                              void *user)
+{
+    pdb_t *owner = (pdb_t *)user;
+    size_t row = page_base_off(p, page) + PAGE_HEAP_OFFSET + (size_t)heap_off;
+    if (row + 12u > p->data_len) { owner->stats.playlist_invalid_rows++; return true; }
+    uint32_t track = rd_le32(p->data + row + 4u);
+    uint32_t list = rd_le32(p->data + row + 8u);
+    if (!track || !list) { owner->stats.playlist_invalid_rows++; return true; }
+    if (owner->entry_count >= (int)PDB_MAX_PLAYLIST_ENTRIES) {
+        owner->stats.playlists_truncated = true;
+        return false;
+    }
+    pdb_playlist_entry_t *entry = &owner->entries[owner->entry_count++];
+    entry->playlist_id = list;
+    entry->track_id = track;
+    entry->entry_index = rd_le32(p->data + row);
+    return true;
+}
+
+static int playlist_entry_cmp(const void *a, const void *b)
+{
+    const pdb_playlist_entry_t *x = (const pdb_playlist_entry_t *)a;
+    const pdb_playlist_entry_t *y = (const pdb_playlist_entry_t *)b;
+    if (x->playlist_id != y->playlist_id) return x->playlist_id < y->playlist_id ? -1 : 1;
+    if (x->entry_index != y->entry_index) return x->entry_index < y->entry_index ? -1 : 1;
+    return 0;
+}
+
+static int playlist_raw_index(const pdb_t *p, uint32_t id)
+{
+    for (int i = 0; i < p->playlist_count; ++i) {
+        if (p->playlists[i].id == id) return i;
+    }
+    return -1;
+}
+
+static bool playlist_chain_valid(const pdb_t *p, int index)
+{
+    const pdb_playlist_t *node = &p->playlists[index];
+    if (!node->id || !node->name[0]) return false;
+    for (int i = 0; i < index; ++i) {
+        if (p->playlists[i].id == node->id) return false;
+    }
+    uint32_t parent = node->parent_id;
+    for (int depth = 0; parent != 0u && depth <= p->playlist_count; ++depth) {
+        int idx = playlist_raw_index(p, parent);
+        if (idx < 0 || !p->playlists[idx].is_folder ||
+            p->playlists[idx].id == node->id) return false;
+        /* A duplicate ancestor is never a valid destination. */
+        for (int prev = 0; prev < idx; ++prev) {
+            if (p->playlists[prev].id == parent) return false;
+        }
+        parent = p->playlists[idx].parent_id;
+    }
+    return parent == 0u;
+}
+
+static bool playlist_contains_track(const pdb_t *p, uint32_t track_id)
+{
+    for (int i = 0; i < p->track_count; ++i) {
+        if (p->tracks[i].track_id == track_id) return true;
+    }
+    return false;
+}
+
+static void filter_playlist_rows(pdb_t *p)
+{
+    bool valid[PDB_MAX_PLAYLISTS] = {0};
+    for (int i = 0; i < p->playlist_count; ++i)
+        valid[i] = playlist_chain_valid(p, i);
+    int keep = 0;
+    for (int i = 0; i < p->playlist_count; ++i) {
+        if (!valid[i]) {
+            p->stats.playlist_invalid_rows++;
+            continue;
+        }
+        p->playlists[keep++] = p->playlists[i];
+    }
+    p->playlist_count = keep;
+    keep = 0;
+    for (int i = 0; i < p->entry_count; ++i) {
+        const pdb_playlist_entry_t *e = &p->entries[i];
+        int idx = playlist_raw_index(p, e->playlist_id);
+        if (idx < 0 || p->playlists[idx].is_folder ||
+            !playlist_contains_track(p, e->track_id)) {
+            p->stats.playlist_invalid_rows++;
+            continue;
+        }
+        p->entries[keep++] = *e;
+    }
+    p->entry_count = keep;
+}
+
+static void parse_playlists(pdb_t *p)
+{
+    if (!pdb_has_table(p, TABLE_TYPE_PLAYLIST_TREE)) return;
+    p->playlists = (pdb_playlist_t *)pdb_alloc_optional(PDB_MAX_PLAYLISTS,
+                                                        sizeof(pdb_playlist_t));
+    if (!p->playlists) { p->stats.playlists_truncated = true; return; }
+    walk_table(p, TABLE_TYPE_PLAYLIST_TREE, playlist_tree_cb, p);
+    if (!p->playlist_count) return;
+    if (!pdb_has_table(p, TABLE_TYPE_PLAYLIST_ENTRIES)) {
+        filter_playlist_rows(p);
+        return;
+    }
+    p->entries = (pdb_playlist_entry_t *)pdb_alloc_optional(PDB_MAX_PLAYLIST_ENTRIES,
+                                                             sizeof(pdb_playlist_entry_t));
+    if (!p->entries) {
+        p->stats.playlists_truncated = true;
+        filter_playlist_rows(p);
+        return;
+    }
+    walk_table(p, TABLE_TYPE_PLAYLIST_ENTRIES, playlist_entry_cb, p);
+    qsort(p->entries, (size_t)p->entry_count, sizeof(pdb_playlist_entry_t),
+          playlist_entry_cmp);
+    filter_playlist_rows(p);
+}
+
+static bool artwork_cb(const pdb_t *p, uint32_t page, uint32_t heap_off,
+                       void *user)
+{
+    pdb_t *owner = (pdb_t *)user;
+    size_t row = page_base_off(p, page) + PAGE_HEAP_OFFSET + (size_t)heap_off;
+    if (row + 5u > p->data_len) { owner->stats.artwork_invalid_rows++; return true; }
+    uint32_t id = rd_le32(p->data + row);
+    if (!id) { owner->stats.artwork_invalid_rows++; return true; }
+    if (owner->artwork_count >= (int)PDB_MAX_ARTWORKS) {
+        owner->stats.artwork_truncated = true;
+        return false;
+    }
+    char path[PDB_PATH_MAX] = {0};
+    decode_devicesql(p->data, p->data_len, row + 4u, path, sizeof(path));
+    size_t len = strlen(path);
+    if (path[0] != '/' || strstr(path, "/../") || len == 0u ||
+        len >= PDB_ARTWORK_PATH_MAX ||
+        len + 1u >= sizeof(path)) {
+        owner->stats.artwork_invalid_rows++;
+        return true;
+    }
+    pdb_artwork_t *art = &owner->artworks[owner->artwork_count++];
+    art->id = id;
+    pdb_copy_str(art->path, sizeof(art->path), path);
+    return true;
+}
+
+static int artwork_cmp(const void *a, const void *b)
+{
+    uint32_t x = ((const pdb_artwork_t *)a)->id;
+    uint32_t y = ((const pdb_artwork_t *)b)->id;
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static void parse_artworks(pdb_t *p)
+{
+    if (!pdb_has_table(p, TABLE_TYPE_ARTWORK)) return;
+    p->artworks = (pdb_artwork_t *)pdb_alloc_optional(PDB_MAX_ARTWORKS,
+                                                      sizeof(pdb_artwork_t));
+    if (!p->artworks) { p->stats.artwork_truncated = true; return; }
+    walk_table(p, TABLE_TYPE_ARTWORK, artwork_cb, p);
+    qsort(p->artworks, (size_t)p->artwork_count, sizeof(pdb_artwork_t), artwork_cmp);
+    int keep = 0;
+    for (int i = 0; i < p->artwork_count; ++i) {
+        if (keep && p->artworks[i].id == p->artworks[keep - 1].id) {
+            p->stats.artwork_invalid_rows++;
+            continue;
+        }
+        p->artworks[keep++] = p->artworks[i];
+    }
+    p->artwork_count = keep;
 }
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
@@ -685,6 +916,13 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
         PDB_LOGW(TAG, "Track index truncated at %u entries", PDB_MAX_TRACKS);
     }
 
+    parse_playlists(p);
+    parse_artworks(p);
+    if (p->read_failed) {
+        pdb_close(p);
+        return ESP_FAIL;
+    }
+
     PDB_LOGI(TAG, "Loaded: %d tracks, %d artists, %d albums, %d keys",
              p->track_count, p->artist_count, p->album_count, p->key_count);
 
@@ -708,6 +946,9 @@ void pdb_close(pdb_t *pdb)
     free(pdb->artists);
     free(pdb->albums);
     free(pdb->keys);
+    free(pdb->playlists);
+    free(pdb->entries);
+    free(pdb->artworks);
     free(pdb);
 }
 
@@ -727,4 +968,57 @@ esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)
         return ESP_ERR_INVALID_ARG;
     *out = pdb->tracks[index];
     return ESP_OK;
+}
+
+int pdb_playlist_count(const pdb_t *pdb)
+{
+    return pdb ? pdb->playlist_count : 0;
+}
+
+esp_err_t pdb_get_playlist(const pdb_t *pdb, int index, pdb_playlist_t *out)
+{
+    if (!pdb || !out || index < 0 || index >= pdb->playlist_count)
+        return ESP_ERR_INVALID_ARG;
+    *out = pdb->playlists[index];
+    return ESP_OK;
+}
+
+int pdb_playlist_entry_count(const pdb_t *pdb)
+{
+    return pdb ? pdb->entry_count : 0;
+}
+
+esp_err_t pdb_get_playlist_entry(const pdb_t *pdb, int index,
+                                 pdb_playlist_entry_t *out)
+{
+    if (!pdb || !out || index < 0 || index >= pdb->entry_count)
+        return ESP_ERR_INVALID_ARG;
+    *out = pdb->entries[index];
+    return ESP_OK;
+}
+
+int pdb_artwork_count(const pdb_t *pdb)
+{
+    return pdb ? pdb->artwork_count : 0;
+}
+
+esp_err_t pdb_get_artwork(const pdb_t *pdb, int index, pdb_artwork_t *out)
+{
+    if (!pdb || !out || index < 0 || index >= pdb->artwork_count)
+        return ESP_ERR_INVALID_ARG;
+    *out = pdb->artworks[index];
+    return ESP_OK;
+}
+
+const char *pdb_artwork_path(const pdb_t *pdb, uint32_t artwork_id)
+{
+    if (!pdb || !artwork_id || !pdb->artworks) return NULL;
+    int lo = 0, hi = pdb->artwork_count;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (pdb->artworks[mid].id < artwork_id) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < pdb->artwork_count && pdb->artworks[lo].id == artwork_id
+        ? pdb->artworks[lo].path : NULL;
 }

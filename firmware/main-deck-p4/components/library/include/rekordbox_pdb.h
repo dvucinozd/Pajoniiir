@@ -60,10 +60,13 @@ extern "C" {
 #define PDB_STR_MAX       128u   /* title, artist, album                      */
 #define PDB_PATH_MAX      256u   /* file_path, anlz_path                      */
 #define PDB_STR_NAME_MAX   96u   /* internal: name-table entry buffer         */
+#define PDB_PLAYLIST_NAME_MAX 64u
+#define PDB_ARTWORK_PATH_MAX  96u
 
 /* ── Parsed track descriptor ─────────────────────────────────────────────── */
 typedef struct {
     uint32_t track_id;                  /* Rekordbox internal track ID            */
+    uint32_t artwork_id;                /* Artwork table ID, zero if absent       */
     uint16_t bpm;                       /* BPM, rounded (bpm_x100 / 100)         */
     uint16_t duration_s;                /* Duration in seconds                    */
     char     key[8];                    /* Musical key name from the Keys table   */
@@ -82,6 +85,10 @@ typedef struct {
     uint32_t total_tracks;
     bool tracks_truncated;
     bool names_truncated;
+    bool playlists_truncated;
+    bool artwork_truncated;
+    uint32_t playlist_invalid_rows;
+    uint32_t artwork_invalid_rows;
 } pdb_import_stats_t;
 void pdb_get_import_stats(const pdb_t *pdb, pdb_import_stats_t *stats);
 
@@ -119,6 +126,34 @@ int pdb_track_count(const pdb_t *pdb);
  * @return ESP_OK, or ESP_ERR_INVALID_ARG if index out of range.
  */
 esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out);
+
+typedef struct {
+    uint32_t id;
+    uint32_t parent_id;
+    uint32_t sort_order;
+    bool is_folder;
+    char name[PDB_PLAYLIST_NAME_MAX];
+} pdb_playlist_t;
+
+typedef struct {
+    uint32_t playlist_id;
+    uint32_t entry_index;
+    uint32_t track_id;
+} pdb_playlist_entry_t;
+
+typedef struct {
+    uint32_t id;
+    char path[PDB_ARTWORK_PATH_MAX];
+} pdb_artwork_t;
+
+int pdb_playlist_count(const pdb_t *pdb);
+esp_err_t pdb_get_playlist(const pdb_t *pdb, int index, pdb_playlist_t *out);
+int pdb_playlist_entry_count(const pdb_t *pdb);
+esp_err_t pdb_get_playlist_entry(const pdb_t *pdb, int index,
+                                 pdb_playlist_entry_t *out);
+int pdb_artwork_count(const pdb_t *pdb);
+esp_err_t pdb_get_artwork(const pdb_t *pdb, int index, pdb_artwork_t *out);
+const char *pdb_artwork_path(const pdb_t *pdb, uint32_t artwork_id);
 
 #ifdef REKORDBOX_PDB_STANDALONE_TEST
 esp_err_t pdb_test_decode_devicesql_string(const uint8_t *data, size_t data_len,
