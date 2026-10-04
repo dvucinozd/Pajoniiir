@@ -30,6 +30,7 @@ void ui_simulator_deck_set_position(uint32_t position_ms);
 void ui_simulator_deck_set_playing(bool playing);
 void ui_simulator_deck_toggle_master_tempo(void);
 void ui_simulator_deck_toggle_play(void);
+void deck_core_test_apply_event(const ctrl_event_t *event);
 #endif
 
 #ifndef WIN32
@@ -338,6 +339,27 @@ static void ui_performance_clear_loop(uint8_t deck)
     audio_engine_deck_clear_loop(deck);
 #else
     (void)deck;
+#endif
+}
+
+static void ui_performance_set_jog_mode(uint8_t deck, bool cdj)
+{
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION,
+                                  CTRL_ID_DECK2_EXT_ACTION),
+        .deck = deck,
+        .value = CTRL_DECK_EXT_VALUE(cdj ? CTRL_DECK_EXT_ACTION_JOG_CDJ :
+                                    CTRL_DECK_EXT_ACTION_JOG_VINYL, true),
+    };
+#ifdef WIN32
+    deck_core_test_apply_event(&ev);
+#else
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u jog mode queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
 #endif
 }
 
@@ -895,6 +917,7 @@ esp_err_t ui_init(void) {
             .set_loop = ui_performance_set_loop,
             .clear_loop = ui_performance_clear_loop,
             .restore_source_cues = ui_performance_restore_source_cues,
+            .set_jog_mode = ui_performance_set_jog_mode,
 #ifndef WIN32
             .hot_cue_pad = ui_performance_hot_cue_pad,
 #endif
@@ -1204,6 +1227,7 @@ void ui_update(void) {
     ui_idle_service(&ctx);
 #endif
     ui_library_update(&ctx);
+    ui_performance_tabs_update_jog_mode();
 #ifndef WIN32
     static uint32_t last_hot_cue_revision;
     uint32_t hot_cue_revision = deck_core_hot_cue_revision();

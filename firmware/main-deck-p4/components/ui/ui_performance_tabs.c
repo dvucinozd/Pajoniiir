@@ -49,6 +49,9 @@ uint32_t ui_performance_tabs_calculate_jump_target(uint32_t position_ms,
 static const char *TAG = "ui_performance_tabs";
 static ui_performance_tabs_config_t s_config;
 static lv_obj_t *s_hot_cue_buttons[UI_PERFORMANCE_TAB_COUNT_HOT_CUES];
+static lv_obj_t *s_jog_mode_label;
+static uint8_t s_jog_mode_deck = CTRL_DECK_NONE;
+static bool s_jog_mode_cdj;
 
 static ui_controls_state_t *ui_performance_tabs_controls(void)
 {
@@ -161,6 +164,8 @@ static void ui_performance_tabs_style_hot_cue_pad(int index, bool is_loop, bool 
 void ui_performance_tabs_init(const ui_performance_tabs_config_t *config)
 {
     s_config = (ui_performance_tabs_config_t){0};
+    s_jog_mode_label = NULL;
+    s_jog_mode_deck = CTRL_DECK_NONE;
     if (config) {
         s_config = *config;
     }
@@ -227,6 +232,29 @@ static void hot_cue_event_cb(lv_event_t *event)
         ESP_LOGI(TAG, "D%u Hot Cue %c triggered at %lu ms",
                  (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos);
     }
+}
+
+static void jog_mode_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_config.actions.set_jog_mode && s_config.actions.active_state) {
+        deck_state_t state = s_config.actions.active_state();
+        s_config.actions.set_jog_mode(ui_performance_tabs_active_deck(),
+                                     !state.jog_cdj_mode);
+    }
+}
+
+void ui_performance_tabs_update_jog_mode(void)
+{
+    if (!s_jog_mode_label || !s_config.actions.active_state) return;
+    uint8_t deck = ui_performance_tabs_active_deck();
+    bool cdj = s_config.actions.active_state().jog_cdj_mode;
+    if (deck == s_jog_mode_deck && cdj == s_jog_mode_cdj) return;
+    s_jog_mode_deck = deck;
+    s_jog_mode_cdj = cdj;
+    lv_label_set_text_fmt(s_jog_mode_label, "D%u JOG: %s",
+                         (unsigned)deck + 1u, cdj ? "CDJ" : "VINYL");
+    lv_obj_center(s_jog_mode_label);
 }
 
 static void restore_source_cues_event_cb(lv_event_t *event)
@@ -324,8 +352,20 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
     lv_obj_set_style_text_font(restore_label, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(restore_label, COL_ACCENT, LV_PART_MAIN);
     lv_obj_center(restore_label);
-    ui_performance_tabs_static_tile(status_strip, 518, 12, 142, 36, "D1/D2 TARGET",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
+    lv_obj_t *jog_mode = lv_button_create(status_strip);
+    lv_obj_remove_style_all(jog_mode);
+    lv_obj_set_style_bg_color(jog_mode, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(jog_mode, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(jog_mode, COL_BORDER_LT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(jog_mode, 1, LV_PART_MAIN);
+    lv_obj_set_size(jog_mode, 142, 36);
+    lv_obj_set_pos(jog_mode, 518, 12);
+    lv_obj_add_event_cb(jog_mode, jog_mode_event_cb, LV_EVENT_CLICKED, NULL);
+    s_jog_mode_label = lv_label_create(jog_mode);
+    lv_obj_set_style_text_font(s_jog_mode_label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_jog_mode_label, COL_TEXT, LV_PART_MAIN);
+    s_jog_mode_deck = CTRL_DECK_NONE;
+    ui_performance_tabs_update_jog_mode();
     return screen;
 }
 

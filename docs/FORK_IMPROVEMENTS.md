@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 verified; B13a jog core added; mode UI/profile binding and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 verified; B13a-B13b jog core/touch selector added; controller profile binding and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -379,6 +379,7 @@ the current choice; reboot starts in VINYL. No NVS persistence is introduced.
 The common semantic path is ready for touch and controller producers, but
 the visible mode selector and profile binding remain pending. This core
 extension alone does not make the mode selectable on the installed product.
+B13b below supplies the touch producer; profile binding remains separate.
 
 Host tests cover mode switching during active scratch/hold, repeated requests,
 ignored releases/top-touch in CDJ, playing nudge, paused scrub, deck isolation,
@@ -388,6 +389,27 @@ Physical mode switching, audible behavior and exact-image soak: **NOT RUN**.
 Validation: full P4 host runner and both scratch configurations passed;
 11 simulator baselines unchanged; documentation integrity and diff checks
 passed. ESP-IDF v6.0.2 build: 2,533,824 bytes; dependency lock unchanged.
+
+## B13b: Active-deck touch jog mode selector
+
+Hot Cues replaces the informational D1/D2 tile with a `D1 JOG: VINYL` /
+`D2 JOG: CDJ` button. It reads the authoritative active-deck snapshot and
+queues the same idempotent actions used by controller producers. The label
+refreshes in the LVGL task on mode or target changes; unchanged frames do not
+rewrite the label. A failed queue request logs an error and leaves the label
+at the accepted state.
+
+The PC event adapter now publishes the state snapshot after each applied
+event, matching the real deck task before its next queue wait. Simulator
+interactions cover touch change on D2, D1 isolation, target navigation and
+label refresh after a controller semantic event. The Hot Cues screenshot
+was visually reviewed; only its baseline changed, to `c1bb83e3...`.
+Physical touch/FLX4 mode acceptance and audible transition: **NOT RUN**.
+
+Validation: full P4 host runner passed; simulator interaction checks and all
+11 screenshot hashes passed after visual review of Hot Cues. ESP-IDF v6.0.2
+P4 build passed (2,534,384 bytes); dependency lock unchanged. Documentation
+integrity and `git diff --check` passed. No image was installed or released.
 
 ## C1: Bounded optional PWV4 color preview
 

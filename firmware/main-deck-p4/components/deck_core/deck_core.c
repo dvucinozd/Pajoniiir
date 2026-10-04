@@ -3470,7 +3470,7 @@ void deck_core_test_flush_ui_commands(void)
     }
 }
 
-void deck_core_test_apply_event(const ctrl_event_t *ev)
+static void test_apply_event(const ctrl_event_t *ev)
 {
     if (!ev) return;
 
@@ -3534,6 +3534,13 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         on_state_event(ev);
         break;
     }
+}
+
+void deck_core_test_apply_event(const ctrl_event_t *ev)
+{
+    test_apply_event(ev);
+    /* Mirror the task's publication before it waits for the next event. */
+    publish_state_snapshot();
 }
 
 deck_state_t deck_core_test_get_deck_state(uint8_t deck)

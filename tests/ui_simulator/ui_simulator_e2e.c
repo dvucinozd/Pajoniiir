@@ -12,6 +12,7 @@
 #include "splash_screen.h"
 
 extern void ui_simulator_deck_set_playing(bool playing);
+extern void deck_core_test_apply_event(const ctrl_event_t *event);
 
 #define DISPLAY_WIDTH 800
 #define DISPLAY_HEIGHT 480
@@ -232,6 +233,26 @@ int main(int argc, char **argv)
         fail("Hot Cues navigation failed");
     }
     save_ppm(argv[1], "hot_cues");
+
+    if (!click_label("D2 JOG: VINYL")) fail("Deck 2 jog selector missing");
+    if (!deck_core_get_deck_state(CTRL_DECK_2).jog_cdj_mode ||
+        deck_core_get_deck_state(CTRL_DECK_1).jog_cdj_mode)
+        fail("touch jog selector changed the wrong deck");
+    if (!click_label("D1")) fail("could not inspect Deck 1 jog mode");
+    if (!find_visible_label(lv_screen_active(), "D1 JOG: VINYL"))
+        fail("Deck 1 inherited Deck 2 jog mode label");
+    if (!click_label("D2")) fail("could not return to Deck 2 jog mode");
+    if (!find_visible_label(lv_screen_active(), "D2 JOG: CDJ"))
+        fail("Deck 2 mode did not survive navigation");
+    ctrl_event_t vinyl = {
+        .type = CTRL_EV_BUTTON, .id = CTRL_ID_DECK2_EXT_ACTION,
+        .deck = CTRL_DECK_2,
+        .value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_JOG_VINYL, true),
+    };
+    deck_core_test_apply_event(&vinyl);
+    pump(64);
+    if (!find_visible_label(lv_screen_active(), "D2 JOG: VINYL"))
+        fail("controller semantic jog mode did not refresh touch label");
 
     if (!click_label("SETTINGS")) {
         fail("Settings navigation failed");

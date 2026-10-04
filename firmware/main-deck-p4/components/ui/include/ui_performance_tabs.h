@@ -36,6 +36,7 @@ typedef struct {
     void (*set_loop)(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
     void (*clear_loop)(uint8_t deck);
     void (*restore_source_cues)(uint8_t deck);
+    void (*set_jog_mode)(uint8_t deck, bool cdj);
     void (*hot_cue_pad)(uint8_t deck, uint8_t pad);
     void (*update_overview_cue_markers)(uint8_t deck);
 } ui_performance_tabs_actions_t;
@@ -52,6 +53,7 @@ typedef struct {
 void ui_performance_tabs_init(const ui_performance_tabs_config_t *config);
 lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent);
 void ui_performance_tabs_update_hot_cues(void);
+void ui_performance_tabs_update_jog_mode(void);
 void ui_performance_tabs_set_loop_shadow(uint8_t deck,
                                          bool active,
                                          uint32_t start_ms,
