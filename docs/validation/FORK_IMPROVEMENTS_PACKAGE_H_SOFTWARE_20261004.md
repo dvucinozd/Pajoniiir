@@ -6,6 +6,9 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`; retained MIT attribution
 in `firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md`.
 
 Status: **SOFTWARE VERIFIED; physical acceptance NOT RUN**.
+Later runtime reserve failure also promotes the existing PSRAM-only LVGL
+allocator to ordinary builds; historical allocator statements below describe
+this original closure, not the corrected candidate policy.
 Subsequent [ordinary candidate installation](JC4880_H_CANDIDATE_20261004.md)
 restored network/USB and operator-confirmed previous design/controls, but failed
 the resource gate. That later record supersedes the installed-state statement

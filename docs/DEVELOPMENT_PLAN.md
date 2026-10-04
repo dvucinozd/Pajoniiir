@@ -27,6 +27,10 @@ software verification. Next: qualify an ordinary JC4880 candidate, then I-L.
 confirmed previous design/controls. Resource acceptance failed (two waveform
 internal-DMA probes and HTTP stack reserve 456 bytes). Correct allocation/stack
 ownership and repeat on a fresh pushed-source image before continuing acceptance.
+The first correction removed failed allocations and restored HTTP stack reserve.
+Two paused loads still failed the 12 KiB internal largest-block floor, so ordinary
+LVGL moves to the tested PSRAM-only allocator. Repeat exact-image measurements;
+do not waive or lower the gate to make the candidate pass.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5

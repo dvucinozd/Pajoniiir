@@ -90,7 +90,10 @@ CONFIG_LV_FONT_MONTSERRAT_28=y
 # This allows LVGL widgets and large table cells to utilize 32 MB of PSRAM,
 # preventing internal SRAM exhaustion.
 # CONFIG_LV_USE_BUILTIN_MALLOC is not set
-CONFIG_LV_USE_CLIB_MALLOC=y
+# UI objects/styles/text must preserve internal task/DMA reserves, including
+# small allocations in the previous product presentation.
+# CONFIG_LV_USE_CLIB_MALLOC is not set
+CONFIG_LV_USE_CUSTOM_MALLOC=y
 
 # ── ESP32-P4 Wi-Fi expansion via onboard ESP32-C6 (ESP-Hosted over SDIO) ─────
 # Re-enabled 2026-07-04 for the web UI mobile controller. The P4 has no native

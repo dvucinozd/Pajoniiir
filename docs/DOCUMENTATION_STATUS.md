@@ -33,6 +33,10 @@ rollback and final 180-minute exact-image soak remain open.
 confirmed `M2.4-59-gf9260125` in `ota_0`, network/USB0/FLX4 presence and operator
 confirmation of previous design/controls. Resource gate FAILED; focused correction
 and exact-image requalification are required. No public release/channel changed.
+The subsequent `M2.4-60-g6dfaf241` cleared allocation/HTTP stack failures, but
+two paused loads failed the internal largest-block floor. Ordinary UI allocation
+now uses PSRAM too; another fresh candidate is required. This supersedes earlier
+statements that only preview uses custom LVGL allocation.
 
 [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
 adds an explicit recorder experiment and default-off SD idle workaround.

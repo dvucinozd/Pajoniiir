@@ -29,8 +29,13 @@ retain their deck and are cancelled by tab/target/screensaver changes.
 startup and self-sampled task stack minima without retaining task handles.
 Output sampling is throttled and included in its deadline timing. The read-only
 `/api/resources` supplements existing Web status without changing its fields.
-Regular libc LVGL accounting is reported as unknown, rather than fabricated;
-the preview reports owned bytes through the PSRAM allocator. These diagnostics
+Both ordinary and preview LVGL objects/styles/text now use the PSRAM-only
+allocator and report owned bytes. Ordinary CLIB initially remained unchanged,
+but the installed H candidate failed the internal largest-block reserve after
+two paused loads. Waveform PPA source buffers also allocate directly in PSRAM;
+HTTP USB status text is request-owned PSRAM rather than a 2 KiB stack array.
+Audio and USB DMA placement remain unchanged. Historical CLIB measurements
+report owned LVGL bytes as unknown rather than fabricated. These diagnostics
 and [resource gates](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
 require physical measurements before acceptance.
 
