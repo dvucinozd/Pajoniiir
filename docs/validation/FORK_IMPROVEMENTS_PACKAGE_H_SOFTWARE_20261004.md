@@ -143,7 +143,15 @@ CI runs clean ordinary/preview/recorder/PSRAM variants and all seven screenshot
 gates after push; local incremental builds do not themselves prove clean CI.
 Initial closure `d6cd50d573ab06755e993d23e0255bcdf2107569` passed all eight
 jobs in [CI run 37219657645](https://github.com/dvucinozd/Pajoniiir/actions/runs/37219657645).
-The final empty/status regression extension requires its own clean CI run.
+Final implementation `5d2d7fddf230b736f806ccb0e1167ff0d8915427`, including
+empty/status regression coverage, passed all eight jobs in
+[CI run 37221122271](https://github.com/dvucinozd/Pajoniiir/actions/runs/37221122271):
+Linux host/95 screenshot gates, JC4880 ordinary/preview/recorder, and JC1060
+ordinary/preview/recorder/PSRAM clean builds, linked-image checks, binary budgets
+and unchanged dependency locks. A later evidence-only documentation commit does
+not change that tested implementation. Build a fresh immutable candidate from
+its chosen final SHA before signing/installing; no installed-image acceptance
+is inferred from CI artifacts.
 
 ## Remaining physical and release gates
 
