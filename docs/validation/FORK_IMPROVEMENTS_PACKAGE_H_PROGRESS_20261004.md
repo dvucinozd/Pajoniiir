@@ -88,6 +88,34 @@ layout E2E gates without baseline updates, both ordinary ESP-IDF 6.0.2 builds
 (JC4880 2,548,416 bytes; JC1060 2,545,776 bytes), board/project/budget checks,
 unchanged dependency locks, documentation integrity and diff checks.
 
+## Library owner without legacy widgets
+
+Library owner readiness now comes from configuration, independently of its
+legacy LVGL table. Refresh, selection, sorting, paging, browse/load admission
+and controller navigation operate without that table. Legacy rendering remains
+guarded by actual widget availability. The preview no longer calls the legacy
+Library constructor, so its hidden header/data tables, buttons, labels, image
+objects and row-artwork copy buffer are not allocated. Artwork still uses the
+worker/cache path and the selected renderer's owned pixel buffers.
+
+The shared E2E scenarios assert zero legacy tables in preview and two in the
+ordinary presentation, actual name-sort ordering, controller browse/load
+identity and Library/Overview navigation. Existing touch LOAD, playlist,
+source-cue tombstone and load-lock scenarios remain active. Neither screenshot
+baselines nor the previous product design are changed. This closes the Library
+widget dependency only: Overview/Hot Cues/Settings presentation ownership and
+physical memory/audio acceptance remain open. No OTA is performed.
+
+Library separation verification PASS: complete P4 host runner; legacy and both
+runtime-preview E2E layouts with unchanged screenshot baselines; documentation
+integrity and `git diff --check`. ESP-IDF 6.0.2 regular/preview builds and board
+configuration checks pass for JC4880 (2,548,672 / 2,592,944 bytes) and JC1060
+(2,546,160 / 2,590,384 bytes). Both dependency locks remain unchanged. Preview
+builds use the required custom PSRAM allocator; regular builds retain their
+existing allocator. All four images remain below the `0x380000` budget. These
+are software results only; runtime heap savings, USB/network and listening
+acceptance are NOT RUN for this change.
+
 ## Historical checkpoint: H3 hardware regression and recovery
 
 H3 was pushed as `cf282906ff5ffe2bc045659c59e5d6618e46a094`.

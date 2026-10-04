@@ -464,13 +464,13 @@ static void ui_switch_tab(int target_idx)
     // Update visibility of screens
     for (int i = 0; i < UI_TAB_COUNT; i++) {
         if (i == target_idx) {
-            lv_obj_remove_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            if (s_screens[i]) lv_obj_remove_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_active, LV_PART_MAIN);
             if (s_footer_active_strips[i]) {
                 lv_obj_remove_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
             }
         } else {
-            lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            if (s_screens[i]) lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_replace_style(s_footer_buttons[i], &s_style_tab_btn_active,
                                  &s_style_tab_btn_normal, LV_PART_MAIN);
             if (s_footer_active_strips[i]) {
@@ -1125,13 +1125,15 @@ esp_err_t ui_init(void) {
     // Build the screen layers
     s_screens[UI_TAB_OVERVIEW] = ui_overview_create(s_root_container);
     ui_controls_update_performance_target_visuals(&s_controls);
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     s_screens[UI_TAB_LIBRARY] = ui_library_create(s_root_container);
+#endif
     s_screens[UI_TAB_HOT_CUES] = ui_performance_tabs_create_hot_cues(s_root_container);
     s_screens[UI_TAB_SETTINGS] = ui_settings_create(s_root_container);
 
     // Switch initially to overview (index 0) and hide others
     for (int i = 1; i < UI_TAB_COUNT; i++) {
-        lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+        if (s_screens[i]) lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
     }
     s_active_tab = 0;
 
@@ -1461,7 +1463,7 @@ bool ui_is_overview_active(void)
 
 esp_err_t ui_show_library(void)
 {
-    if (!s_root_container || !s_screens[UI_TAB_LIBRARY]) {
+    if (!s_root_container || !ui_library_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -1473,7 +1475,7 @@ esp_err_t ui_show_library(void)
 
 esp_err_t ui_toggle_library_view(void)
 {
-    if (!s_root_container || !s_screens[UI_TAB_OVERVIEW] || !s_screens[UI_TAB_LIBRARY]) {
+    if (!s_root_container || !s_screens[UI_TAB_OVERVIEW] || !ui_library_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
 

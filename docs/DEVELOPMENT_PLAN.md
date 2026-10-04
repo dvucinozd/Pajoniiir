@@ -20,6 +20,9 @@ readiness within 60 seconds before confirmation; failure requests rollback.
 The next product work removes duplicate presentation allocations and adds new
 features to the previous design. Runtime memory and exact-image acceptance
 remain open; no production channel change follows from software verification.
+Library owner/actions now operate without legacy table widgets in the preview;
+its duplicate Library tree and artwork copy buffer are no longer created.
+Overview, Hot Cues and Settings ownership still need separate migration steps.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5

@@ -189,6 +189,7 @@ static ui_library_config_t s_library_config;
 static void library_page_event_cb(lv_event_t *e);
 static lv_obj_t *s_library_screen = NULL;
 static lv_obj_t *s_library_table = NULL;
+static bool s_library_ready;
 static lv_obj_t *s_label_library_source = NULL;
 static lv_obj_t *s_btn_library_page_prev = NULL;
 static lv_obj_t *s_btn_library_page_next = NULL;
@@ -222,11 +223,11 @@ static void ui_library_update_artwork(void)
 {
     ui_artwork_set_paused(ui_library_track_load_busy());
     (void)ui_artwork_poll();
-    if (s_active_tab != 1 || !s_row_art_pixels) return;
+    if (s_active_tab != 1) return;
     for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row) {
         uint32_t key = s_page_track_keys[row];
         if (!key) {
-            lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
+            if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
             s_row_art_key[row] = 0;
             continue;
         }
@@ -234,7 +235,7 @@ static void ui_library_update_artwork(void)
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
         if (s_dj_ready) dj_ui_library_set_row_art((uint8_t)row, pixels);
 #endif
-        if (!pixels) continue;
+        if (!pixels || !s_row_art_pixels || !s_row_art[row]) continue;
         if (s_row_art_key[row] != key) {
             memcpy(s_row_art_pixels + row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
                    pixels, UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX * sizeof(uint16_t));
@@ -771,6 +772,7 @@ static void ui_library_fill_visible_row(int visible_row, int track_index)
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     s_dj_rows[visible_row] = text;
 #endif
+    if (!s_library_table) return;
 #ifndef UI_LIBRARY_HOST_TEST
     /* Leave the first 40 pixels for the cover overlay. */
     lv_table_set_cell_value_fmt(s_library_table, visible_row, 0,
@@ -798,7 +800,7 @@ static void ui_library_select_visible_cell(void)
 
 static void ui_library_populate_rows(void)
 {
-    if (!s_library_table) {
+    if (!s_library_ready) {
         return;
     }
 
@@ -811,7 +813,7 @@ static void ui_library_populate_rows(void)
     for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row)
         if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
     memset(s_page_track_keys, 0, sizeof(s_page_track_keys));
-    lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
+    if (s_library_table) lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
     for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
         int view_index = ui_library_page_absolute_index(&page, visible_row);
         if (s_browse_mode == UI_BROWSE_NODES) {
@@ -823,11 +825,13 @@ static void ui_library_populate_rows(void)
             snprintf(s_dj_rows[visible_row].artist, sizeof s_dj_rows[visible_row].artist,
                      "%s", node->is_folder ? "FOLDER" : "PLAYLIST");
 #endif
-            lv_table_set_cell_value(s_library_table, visible_row, 0, node->name);
-            lv_table_set_cell_value(s_library_table, visible_row, 1,
-                                    node->is_folder ? "FOLDER" : "PLAYLIST");
-            for (int col = 2; col < 5; ++col)
-                lv_table_set_cell_value(s_library_table, visible_row, col, "");
+            if (s_library_table) {
+                lv_table_set_cell_value(s_library_table, visible_row, 0, node->name);
+                lv_table_set_cell_value(s_library_table, visible_row, 1,
+                                        node->is_folder ? "FOLDER" : "PLAYLIST");
+                for (int col = 2; col < 5; ++col)
+                    lv_table_set_cell_value(s_library_table, visible_row, col, "");
+            }
             continue;
         }
         int track_index = ui_library_catalog_row(view_index);
@@ -856,7 +860,7 @@ static void ui_library_populate_rows(void)
 #endif
     ui_library_select_visible_cell();
     ui_library_update_source_label();
-    lv_obj_invalidate(s_library_table);
+    if (s_library_table) lv_obj_invalidate(s_library_table);
 }
 
 static void ui_library_apply_loaded_track(uint8_t deck,
@@ -1445,7 +1449,7 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 {
     (void)e;
     if (s_browse_mode != UI_BROWSE_ALL) return;
-    if (!s_library_table) return;
+    if (!s_library_ready) return;
 #ifndef WIN32
     if (ui_library_track_load_busy() || media_catalog_load_in_progress()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
@@ -1468,7 +1472,7 @@ static void library_sort_name_event_cb(lv_event_t *e)
 {
     (void)e;
     if (s_browse_mode != UI_BROWSE_ALL) return;
-    if (!s_library_table) return;
+    if (!s_library_ready) return;
 #ifndef WIN32
     if (ui_library_track_load_busy() || media_catalog_load_in_progress()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
@@ -1491,7 +1495,7 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
 {
     (void)e;
     if (s_browse_mode != UI_BROWSE_ALL) return;
-    if (!s_library_table) return;
+    if (!s_library_ready) return;
 #ifndef WIN32
     if (ui_library_track_load_busy() || media_catalog_load_in_progress()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
@@ -1514,7 +1518,7 @@ static void library_sort_key_event_cb(lv_event_t *e)
 {
     (void)e;
     if (s_browse_mode != UI_BROWSE_ALL) return;
-    if (!s_library_table) return;
+    if (!s_library_ready) return;
 #ifndef WIN32
     if (ui_library_track_load_busy() || media_catalog_load_in_progress()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
@@ -1644,6 +1648,7 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 
 void ui_library_init(const ui_library_config_t *config)
 {
+    s_library_ready = config != NULL;
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     s_dj_ready = false;
 #endif
@@ -1659,6 +1664,8 @@ void ui_library_init(const ui_library_config_t *config)
         s_library_config = *config;
     }
 }
+
+bool ui_library_ready(void) { return s_library_ready; }
 
 lv_obj_t *ui_library_create(lv_obj_t *parent)
 {
@@ -2028,7 +2035,7 @@ void ui_notify_usb_removed(void)
 
 void ui_refresh_library(void)
 {
-    if (!s_library_table) {
+    if (!s_library_ready) {
         return;
     }
     ui_library_browse_reset();
@@ -2075,7 +2082,7 @@ void ui_refresh_library(void)
 
 bool ui_is_library_active(void)
 {
-    return s_active_tab == 1 && s_library_table != NULL;
+    return s_active_tab == 1 && s_library_ready;
 }
 
 esp_err_t ui_library_select_delta(int delta)
@@ -2083,7 +2090,7 @@ esp_err_t ui_library_select_delta(int delta)
     if (delta == 0) {
         return ESP_OK;
     }
-    if (!s_library_table) {
+    if (!s_library_ready) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -2110,7 +2117,7 @@ esp_err_t ui_library_select_delta(int delta)
         ui_library_populate_rows();
     } else {
         ui_library_select_visible_cell();
-        lv_obj_invalidate(s_library_table);
+        if (s_library_table) lv_obj_invalidate(s_library_table);
     }
     ui_lvgl_unlock();
     return ESP_OK;
@@ -2123,7 +2130,7 @@ esp_err_t ui_library_load_selected(void)
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
-    if (!s_library_table) {
+    if (!s_library_ready) {
         return ESP_ERR_INVALID_STATE;
     }
     if (ui_library_media_count() <= 0) {

@@ -22,6 +22,12 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] Library owner/widget separation is software-only until exact-image
+  validation: preview must have no hidden legacy tables and must retain
+  controller selection/sort/load and artwork behavior. Ordinary UI remains
+  the product default; removing one duplicate screen does not close H or
+  establish safe startup/playback memory reserves.
+
 - [ ] [Package H preview](validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md):
   default-off, Overview, Library and Hot Cues in the actual firmware. Do not treat
   prototype Settings captures as completed runtime parity. Physical touch,

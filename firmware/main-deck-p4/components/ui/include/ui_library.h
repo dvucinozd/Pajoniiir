@@ -111,6 +111,8 @@ typedef struct {
 
 void ui_library_init(const ui_library_config_t *config);
 lv_obj_t *ui_library_create(lv_obj_t *parent);
+/* Owner readiness does not require a legacy LVGL table. */
+bool ui_library_ready(void);
 void ui_library_load_initial_track(void);
 void ui_trigger_library_refresh(void);
 void ui_refresh_library(void);

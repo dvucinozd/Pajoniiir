@@ -196,6 +196,14 @@ static bool save_ppm(const char *output_dir, const char *name)
     return true;
 }
 
+static unsigned count_tables(lv_obj_t *object)
+{
+    unsigned count = lv_obj_check_type(object, &lv_table_class) ? 1u : 0u;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(object); ++i)
+        count += count_tables(lv_obj_get_child(object, (int32_t)i));
+    return count;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -223,6 +231,13 @@ int main(int argc, char **argv)
     }
 
     pump(3200);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (count_tables(lv_screen_active()) != 0)
+        fail("preview instantiated a hidden legacy Library table");
+#else
+    if (count_tables(lv_screen_active()) != 2)
+        fail("legacy Library did not retain header and data tables");
+#endif
     char accepted_key[16];
     ui_get_deck_track_key(CTRL_DECK_1, accepted_key, sizeof(accepted_key));
     if (strcmp(accepted_key, "8A") != 0) fail("D1 accepted metadata lost musical key");
@@ -399,6 +414,22 @@ int main(int argc, char **argv)
 
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     /* Exercise the real row callback and touch LOAD, not a direct test API. */
+    if (ui_show_library() != ESP_OK)
+        fail("controller Library navigation required a legacy screen");
+    pump(64);
+    if (!ui_is_library_active()) fail("controller Library navigation was not published");
+    ui_library_select_visible_row(0);
+    if (ui_library_select_delta(1) != ESP_OK ||
+        ui_library_load_selected_for_deck(CTRL_DECK_2) != ESP_OK)
+        fail("controller browse/load required a legacy table");
+    deck_loaded_track_summary_t controller_load = {0};
+    if (!deck_core_get_loaded_track(CTRL_DECK_2, &controller_load) ||
+        controller_load.track_key != 1002u)
+        fail("controller browse/load lost selected row identity");
+    if (ui_toggle_library_view() != ESP_OK)
+        fail("controller Library toggle required a legacy screen");
+    pump(64);
+    if (!ui_is_overview_active()) fail("controller Library toggle was not published");
     if (!click_label("LIBRARY") || !click_label("Static Bloom") ||
         !click_label("LOAD DECK 2")) fail("dj_ui row selection/touch LOAD failed");
     deck_loaded_track_summary_t d2_touch = {0}, d1_touch = {0};
@@ -406,8 +437,18 @@ int main(int argc, char **argv)
         d2_touch.track_key != 1003u) fail("touch LOAD ignored selected row/deck");
     if (!deck_core_get_loaded_track(CTRL_DECK_1, &d1_touch) ||
         d1_touch.track_key != before.track_key) fail("D2 touch LOAD changed D1");
-    if (!click_label("SORT NAME") || !click_label("LOAD DECK 2"))
-        fail("dj_ui sort/touch LOAD failed");
+    if (!click_label("SORT NAME")) fail("dj_ui sort failed");
+    lv_obj_t *sorted_static = find_visible_label(lv_screen_active(), "Static Bloom");
+    lv_obj_t *sorted_midnight = find_visible_label(lv_screen_active(), "Midnight Circuit");
+    lv_area_t static_area = {0}, midnight_area = {0};
+    if (!sorted_static || !sorted_midnight) fail("sorted Library rows missing");
+    else {
+        lv_obj_get_coords(sorted_static, &static_area);
+        lv_obj_get_coords(sorted_midnight, &midnight_area);
+        if (static_area.y1 >= midnight_area.y1)
+            fail("name sort depended on the absent legacy table");
+    }
+    if (!click_label("LOAD DECK 2")) fail("dj_ui sorted touch LOAD failed");
     if (!deck_core_get_loaded_track(CTRL_DECK_2, &d2_touch) ||
         d2_touch.track_key != 1003u) fail("sort lost the selected track identity");
     if (!click_label("PLAYLISTS") || !click_label("LOAD DECK 1"))
