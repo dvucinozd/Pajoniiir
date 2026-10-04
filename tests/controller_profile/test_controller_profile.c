@@ -1,6 +1,7 @@
 /* Format/runtime unit tests for the S3CP controller profile parser+matcher. */
 
 #include "controller_profile.h"
+#include "control_link.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -380,8 +381,39 @@ static void test_cc7_scaling(void)
     printf("  CC7 scaling, replay and version compatibility      PASS\n");
 }
 
+static void test_jog_mode_profile_actions(void)
+{
+    blob_builder_t b;
+    cp_profile_t profile;
+    cp_runtime_t rt;
+    cp_event_t ev;
+    blob_init(&b);
+    const uint8_t actions[2] = {CTRL_DECK_EXT_ACTION_JOG_VINYL, CTRL_DECK_EXT_ACTION_JOG_CDJ};
+    const uint8_t ids[2] = {CTRL_ID_DECK1_EXT_ACTION, CTRL_ID_DECK2_EXT_ACTION};
+    for (unsigned d = 0u; d < 2u; ++d)
+        for (unsigned a = 0u; a < 2u; ++a)
+            blob_add_input(&b, (uint8_t)(0x90u + d), (uint8_t)(0x30u + a),
+                           CP_IN_NOTE_VALUE, CP_PAIR_SLOT_NONE, CTRL_TYPE_BUTTON,
+                           ids[d], 0u, actions[a], 0x80u, NULL);
+    blob_finish(&b, 1u, 2u, 0u);
+    assert(cp_profile_parse(b.buf, b.len, &profile) == CP_OK);
+    cp_runtime_init(&rt);
+    for (unsigned d = 0u; d < 2u; ++d) {
+        for (unsigned a = 0u; a < 2u; ++a) {
+            assert(cp_runtime_process(&profile, &rt, (uint8_t)(0x90u + d),
+                                      (uint8_t)(0x30u + a), 127u, &ev));
+            expect_event(&ev, CTRL_TYPE_BUTTON, ids[d], CTRL_DECK_EXT_VALUE(actions[a], true));
+            assert(cp_runtime_process(&profile, &rt, (uint8_t)(0x90u + d),
+                                      (uint8_t)(0x30u + a), 0u, &ev));
+            expect_event(&ev, CTRL_TYPE_BUTTON, ids[d], CTRL_DECK_EXT_VALUE(actions[a], false));
+        }
+    }
+    printf("  jog mode packed profile actions on both decks      PASS\n");
+}
+
 int main(void)
 {
+    test_jog_mode_profile_actions();
     printf("=== controller_profile format/runtime tests ===\n");
     test_parse_validation();
     test_runtime_mapping();

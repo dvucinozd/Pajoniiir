@@ -22,6 +22,20 @@ def profile(controls=None, feedback_outputs=None):
 
 
 class ConverterTests(unittest.TestCase):
+    def test_jog_modes_use_existing_packed_action_format(self):
+        import struct
+        for deck in (1, 2):
+            for action, number in (("jog_vinyl", 8), ("jog_cdj", 9)):
+                p = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,
+                     "inputs": [{"type": "ext_action", "deck": deck,
+                                 "action": action, "status": 0x90 + deck - 1,
+                                 "data1": 0x30}]}
+                blob = compile_profile(p)
+                self.assertEqual(int.from_bytes(blob[4:6], "little"), 2)
+                self.assertEqual(blob[34], 1)  # NOTE_VALUE, unchanged ABI
+                self.assertEqual(struct.unpack_from("<hH", blob, 40), (number, 0x80))
+                self.assertEqual(blob[37], 0x10 + (deck - 1) * 0x20 + 0x1c)
+
     def test_scaled_cc_requires_v3_without_changing_legacy_profiles(self):
         p = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,
              "inputs": [{"type": "cc7_to14", "event": "deck1.tempo",

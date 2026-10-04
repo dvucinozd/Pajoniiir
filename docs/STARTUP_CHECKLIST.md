@@ -47,8 +47,8 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] Check CUE set while paused, held preview, release-to-cue and PLAY while
   CUE is held, using both touch and FLX4. Disconnect during preview must pause
   and return to cue. Physical/listening confirmation: **NOT RUN**.
-- [ ] Verify the B13b touch VINYL/CDJ selector; after controller profile
-  binding is available, repeat from the controller. Verify
+- [ ] Verify the B13b touch VINYL/CDJ selector and B18 `jog_vinyl`/`jog_cdj`
+  profile bindings on matching development firmware. Verify
   switching during platter touch, playing bend and paused scrub independently
   on both decks. B13a-B13b verify software only; physical acceptance:
   **NOT RUN**.

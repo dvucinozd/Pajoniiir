@@ -135,6 +135,7 @@ PAD_MODES = {
 EXT_ACTIONS = {
     "censor": 0, "sync_master": 1, "reloop_stop": 2, "loop_adjust_in": 3,
     "loop_adjust_out": 4, "quantize": 5, "sync_off": 6,
+    "restore_source_cues": 7, "jog_vinyl": 8, "jog_cdj": 9,
 }
 
 # control_link.h LED ids

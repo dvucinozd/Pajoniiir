@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B17 implemented; controller profile binding and exact duration after unanchored MP3 seeks remain open |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B18 implemented; exact duration after unanchored MP3 seeks remains open |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -646,6 +646,19 @@ deterministic dual-deck Master Tempo host soak, ESP-IDF 6.0.2 P4 build and
 documentation integrity pass. The application is 2,536,944 bytes within the
 unchanged `0x380000` budget, with no dependency-lock change. Host soak results
 do not qualify P4 CPU/audio deadlines or audible hardware performance.
+
+## B18: Profile producers for VINYL/CDJ jog mode
+
+The profile compiler now accepts `jog_vinyl`, `jog_cdj` and the existing
+`restore_source_cues` deck actions using the established NOTE_VALUE packed
+press/release representation. Explicit mode selection is idempotent, shares
+the B13 core actions with touch, and does not require the package D v4 ABI.
+Compiler tests verify both deck addresses and oldest-version v2 output;
+runtime parser tests check both edges for each mode. FLX4 input/snapshot/LED
+golden parity remains unchanged. Existing profile files are not rewritten.
+Rollback retains the original compiler/profile files; new actions require the
+development firmware and are not claimed implemented in M2.4. Physical mode
+selection and reconnect tests: **NOT RUN**.
 
 ## Provenance and rollback
 
