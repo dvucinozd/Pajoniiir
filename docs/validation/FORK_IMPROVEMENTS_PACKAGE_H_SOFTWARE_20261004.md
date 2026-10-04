@@ -115,13 +115,16 @@ or candidate resource PASS is claimed here.
   code, allocator byte accounting and runtime-budget threshold/rejection tests.
   Optional operator-file MP3/PDB runs have no input file and remain skipped;
   fixture-based suites execute. No physical export/playback proof is implied.
-- Seven simulator presentations: PASS, 79 exact captures. Legacy/product compact
-  and wide have 13 each, actual preview compact/wide 11 each, standalone native
+- Seven simulator presentations: PASS, 95 exact captures. Legacy/product compact
+  and wide have 17 each, actual preview compact/wide 13 each, standalone native
   compact/wide 9 each. Product/preview baselines were visually reviewed before
   update; unchanged standalone baselines still pass.
 - Interaction assertions: selected tree counts, paired D1/D2 PLAY/CUE/pads,
   hold cancellation, local deletion in waveform pixels, stale restore rejection,
   held source restore, load lock, playlist order/navigation, screensaver return.
+  Actual product loading/error percentages and empty decks have dedicated
+  captures. Unload clears old main waveform pixels, time and BPM. An unavailable
+  source clears Library rows and stale success status; empty decks report EMPTY.
 - Five-minute deterministic dual-deck Master Tempo PC soak: PASS; drift 0,
   clicks/clipped 0; mixed peak 18748. It does not measure P4 CPU/I2S deadlines.
 - ESP-IDF 6.0.2 local builds: PASS for ordinary and preview on both boards;
@@ -130,14 +133,17 @@ or candidate resource PASS is claimed here.
 
 | Board | Ordinary bytes | Preview bytes | App budget |
 | --- | ---: | ---: | ---: |
-| JC4880 | 2,555,008 | 2,571,248 | 3,670,016 (`0x380000`) |
-| JC1060 | 2,552,608 | 2,568,688 | 3,670,016 (`0x380000`) |
+| JC4880 | 2,555,280 | 2,571,520 | 3,670,016 (`0x380000`) |
+| JC1060 | 2,552,896 | 2,568,832 | 3,670,016 (`0x380000`) |
 
 Board/BSP isolation, embedded project identity and LVGL 9.5.0 checks pass.
 Both committed dependency locks are unchanged. Local logs/captures are ignored
 under `.cache/h_final_*` and the corresponding `build*/h_final_build.log`.
 CI runs clean ordinary/preview/recorder/PSRAM variants and all seven screenshot
 gates after push; local incremental builds do not themselves prove clean CI.
+Initial closure `d6cd50d573ab06755e993d23e0255bcdf2107569` passed all eight
+jobs in [CI run 37219657645](https://github.com/dvucinozd/Pajoniiir/actions/runs/37219657645).
+The final empty/status regression extension requires its own clean CI run.
 
 ## Remaining physical and release gates
 

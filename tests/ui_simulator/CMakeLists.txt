@@ -74,6 +74,7 @@ add_executable(ui_simulator_e2e
 
 target_compile_definitions(ui_simulator_e2e PRIVATE
     WIN32=1
+    UI_SIMULATOR_AUDIO_STATUS=1
     DECK_CORE_PC_TEST=1
     REKORDBOX_PDB_STANDALONE_TEST=1
     CONFIG_AUDIO_RECORDER_ENABLED=0

@@ -233,6 +233,14 @@ static inline esp_err_t
 audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out) {
   if (deck >= 2 || !out)
     return ESP_ERR_INVALID_ARG;
+#if UI_SIMULATOR_AUDIO_STATUS
+  extern bool ui_simulator_audio_status_override[2];
+  extern audio_engine_deck_status_t ui_simulator_audio_status[2];
+  if (ui_simulator_audio_status_override[deck]) {
+    *out = ui_simulator_audio_status[deck];
+    return ESP_OK;
+  }
+#endif
   out->state = audio_engine_stub_deck_playing[deck]
                    ? AE_PLAYING
                    : (audio_engine_stub_deck_loaded[deck] ? AE_READY : AE_IDLE);

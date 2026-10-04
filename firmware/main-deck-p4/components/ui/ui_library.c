@@ -2085,6 +2085,7 @@ void ui_refresh_library(void)
                                     row.bpm);
     }
 #endif
+    if (n == 0) ui_library_status_hold("NO TRACKS / MEDIA", COL_AMBER, 2500);
     ui_lvgl_unlock();
 
 #ifndef WIN32
@@ -2266,7 +2267,8 @@ void ui_library_update(const ui_frame_context_t *ctx)
             } else {
                 lv_label_set_text(s_label_indicator_deck, "DECK 2");
             }
-            lv_label_set_text(s_label_indicator_status, "READY");
+            lv_label_set_text(s_label_indicator_status,
+                ctx->deck_info[target] && ctx->deck_info[target]->valid ? "READY" : "EMPTY");
             lv_obj_set_style_text_color(s_label_indicator_deck, COL_TEXT, LV_PART_MAIN);
             lv_obj_set_style_text_color(s_label_indicator_status, COL_TEXT_MUTED, LV_PART_MAIN);
         }
@@ -2300,7 +2302,9 @@ void ui_library_update(const ui_frame_context_t *ctx)
         }
         bool d1 = ctx->deck_state[0].playing, d2 = ctx->deck_state[1].playing;
         dj_ui_library_set_deck_status(d1 && d2 ? DJ_DECKS : d1 ? 0 : d2 ? 1 : ctx->active_deck,
-                                     busy ? "LOADING" : d1 || d2 ? "ACTIVE" : "READY");
+                                     busy ? "LOADING" : d1 || d2 ? "ACTIVE" :
+                                     ctx->deck_info[ctx->active_deck] && ctx->deck_info[ctx->active_deck]->valid
+                                        ? "READY" : "EMPTY");
         audio_engine_deck_status_t status = {0};
         /* Show decoder progress only when that request deck is actually loading.
          * Metadata stages have no percentage; never reuse another deck's value. */

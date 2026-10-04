@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "ui.h"
 #include "ui_library.h"
+#include "library.h"
 #include "hot_cue_store.h"
 #include "ui_artwork_thumb.h"
 #include "artwork_fixture.h"
@@ -17,6 +18,8 @@ extern void deck_core_test_apply_event(const ctrl_event_t *event);
 extern uint32_t audio_engine_stub_duration_ms[2];
 extern uint32_t audio_engine_stub_session_generation[2];
 extern bool audio_engine_stub_deck_loaded[2];
+extern bool ui_simulator_audio_status_override[2];
+extern audio_engine_deck_status_t ui_simulator_audio_status[2];
 
 #ifndef DISPLAY_WIDTH
 #define DISPLAY_WIDTH 800
@@ -536,6 +539,59 @@ int main(int argc, char **argv)
             (restored != ESP_OK || deleted.override_mask))
             fail("explicit hold did not reset local cue overrides");
     }
+
+    /* Actual product status rendering, not only the donor's standalone demo. */
+    click_label("OVERVIEW");
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    ui_simulator_audio_status_override[0] = true;
+    ui_simulator_audio_status[0] = (audio_engine_deck_status_t){
+        .state=AE_LOADING, .load_progress=37};
+    pump(512);
+    if (!find_visible_label(lv_screen_active(), "LOADING 37%"))
+        fail("product loading status did not use real decoder progress");
+    save_ppm(argv[1], "overview_loading");
+    ui_simulator_audio_status[0].state = AE_ERROR;
+    snprintf(ui_simulator_audio_status[0].last_error_text,
+        sizeof ui_simulator_audio_status[0].last_error_text, "media removed");
+    pump(512);
+    if (!find_visible_label(lv_screen_active(), "ERROR: media removed"))
+        fail("product error status did not display the decoder failure");
+    save_ppm(argv[1], "overview_error");
+    ui_simulator_audio_status_override[0] = false;
+#endif
+    for (uint8_t d = 0; d < 2; ++d) {
+        deck_core_clear_loaded_track(d, library_generation());
+        audio_engine_stub_deck_loaded[d] = false;
+    }
+    /* Reject publication of an unloaded audio session through the real owner;
+     * clearing only deck_core would leave its separate UI metadata intact. */
+    ui_library_load_initial_track();
+    pump(512);
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (!find_visible_label(lv_screen_active(), "NO TRACK") ||
+        !find_visible_label(lv_screen_active(), "EMPTY"))
+        fail("unload retained product track/status state");
+    for (int y = 55; y < 130; ++y) for (int x = 90; x < 600; ++x) {
+        uint32_t pixel = s_framebuffer[y * DISPLAY_WIDTH + x] & 0xffffffu;
+        int r = (pixel >> 16) & 255, g = (pixel >> 8) & 255, b = pixel & 255;
+        if (abs(r - g) > 8 || abs(g - b) > 8) {
+            fail("unload retained colored main waveform pixels");
+            y = 130;
+            break;
+        }
+    }
+#endif
+    save_ppm(argv[1], "overview_empty");
+    library_clear();
+    ui_refresh_library();
+    click_label("LIBRARY");
+    pump(512);
+    if (find_visible_label(lv_screen_active(), "Midnight Circuit") ||
+        find_visible_label(lv_screen_active(), "Neon Harbor"))
+        fail("unavailable source retained Library track rows");
+    if (!find_visible_label(lv_screen_active(), "EMPTY"))
+        fail("empty Library deck claimed ready");
+    save_ppm(argv[1], "library_unavailable");
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

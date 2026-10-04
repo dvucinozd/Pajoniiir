@@ -244,6 +244,7 @@ static void ui_deck_track_info_set(uint8_t deck,
 
 static uint32_t ui_deck_duration_ms(uint8_t deck)
 {
+    if (!s_deck_track_info[ui_deck_index(deck)].valid) return 0;
     uint32_t fallback = 0;
     if (deck == CTRL_DECK_1) {
         (void)library_get_summary(library_selected_track_index(), NULL, &fallback);
@@ -253,6 +254,7 @@ static uint32_t ui_deck_duration_ms(uint8_t deck)
 
 static uint16_t ui_deck_bpm(uint8_t deck)
 {
+    if (!s_deck_track_info[ui_deck_index(deck)].valid) return 0;
     uint16_t fallback = 120;
     if (deck == CTRL_DECK_1) {
         uint16_t bpm = 0;

@@ -16,6 +16,10 @@
                      "screensaver":  "ebef1da480aca395f88c76ca69c51f63e64e793379c4ab001ba52b40e5fb51f8",
                      "settings_restored":  "49a68e8206d35e1e1ba9d6ad237606af370fe87f343a8d83fba5bc537dac44ad",
                      "memory_cues":  "add4f2886ae35c387ad2b38fd557438f20f1b67236820273aa4b114dedaf4dad",
-                     "memory_cues_scrolled":  "add4f2886ae35c387ad2b38fd557438f20f1b67236820273aa4b114dedaf4dad"
+                     "memory_cues_scrolled":  "add4f2886ae35c387ad2b38fd557438f20f1b67236820273aa4b114dedaf4dad",
+                     "overview_loading":  "d45151a6d1f5c6502e21cb669008fdb7f6229e3a39c9ab51fd56dd22897a1140",
+                     "overview_error":  "e2e1e5586ade1c0d472b36570d759613a0f968b63056d9e32cdecf178c71e849",
+                     "overview_empty":  "45adf08d1f9c73c477716ff24121907feefea6811027476ebd442cb9a53b7f1f",
+                     "library_unavailable":  "20cc00e00c5ecd3649a547bbb78d8d1bf0d7f3399537716868cfec88baccf851"
                  }
 }

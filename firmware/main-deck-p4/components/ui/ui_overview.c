@@ -1907,6 +1907,17 @@ void ui_overview_load_waveform_data(uint8_t deck,
     };
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
     s_overview_cue_fingerprint_valid[idx] = false;
+    if (!duration_ms) {
+        /* Missing source does not enter the regular redraw path. Erase both
+         * PC pixels and firmware direct-overlay chrome on unload. */
+#ifdef WIN32
+        if (panel->wave_buf) memset(panel->wave_buf + 256 * sizeof(lv_color32_t), 0,
+            (size_t)panel->wave_stride_px * OVERVIEW_CV_H);
+        if (panel->wave_canvas) lv_obj_invalidate(panel->wave_canvas);
+#endif
+        if (panel->wave_border) lv_obj_invalidate(panel->wave_border);
+        if (panel->mini_playhead) lv_obj_add_flag(panel->mini_playhead, LV_OBJ_FLAG_HIDDEN);
+    }
     panel->last_mini_fill_x = -1;
     panel->last_mini_played_w = -1;
     if (panel->mini_played) {
@@ -2206,6 +2217,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     if (mini_x < 0) mini_x = 0;
     if (mini_x > OVERVIEW_MINI_CV_W) mini_x = OVERVIEW_MINI_CV_W;
     if (panel->mini_playhead) {
+        lv_obj_remove_flag(panel->mini_playhead, LV_OBJ_FLAG_HIDDEN);
         ui_obj_set_x_if_changed(panel->mini_playhead, mini_x);
     }
 
@@ -2522,6 +2534,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
     snprintf(bpm_text, sizeof(bpm_text), "%u.%02u",
              (unsigned)(bpm_centi / 100u),
              (unsigned)(bpm_centi % 100u));
+    if (!info->valid) snprintf(bpm_text, sizeof bpm_text, "--.--");
     ui_label_set_text_if_changed(panel->label_bpm, bpm_text);
     char pitch_text[16];
     int pitch_abs = (int)(pitch_centipct < 0 ? -pitch_centipct : pitch_centipct);

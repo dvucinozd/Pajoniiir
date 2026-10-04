@@ -139,8 +139,9 @@ $Captures = @(
 
 $Actual = [ordered]@{}
 if ($Presentation -eq 'legacy' -or $Presentation.StartsWith('product-')) {
-    $Captures += @('memory_cues', 'memory_cues_scrolled')
+    $Captures += @('memory_cues', 'memory_cues_scrolled', 'overview_loading', 'overview_error')
 }
+if (-not $Presentation.StartsWith('native-')) { $Captures += @('overview_empty', 'library_unavailable') }
 if ($Presentation.StartsWith('native-')) {
     $Captures = @('dj_overview','dj_library','dj_hotcues','dj_settings','dj_screensaver','dj_settings_restored','dj_empty','dj_error','dj_loading')
 }
