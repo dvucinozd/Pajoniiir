@@ -41,3 +41,27 @@ Verification on 2026-10-04:
 The bounded NFS client tests are codec/transfer foundations for J, not a claim
 that persistent cache, admission or remote load is implemented. Next: a bounded
 discovery/dual-player claim model, Ethernet-only transport and serialized browse.
+
+## I2: bounded discovery and a shared two-player claim
+
+The heap-free `dj_link_core` model receives validated discovery/status/beat/
+position packets, tracks at most eight peers and expires silent peers after
+5 seconds. Source epochs change on expiry, IP/MAC replacement and transport
+restart; callers can reject results referring to an old source epoch. Epochs
+are runtime session identifiers, never persistent cache identity.
+
+One claim coordinator admits both decks together. It prefers adjacent free
+numbers within 1-4, then 5-6, permitting two distinct non-adjacent free numbers.
+With fewer than two free numbers both remain observers with a reason. Conflicts
+withdraw both claims, then retry; no duplicate identity or single-player fallback
+is published. The 3x announcement/MAC/IP/final stages and 300 ms interval derive
+from the frozen donor session; keep-alive period is 2 seconds. No media/library
+advertisement, donor playback extrapolation or direct deck mutation is imported.
+
+Windows and Linux sanitizer tests PASS: all 64 occupancy combinations, claim/
+active conflicts, observer recovery, 5/6 compatibility, Rekordbox collection
+discovery, peer-table bounds, replacement/timeout/reconnect epochs, malformed
+and short packets, builder capacity failure and monotonic-clock wrap. Full P4
+host runner PASS (exit 0). JC1060 ESP-IDF 6.0.2 builds the model; ordinary image
+remains 2,554,384 bytes because this step does not start transport. Lock unchanged.
+Transport, Settings activation and serialized browse still remain to implement.
