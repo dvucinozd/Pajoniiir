@@ -2263,7 +2263,8 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
 
     /* A loop boundary owns the jog while adjust mode is active. Still accept
      * release so an earlier touch can never leave scratch/hold latched. */
-    if (pressed && state->loop_adjust_mode != DECK_CORE_LOOP_ADJUST_NONE) {
+    if (pressed && (state->jog_cdj_mode ||
+                    state->loop_adjust_mode != DECK_CORE_LOOP_ADJUST_NONE)) {
         return;
     }
 
@@ -2447,6 +2448,16 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             }
             ESP_LOGI(TAG, "deck %u sync -> OFF", (unsigned)deck + 1);
             return true;
+        case CTRL_DECK_EXT_ACTION_JOG_VINYL:
+        case CTRL_DECK_EXT_ACTION_JOG_CDJ: {
+            const bool cdj = action == CTRL_DECK_EXT_ACTION_JOG_CDJ;
+            if (state->jog_cdj_mode != cdj) {
+                /* Release the old audio owner before changing touch semantics. */
+                handle_jog_touch(deck, false, state);
+                state->jog_cdj_mode = cdj;
+            }
+            return true;
+        }
         case CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES: {
             media_persistent_id_t id = {0};
             if (!loaded_track_identity_for_deck(deck, &id)) {
@@ -2987,8 +2998,10 @@ static void deck_task(void *arg)
                 publish_loop_adjust_leds(idx, &s_decks[idx]);
             }
             const bool controller_connected = s_flx4_connected;
+            const bool jog_cdj_mode = s_decks[idx].jog_cdj_mode;
             init_deck_state(&s_decks[idx]);
             s_decks[idx].controller_connected = controller_connected;
+            s_decks[idx].jog_cdj_mode = jog_cdj_mode;
             s_jog_touched[idx] = false;
             s_jog_hold_active[idx] = false;
             s_jog_scratch_active[idx] = false;
@@ -3319,7 +3332,9 @@ void deck_core_reset_deck(uint8_t deck)
         s_decks[idx].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
         publish_loop_adjust_leds(idx, &s_decks[idx]);
     }
+    const bool jog_cdj_mode = s_decks[idx].jog_cdj_mode;
     init_deck_state(&s_decks[idx]);
+    s_decks[idx].jog_cdj_mode = jog_cdj_mode;
     s_jog_touched[idx] = false;
     s_jog_hold_active[idx] = false;
     s_jog_scratch_active[idx] = false;

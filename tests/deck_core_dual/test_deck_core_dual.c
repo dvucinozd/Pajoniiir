@@ -996,6 +996,63 @@ static void test_jog_search_exits_loop_and_clamps_before_track_end(void)
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 299999u);
 }
 
+static void test_cdj_mode_releases_vinyl_owner_and_survives_track_reset(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).jog_cdj_mode);
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    ctrl_event_t touch = deck_button(CTRL_ID_DECK1_JOG_TOUCH);
+    ctrl_event_t cdj = deck_ext_action(CTRL_DECK_1,
+        CTRL_DECK_EXT_ACTION_JOG_CDJ, true);
+    ctrl_event_t vinyl = deck_ext_action(CTRL_DECK_1,
+        CTRL_DECK_EXT_ACTION_JOG_VINYL, true);
+    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK1_JOG_SCRATCH, 4);
+    deck_core_test_apply_event(&play);
+    deck_core_test_apply_event(&touch);
+    deck_core_test_apply_event(&cdj);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).jog_cdj_mode);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).jog_cdj_mode);
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_1] == 1);
+#else
+    assert(!audio_engine_stub_hold[CTRL_DECK_1]);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 2);
+#endif
+    deck_core_test_apply_event(&cdj); /* idempotent, not a toggle */
+    cdj.value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_JOG_CDJ, false);
+    deck_core_test_apply_event(&cdj);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).jog_cdj_mode);
+    int begins = audio_engine_stub_scratch_begin_count[CTRL_DECK_1];
+    int holds = audio_engine_stub_hold_set_count[CTRL_DECK_1];
+    int seeks = audio_engine_stub_deck_seek_count[CTRL_DECK_1];
+    deck_core_test_apply_event(&touch);
+    deck_core_test_apply_event(&jog);
+    touch.value = 0;
+    deck_core_test_apply_event(&touch);
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == begins);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == holds);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == seeks);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == 1);
+    deck_core_test_apply_event(&play); /* pause */
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == seeks + 1);
+    deck_core_reset_deck(CTRL_DECK_1);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).jog_cdj_mode);
+    deck_core_test_apply_event(&vinyl);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).jog_cdj_mode);
+    touch.value = 1;
+    deck_core_test_apply_event(&play);
+    deck_core_test_apply_event(&touch);
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == begins + 1);
+#else
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == holds + 1);
+#endif
+    touch.value = 0;
+    deck_core_test_apply_event(&touch);
+}
+
 static void test_jog_nudges_while_playing_scrubs_while_paused(void)
 {
     deck_core_test_reset();
@@ -3080,6 +3137,7 @@ int main(void)
     test_load_lock_uses_actual_target_deck_transport();
     test_decks_track_transport_independently();
     test_cdj_cue_hold_release_and_play_commit();
+    test_cdj_mode_releases_vinyl_owner_and_survives_track_reset();
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();

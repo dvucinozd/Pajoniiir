@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 software verified; jog mode and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 verified; B13a jog core added; mode UI/profile binding and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -330,7 +330,7 @@ Host regressions cover imported loop bounds, single-cue loop exit, paused-state
 preservation and second-deck isolation. The simulator keeps its explicit PC
 transport adapter and verifies the shared presentation; physical touch/MIDI
 parity, loop continuity and operator audio acceptance are **NOT RUN**. CDJ CUE
-hold behavior and an explicit VINYL/CDJ jog mode remain separate pending work.
+hold behavior is covered by B12; VINYL/CDJ core behavior is covered by B13a.
 Waveform cue overlays still consume the source ANLZ bank; integrating local
 overrides into the render snapshot remains an explicit UI/package H gate.
 
@@ -364,6 +364,30 @@ Validation: full P4 host runner, both deck-core scratch configurations,
 11 unchanged simulator baselines and documentation integrity passed.
 ESP-IDF v6.0.2 P4 build passed: 2,533,696 bytes within the `0x380000`
 application budget. Dependency lock unchanged; `git diff --check` passed.
+
+## B13a: VINYL/CDJ semantic jog core
+
+Two idempotent semantic actions, `JOG_VINYL` and `JOG_CDJ`, select a mode
+independently for each deck. Releases do not change the mode. VINYL remains
+the startup default, preserving FLX4 behavior. Switching to CDJ releases an
+active scratch or fallback platter hold before ignoring platter-top touch.
+While playing, platter and bend-ring deltas nudge tempo; while paused, they
+scrub. Loop-adjust ownership remains unchanged.
+
+The read-only state snapshot exposes `jog_cdj_mode`. Track reset preserves
+the current choice; reboot starts in VINYL. No NVS persistence is introduced.
+The common semantic path is ready for touch and controller producers, but
+the visible mode selector and profile binding remain pending. This core
+extension alone does not make the mode selectable on the installed product.
+
+Host tests cover mode switching during active scratch/hold, repeated requests,
+ignored releases/top-touch in CDJ, playing nudge, paused scrub, deck isolation,
+track reset and return to VINYL, with scratch enabled and disabled.
+Physical mode switching, audible behavior and exact-image soak: **NOT RUN**.
+
+Validation: full P4 host runner and both scratch configurations passed;
+11 simulator baselines unchanged; documentation integrity and diff checks
+passed. ESP-IDF v6.0.2 build: 2,533,824 bytes; dependency lock unchanged.
 
 ## C1: Bounded optional PWV4 color preview
 

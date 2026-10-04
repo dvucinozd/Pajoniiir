@@ -47,6 +47,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] Check CUE set while paused, held preview, release-to-cue and PLAY while
   CUE is held, using both touch and FLX4. Disconnect during preview must pause
   and return to cue. Physical/listening confirmation: **NOT RUN**.
+- [ ] After a mode selector/profile binding is available, verify VINYL/CDJ
+  switching during platter touch, playing bend and paused scrub independently
+  on both decks. B13a verifies the semantic core only; physical acceptance:
+  **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

@@ -39,6 +39,7 @@ typedef struct {
     uint32_t      cue_point_ms;
     bool          cue_held;
     bool          cue_preview;
+    bool          jog_cdj_mode;   // false: default VINYL; true: bend/scrub only
     int16_t       pitch;          // 0–16383, center = 8192, from FLX4 MIDI
     int16_t       pitch_centipercent; // effective tempo adjust in 0.01% units
     uint16_t      tempo_range_percent; // selected tempo fader range, e.g. 6/10/16
