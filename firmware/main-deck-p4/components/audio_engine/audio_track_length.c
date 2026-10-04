@@ -291,6 +291,106 @@ bool audio_mp3_scan(audio_track_read_fn read, void *ctx, size_t start, size_t en
     return true;
 }
 
+static bool index_padding(audio_track_read_fn read, void *ctx, size_t pos, size_t end)
+{
+    if (end - pos > 4096u) return false;
+    uint8_t buf[128];
+    while (pos < end) {
+        size_t n = end - pos < sizeof(buf) ? end - pos : sizeof(buf);
+        if (read(ctx, pos, buf, n) != n) return false;
+        if (end - pos == 128u && memcmp(buf, "TAG", 3u) == 0) return true;
+        for (size_t i = 0u; i < n; ++i) if (buf[i] != 0u) return false;
+        pos += n;
+    }
+    return true;
+}
+
+bool audio_mp3_index_build(audio_track_read_fn read, void *ctx, size_t file_size,
+                           audio_mp3_index_t *out)
+{
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    if (!read || file_size < 4u || file_size > AUDIO_MP3_INDEX_MAX_BYTES) return false;
+    uint8_t head[10];
+    size_t n = file_size < sizeof(head) ? file_size : sizeof(head);
+    if (read(ctx, 0u, head, n) != n) return false;
+    size_t pos = audio_id3v2_size(head, n);
+    if (n >= 3u && memcmp(head, "ID3", 3u) == 0 && pos == 0u) return false;
+    if (pos >= file_size) return false;
+    out->stride = 8u;
+    out->file_size = file_size;
+    while (pos + 4u <= file_size) {
+        uint8_t hb[4];
+        mpeg_l3_header_t h;
+        if (read(ctx, pos, hb, sizeof(hb)) != sizeof(hb)) return false;
+        if (!parse_l3_header(hb, &h)) {
+            if (!out->frames || !index_padding(read, ctx, pos, file_size)) return false;
+            pos = file_size;
+            break;
+        }
+        if (!h.frame_bytes || h.frame_bytes > file_size - pos ||
+            (out->hz && (h.hz != out->hz || h.samples_per_frame != out->frame_samples)) ||
+            out->frames >= AUDIO_MP3_INDEX_MAX_FRAMES) return false;
+        out->hz = h.hz;
+        out->frame_samples = h.samples_per_frame;
+        if (out->frames % out->stride == 0u) {
+            if (out->count == AUDIO_MP3_INDEX_SLOTS) {
+                for (uint32_t i = 0u; i < AUDIO_MP3_INDEX_SLOTS / 2u; ++i)
+                    out->entries[i] = out->entries[i * 2u];
+                out->count /= 2u;
+                out->stride *= 2u;
+            }
+            if (out->frames % out->stride == 0u)
+                out->entries[out->count++] = (audio_mp3_index_entry_t){(uint32_t)pos, out->frames};
+        }
+        out->frames++;
+        pos += h.frame_bytes;
+        out->audio_end = pos;
+    }
+    if (!out->frames || (pos < file_size && !index_padding(read, ctx, pos, file_size))) return false;
+    uint64_t ms = (uint64_t)out->frames * out->frame_samples * 1000u / out->hz;
+    if (!ms || ms > UINT32_MAX) return false;
+    out->duration_ms = (uint32_t)ms;
+    out->complete = true;
+    return true;
+}
+
+bool audio_mp3_index_locate(const audio_mp3_index_t *index,
+                            audio_track_read_fn read, void *ctx, uint32_t target_ms,
+                            uint32_t *byte, uint32_t *skip_frames)
+{
+    if (!index || !index->complete || !index->count || index->count > AUDIO_MP3_INDEX_SLOTS ||
+        !index->stride || !index->frames || !index->hz || !index->audio_end ||
+        index->audio_end > index->file_size ||
+        !index->frame_samples || !read || !byte || !skip_frames) return false;
+    uint64_t sample = (uint64_t)target_ms * index->hz / 1000u;
+    uint64_t total = (uint64_t)index->frames * index->frame_samples;
+    if (sample >= total) sample = total - 1u;
+    uint32_t frame = (uint32_t)(sample / index->frame_samples);
+    frame = frame > AUDIO_PVBR_RESYNC_LEAD_FRAMES ? frame - AUDIO_PVBR_RESYNC_LEAD_FRAMES : 0u;
+    uint32_t lo = 0u, hi = index->count;
+    while (lo + 1u < hi) {
+        uint32_t mid = lo + (hi - lo) / 2u;
+        if (index->entries[mid].frame <= frame) lo = mid;
+        else hi = mid;
+    }
+    size_t pos = index->entries[lo].byte;
+    if (index->entries[lo].frame > frame || frame - index->entries[lo].frame >= index->stride ||
+        pos >= index->file_size) return false;
+    for (uint32_t at = index->entries[lo].frame; at < frame; ++at) {
+        uint8_t hb[4];
+        mpeg_l3_header_t h;
+        if (pos + 4u > index->file_size || read(ctx, pos, hb, sizeof(hb)) != sizeof(hb) ||
+            !parse_l3_header(hb, &h) || !h.frame_bytes || h.hz != index->hz ||
+            h.samples_per_frame != index->frame_samples || h.frame_bytes > index->file_size - pos)
+            return false;
+        pos += h.frame_bytes;
+    }
+    *byte = (uint32_t)pos;
+    *skip_frames = (uint32_t)(sample - (uint64_t)frame * index->frame_samples);
+    return true;
+}
+
 bool audio_mp3_frame_at(audio_track_read_fn read, void *ctx, size_t pos, size_t end)
 {
     uint8_t hb[4];

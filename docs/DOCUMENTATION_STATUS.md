@@ -16,6 +16,11 @@ in current code/file formats. They do not imply an active S3 processor.
 
 ## Production release
 
+The isolated fork-improvements branch has software-verified packages A, B and
+C on JC4880. [Package B closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
+records B1-B19 and all physical gates as NOT RUN. This is development evidence,
+not an installation, hardware acceptance or change to the release below.
+
 | Item | M2.4 value |
 | --- | --- |
 | Annotated tag | `M2.4` |

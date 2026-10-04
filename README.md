@@ -14,11 +14,9 @@ MAIN/cue smoke passed; physical non-FLX4 qualification remains open.
 
 [Fork improvements integration](docs/FORK_IMPROVEMENTS.md) is in progress in
 an isolated development branch. Packages A and C are software verified on the
-current P4 target; package B has verified B1-B12 steps and a VINYL/CDJ core
-extension and touch selector (B13a-B13b), plus session-bound UI/search duration (B14-B15)
-validated PWV3 analysis timing (B16), sequential MP3 EOF measurement (B17)
-and profile producers for jog modes (B18),
-with open work. JC1060,
+current P4 target. [Package B is software verified](docs/validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
+through B19: seek/duration/loop/cue behavior, load lock and VINYL/CDJ touch/profile
+actions. Its physical acceptance remains NOT RUN. JC1060,
 DDJ-400 and Pro DJ Link are planned;
 their hardware acceptance has not run.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

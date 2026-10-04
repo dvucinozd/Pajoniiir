@@ -1572,6 +1572,24 @@ static void test_mp3_measured_eof_without_xing(void)
         EXPECT(measured > 2000u && measured < 2200u, "MP3 EOF fixture length is independent of metadata");
         EXPECT(status.duration_ms == measured, "MP3 EOF duration matches actual output frame count");
         EXPECT(status.analysis_span_ms == metadata_ms, "MP3 EOF preserves original analysis span");
+        const uint32_t targets[] = {1500u, 0u, 2000u, 500u, measured};
+        for (unsigned t = 0u; t < sizeof(targets) / sizeof(targets[0]); ++t) {
+            EXPECT(audio_engine_deck_seek(0, targets[t]) == ESP_OK,
+                   "indexed MP3 accepts forward/backward/start/tail seek");
+            uint32_t remaining = 0u;
+            unsigned steps = 0u;
+            while (steps++ < 200u) {
+                int n = audio_engine_test_decode_frame(0);
+                if (n < 0) break;
+                remaining += (uint32_t)n;
+            }
+            EXPECT(steps < 200u && remaining == 80u * 1152u -
+                       (uint32_t)((uint64_t)targets[t] * 44100u / 1000u),
+                   "indexed CBR/VBR seek preserves exact remaining source samples");
+            EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK &&
+                   status.duration_ms == measured && status.analysis_span_ms == metadata_ms,
+                   "indexed MP3 seek preserves file and analysis duration independently");
+        }
         EXPECT(audio_engine_deck_stop(0) == ESP_OK, "MP3 EOF retires session");
         if (variant) {
             EXPECT(audio_engine_deck_load(0, path, NULL, 10000u) == ESP_OK,
@@ -1579,11 +1597,18 @@ static void test_mp3_measured_eof_without_xing(void)
             EXPECT(audio_engine_test_decode_frame(0) > 0, "MP3 EOF starts partial measurement");
             EXPECT(audio_engine_deck_seek(0, 1000u) == ESP_OK, "MP3 EOF seek withdraws measurement authority");
             unsigned steps = 0u;
-            while (steps++ < 200u && audio_engine_test_decode_frame(0) >= 0) {}
+            uint32_t remaining = 0u;
+            while (steps++ < 200u) {
+                int n = audio_engine_test_decode_frame(0);
+                if (n < 0) break;
+                remaining += (uint32_t)n;
+            }
             EXPECT(steps < 200u, "MP3 EOF discontinuous decode terminates");
+            EXPECT(remaining == 80u * 1152u - 44100u,
+                   "VBR seek skips to exact source sample independent of bitrate/metadata");
             EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK &&
-                   status.duration_ms == 10000u,
-                   "MP3 EOF after seek retains fallback instead of publishing a partial count");
+                   status.duration_ms == measured,
+                   "MP3 EOF after seek retains complete index length instead of a partial count");
             EXPECT(audio_engine_deck_stop(0) == ESP_OK, "MP3 EOF discontinuous session retires");
         }
         remove(wav);

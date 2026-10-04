@@ -67,6 +67,14 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   remaining time, rewind and seek/loop cancellation of duration measurement.
   Read faults must not publish a successful measured EOF. Physical/listening
   acceptance: **NOT RUN**.
+- [ ] B19: measure complete-index load/seek latency while the other deck plays;
+  compare first/last samples, paused cue scratch and loop wraps with actual
+  exports. Exercise cancellation, SD/USB removal, fallback files and the
+  `SEEK INDEX ERR` path. Record internal heap, PSRAM, worker stack headroom and
+  strict audio/USB counters on the exact candidate SHA. **NOT RUN**.
+- [ ] [Package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
+  does not qualify hardware. Repeat MAIN/cue listening and the final 180-minute
+  dual-deck soak before release; signed OTA/recovery remain **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

@@ -24,6 +24,8 @@ CFLAGS  = -Wall -Wextra -std=c11 \
            -I../support/stubs
 
 AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_eq.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_filter.c \

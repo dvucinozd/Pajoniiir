@@ -2031,6 +2031,8 @@ $tests = @(
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",

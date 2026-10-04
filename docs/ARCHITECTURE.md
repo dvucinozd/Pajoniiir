@@ -8,7 +8,11 @@ Development integration on `codex/fork-improvements` additionally binds
 loaded-track snapshots to the audio session returned by the accepted LOAD.
 UI duration, beat-jump and search consume live length only for that session;
 metadata remains the fallback and waveform time base. See
-[B14-B15 integration evidence](FORK_IMPROVEMENTS.md). This is software evidence,
+[B14-B19 integration evidence](FORK_IMPROVEMENTS.md). A bounded session-local
+MP3 frame index supplies file length and source-sample seek geometry without
+rescaling the analysis waveform. Index IO is owned by the decoder worker
+outside the output/audio lock; publication and seek commit recheck session and
+request identity. This is software evidence,
 with physical acceptance pending; the production baseline above is unchanged.
 
 ## High-Level Flow

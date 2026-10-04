@@ -313,12 +313,14 @@ typedef struct {
     /* Best known file length, used for seek bounds and tail extrapolation. */
     uint32_t duration_ms;
     audio_track_decode_length_t mp3_decode_length;
+    audio_mp3_index_t mp3_index;
     /* Captured by the LOAD owner; status readers never wait on a loader join. */
     uint32_t loaded_session_generation;
     audio_pvbr_geometry_t pvbr_geom;
     size_t   mp3_audio_start;
     bool     pvbr_geometry_exact;
     uint32_t seek_skip_frames;
+    bool mp3_index_seek;
 
     /* Detected from first decoded frame */
     uint32_t sample_rate;
@@ -2202,9 +2204,10 @@ static int decode_one_frame(
         return ae_flac_decode_one_frame(eng, fw, deck, out_pcm);
     }
 
+    const size_t audio_end = eng->mp3_index.complete ? eng->mp3_index.audio_end : eng->file_size;
     if (!fw || !fw->load_done || atomic_load_bool(&eng->eof) ||
-        eng->file_pos >= eng->file_size) {
-        if (eng->file_pos >= eng->file_size && !atomic_load_bool(&eng->eof)) {
+        eng->file_pos >= audio_end) {
+        if (eng->file_pos >= audio_end && !atomic_load_bool(&eng->eof)) {
             ae_mp3_measure_eof(eng);
             atomic_store_bool(&eng->eof, true);
         }
@@ -2212,7 +2215,7 @@ static int decode_one_frame(
     }
 
     uint8_t input[4096];
-    size_t bytes_left = eng->file_size - eng->file_pos;
+    size_t bytes_left = audio_end - eng->file_pos;
     size_t wanted = bytes_left < sizeof(input) ? bytes_left : sizeof(input);
     size_t got = audio_fw_preload_read_at(fw, eng->file_pos, input, wanted);
     if (got == 0u) {
@@ -2223,7 +2226,7 @@ static int decode_one_frame(
     }
     ae_clear_read_faults(deck);
 
-    mp3dec_frame_info_t info;
+    mp3dec_frame_info_t info = {0};
     int samples = mp3dec_decode_frame(&eng->dec, input, (int)got,
                                       s_scratch_pcm, &info);
     if (info.frame_bytes > 0) {
@@ -2232,7 +2235,11 @@ static int decode_one_frame(
         eng->file_pos += 1u;
         return 0;
     }
-    if (samples == 0) return 0;
+    if (samples == 0) {
+        if (eng->mp3_index_seek && info.hz > 0 && info.layer == 3)
+            (void)audio_seek_skip_take(&eng->seek_skip_frames, eng->mp3_index.frame_samples);
+        return 0;
+    }
 
     if (eng->sample_rate == 0u && info.hz > 0) {
         eng->sample_rate = (uint32_t)info.hz;
@@ -2245,14 +2252,20 @@ static int decode_one_frame(
     if (!eng->fp || atomic_load_bool(&eng->eof)) return 0;
     uint8_t input[4096];
     long pos_before = ftell(eng->fp);
-    size_t got = fread(input, 1u, sizeof(input), eng->fp);
+    size_t wanted = sizeof(input);
+    if (eng->mp3_index.complete) {
+        size_t pos = pos_before >= 0 ? (size_t)pos_before : eng->mp3_index.audio_end;
+        size_t left = pos < eng->mp3_index.audio_end ? eng->mp3_index.audio_end - pos : 0u;
+        if (wanted > left) wanted = left;
+    }
+    size_t got = fread(input, 1u, wanted, eng->fp);
     if (got == 0u) {
         if (!ferror(eng->fp)) ae_mp3_measure_eof(eng);
         else audio_track_decode_length_invalidate(&eng->mp3_decode_length);
         atomic_store_bool(&eng->eof, true);
         return 0;
     }
-    mp3dec_frame_info_t info;
+    mp3dec_frame_info_t info = {0};
     int samples = mp3dec_decode_frame(&eng->dec, input, (int)got,
                                       s_scratch_pcm, &info);
     if (info.frame_bytes > 0) {
@@ -2261,7 +2274,11 @@ static int decode_one_frame(
         fseek(eng->fp, pos_before + 1L, SEEK_SET);
         return 0;
     }
-    if (samples == 0) return 0;
+    if (samples == 0) {
+        if (eng->mp3_index_seek && info.hz > 0 && info.layer == 3)
+            (void)audio_seek_skip_take(&eng->seek_skip_frames, eng->mp3_index.frame_samples);
+        return 0;
+    }
     if (eng->sample_rate == 0u && info.hz > 0) {
         eng->sample_rate = (uint32_t)info.hz;
         eng->channels = info.channels;
@@ -2287,6 +2304,15 @@ static int decode_one_frame(
     return samples;
 }
 
+#if !AE_FW
+static size_t ae_pc_mp3_index_read(void *arg, size_t pos, void *dst, size_t len)
+{
+    FILE *fp = arg;
+    if (fseek(fp, (long)pos, SEEK_SET) != 0) return 0u;
+    return fread(dst, 1u, len, fp);
+}
+#endif
+
 #if AE_FW
 /*
  * seek_pvbr — fast O(1) seek using the 400-entry PVBR table.
@@ -2309,6 +2335,57 @@ static uint32_t seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 static size_t ae_seek_read(void *ctx, size_t pos, void *dst, size_t len)
 {
     return audio_fw_preload_read_at((audio_fw_preload_t *)ctx, pos, dst, len);
+}
+
+typedef struct {
+    audio_engine_state_t *eng;
+    audio_fw_preload_t *fw;
+    audio_fw_runtime_t *runtime;
+    uint32_t session;
+    int64_t deadline_us;
+    uint32_t reads;
+    bool during_load;
+    uint32_t target_ms;
+    uint8_t reason;
+} ae_mp3_index_io_t;
+
+/* Called only by the decode worker, outside AE_LOCK. Cache reads retain the
+ * existing media gate; bounded yields give the other deck/output priority. */
+static size_t ae_mp3_index_read(void *arg, size_t pos, void *dst, size_t len)
+{
+    ae_mp3_index_io_t *io = arg;
+    if (!io->runtime->run || io->eng->loaded_session_generation != io->session ||
+        esp_timer_get_time() >= io->deadline_us) return 0u;
+    if (!io->during_load && (!io->eng->seek_requested ||
+        io->eng->seek_target_ms != io->target_ms || io->eng->seek_reason != io->reason)) return 0u;
+    if (++io->reads % 128u == 0u) vTaskDelay(pdMS_TO_TICKS(1));
+    if (io->during_load && io->fw->file_size)
+        __atomic_store_n(&io->eng->load_progress,
+                         (uint8_t)(50u + (uint64_t)pos * 40u / io->fw->file_size), __ATOMIC_RELAXED);
+    size_t got = audio_fw_preload_read_at(io->fw, pos, dst, len);
+    if (!io->runtime->run || io->eng->loaded_session_generation != io->session ||
+        esp_timer_get_time() >= io->deadline_us) return 0u;
+    return got;
+}
+
+static void ae_prepare_mp3_index(audio_engine_state_t *eng, audio_fw_preload_t *fw,
+                                  audio_fw_runtime_t *runtime)
+{
+    if (eng->format != AUDIO_FORMAT_MP3) return;
+    audio_mp3_index_t index;
+    ae_mp3_index_io_t io = {.eng = eng, .fw = fw, .runtime = runtime,
+        .session = eng->loaded_session_generation,
+        .deadline_us = esp_timer_get_time() + 30000000ll, .during_load = true};
+    bool ok = audio_mp3_index_build(ae_mp3_index_read, &io, eng->file_size, &index);
+    AE_LOCK();
+    if (ok && runtime->run && eng->loaded && eng->loaded_session_generation == io.session) {
+        eng->mp3_index = index;
+        eng->duration_ms = index.duration_ms;
+        eng->mp3_audio_start = index.entries[0].byte;
+    }
+    AE_UNLOCK();
+    ESP_LOGI(TAG, "MP3 frame index: %s frames=%u slots=%u", ok ? "complete" : "fallback",
+             (unsigned)index.frames, (unsigned)index.count);
 }
 
 /* Decode worker, once per load. All file reads go through the bounded cache. */
@@ -2914,6 +2991,8 @@ static void ae_decode_task(void *arg)
     if (!runtime->run) goto cleanup;
 
     ae_prepare_pvbr_geometry(eng, fw);
+    ae_prepare_mp3_index(eng, fw, runtime);
+    if (!runtime->run) goto cleanup;
 
     if (eng->format == AUDIO_FORMAT_WAV || eng->format == AUDIO_FORMAT_FLAC) {
         const bool is_wav = (eng->format == AUDIO_FORMAT_WAV);
@@ -3005,6 +3084,33 @@ static void ae_decode_task(void *arg)
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
         if (eng->seek_requested) {
+            /* Snapshot briefly under the audio lock, perform header IO outside
+             * it, then recheck the request/preroll before accepting the result. */
+            AE_LOCK();
+            if (!eng->seek_requested) {
+                AE_UNLOCK();
+                continue;
+            }
+            uint32_t prepared_target = eng->seek_target_ms;
+            uint8_t prepared_reason = eng->seek_reason;
+            uint32_t prepared_decode_ms = prepared_target;
+            bool prepared_paused = !atomic_load_bool(&eng->playing);
+            if (timeline_active(ctx->deck) && prepared_reason == AE_SEEK_REASON_USER &&
+                prepared_paused && eng->sample_rate > 0u && prepared_target > 0u) {
+                uint32_t cap = (uint32_t)((uint64_t)eng->sample_rate * AE_TIMELINE_FORWARD_MS / 1000u);
+                if (cap > s_pcm_timelines[ctx->deck].capacity) cap = s_pcm_timelines[ctx->deck].capacity;
+                uint32_t max_pre = cap > MINIMP3_MAX_SAMPLES_PER_FRAME ? cap - MINIMP3_MAX_SAMPLES_PER_FRAME : 0u;
+                audio_cue_preroll_t pre;
+                prepared_decode_ms = audio_cue_preroll_arm(&pre, true, prepared_target, eng->sample_rate, max_pre);
+            }
+            uint32_t indexed_byte = 0u, indexed_skip = 0u;
+            ae_mp3_index_io_t index_io = {.eng = eng, .fw = fw, .runtime = runtime,
+                .session = eng->loaded_session_generation,
+                .deadline_us = esp_timer_get_time() + 2000000ll,
+                .target_ms = prepared_target, .reason = prepared_reason};
+            AE_UNLOCK();
+            bool indexed = audio_mp3_index_locate(&eng->mp3_index, ae_mp3_index_read, &index_io,
+                                                   prepared_decode_ms, &indexed_byte, &indexed_skip);
             AE_LOCK();
             if (eng->seek_requested) {
                 uint32_t target_ms = eng->seek_target_ms;
@@ -3024,14 +3130,33 @@ static void ae_decode_task(void *arg)
                 audio_cue_preroll_t preroll;
                 uint32_t decode_target_ms = audio_cue_preroll_arm(
                     &preroll, cue_preroll, target_ms, eng->sample_rate, max_pre);
+                if (eng->mp3_index.complete && (prepared_target != target_ms ||
+                    prepared_reason != (uint8_t)seek_reason || prepared_decode_ms != decode_target_ms ||
+                    index_io.session != eng->loaded_session_generation || !runtime->run)) {
+                    AE_UNLOCK();
+                    continue;
+                }
+                if (eng->mp3_index.complete && !indexed) {
+                    /* A verified index must not silently degrade to an
+                     * estimated seek after read failure or time budget expiry. */
+                    eng->seek_requested = false;
+                    AE_UNLOCK();
+                    ae_fail_load(eng, fw, runtime, ESP_FAIL, "SEEK INDEX ERR");
+                    goto cleanup;
+                }
                 eng->timeline_preroll_frames = preroll.frames;
                 atomic_store_bool(&eng->timeline_preroll_pending, preroll.pending);
                 eng->seek_skip_frames = 0u;
+                eng->mp3_index_seek = false;
                 if (eng->format == AUDIO_FORMAT_WAV) {
                     ae_wav_seek_to_ms(eng, decode_target_ms);
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
                     (void)ae_flac_seek_to_ms(eng, fw, ctx->deck,
                                              decode_target_ms);
+                } else if (indexed) {
+                    eng->file_pos = indexed_byte;
+                    eng->seek_skip_frames = indexed_skip;
+                    eng->mp3_index_seek = true;
                 } else if (decode_target_ms == 0u) {
                     /* Restart from the actual audio start even if a legacy
                      * PVBR first entry already points into the file. */
@@ -3156,6 +3281,7 @@ static void ae_decode_task(void *arg)
                         (size_t)samples * 2u * sizeof(decode_pcm[0]));
             } else {
                 AE_UNLOCK();
+                vTaskDelay(pdMS_TO_TICKS(1));
                 continue;
             }
         }
@@ -4388,6 +4514,8 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
     eng->duration_ms = duration_ms;
     audio_track_decode_length_begin(&eng->mp3_decode_length);
+    memset(&eng->mp3_index, 0, sizeof(eng->mp3_index));
+    eng->mp3_index_seek = false;
     eng->pvbr_geom = (audio_pvbr_geometry_t){0};
     eng->mp3_audio_start = 0u;
     eng->pvbr_geometry_exact = false;
@@ -4564,6 +4692,16 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 #endif
 
 #if !AE_FW
+    if (eng->format == AUDIO_FORMAT_MP3 && eng->fp) {
+        if (audio_mp3_index_build(ae_pc_mp3_index_read, eng->fp, eng->file_size, &eng->mp3_index)) {
+            eng->duration_ms = eng->mp3_index.duration_ms;
+            eng->mp3_audio_start = eng->mp3_index.entries[0].byte;
+        }
+        rewind(eng->fp);
+        ESP_LOGI(TAG, "MP3 index PC: complete=%u frames=%u length=%u size=%u",
+                 eng->mp3_index.complete ? 1u : 0u, (unsigned)eng->mp3_index.frames,
+                 (unsigned)eng->mp3_index.duration_ms, (unsigned)eng->file_size);
+    }
     eng->loading = false;
     eng->load_progress = 100;
 #endif
@@ -4790,6 +4928,17 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
      * runs on the same core as the output-task consumer, so the reset never
      * races a concurrent pop from another core). */
     deck_pcm_reset(deck);
+    if (eng->format == AUDIO_FORMAT_MP3 && eng->fp && eng->mp3_index.complete) {
+        uint32_t byte = 0u, skip = 0u;
+        if (audio_mp3_index_locate(&eng->mp3_index, ae_pc_mp3_index_read, eng->fp,
+                                   position_ms, &byte, &skip) &&
+            fseek(eng->fp, (long)byte, SEEK_SET) == 0) {
+            eng->seek_skip_frames = skip;
+            eng->mp3_index_seek = true;
+            mp3dec_init(&eng->dec);
+            eng->seek_requested = false;
+        }
+    }
 #endif
 
     if (eng->decoder_open && eng->sample_rate > 0u) {
@@ -6469,6 +6618,8 @@ int audio_engine_test_decode_frame(uint8_t deck)
     AE_LOCK();
     audio_engine_state_t *eng = &s_engines[deck];
     int n = eng->loaded ? decode_one_frame(eng, pcm) : 0;
+    if (n > 0 && eng->seek_skip_frames)
+        n -= (int)audio_seek_skip_take(&eng->seek_skip_frames, (uint32_t)n);
     bool done = !eng->loaded || atomic_load_bool(&eng->eof);
     AE_UNLOCK();
     return done ? -1 : n;

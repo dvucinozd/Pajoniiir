@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B18 implemented; exact duration after unanchored MP3 seeks remains open |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B19 software verified on JC4880; physical acceptance NOT RUN |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -29,6 +29,10 @@ outside this branch. These are planned capabilities, not current support claims.
 | L | Project-bound OTA, documentation, qualification and release candidate | Pending |
 
 Software verification, hardware acceptance and release are separate states.
+The [package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
+records the final bounds, regressions and unrun acceptance matrix. Earlier
+step descriptions below retain their historical pending items; later B steps
+supersede them. UI redesign/presentation belongs to H and S3CP v4 to D.
 JC1060, DDJ-400 and real CDJ peer acceptance remain **NOT RUN** until the
 hardware is available. No deployment, production channel change or hardware
 acceptance follows from a successful host test or build.
@@ -659,6 +663,51 @@ golden parity remains unchanged. Existing profile files are not rewritten.
 Rollback retains the original compiler/profile files; new actions require the
 development firmware and are not claimed implemented in M2.4. Physical mode
 selection and reconnect tests: **NOT RUN**.
+
+## B19: Complete MP3 frame index and package B software closure
+
+A session-local index counts the full MPEG Layer III header stream and retains
+at most 256 sparse checkpoints (about 2 KiB per deck). Checkpoints are decimated
+as the file grows; frame numbers remain exact. It works without Xing, VBRI or
+PVBR and does not infer audio length from PDB/analysis rounding. A seek walks
+at most one checkpoint stride of headers to an exact MPEG frame with reservoir
+lead, then discards PCM to the requested source sample. A valid frame which
+produces no PCM during reservoir refill also consumes its share of the skip.
+Loop wraps and paused cue preroll use the same indexed source path. The fixed
+analysis/waveform span remains independent of the indexed file length.
+
+The index also records the audio end before validated ID3v1/zero padding. This
+avoids minimp3 rejecting the final audio frame when its successor is a tag.
+Host decoding and seeking now preserve that final frame. Existing PVBR remains
+the fallback for files without a complete index. Free-format MP3, broken or
+mixed-rate header streams and unsupported trailing tags do not gain an exact
+index claim. The index admits at most 1 GiB / 1,000,000 MPEG frames; firmware
+build IO has a 30-second budget and seek lookup a 2-second budget. These are
+defensive limits, not measured hardware latency promises. Incomplete/cancelled
+scans are never published; an established index whose seek IO fails reports
+`SEEK INDEX ERR` rather than silently substituting an estimated seek.
+
+Firmware index IO runs in the decode worker outside AE_LOCK through the
+existing page cache/media gate, yields every 128 reads, checks the load session
+and stop flag, and reports scan progress. Results are rechecked under AE_LOCK;
+seek results additionally match the current request/reason/preroll target.
+STOP still joins the owning worker before file/index reuse. There are no
+filesystem operations or allocations in the output/audio mixing task.
+This is original integration around the MIT `428b97dd` parser/seek module.
+
+Tests cover full counts, checkpoint compaction, exact start/forward/backward/
+tail sample skips for CBR/VBR, ID3v2/v1, truncated/broken/mixed-rate streams,
+cancel/read failure, file size limits and independence from misleading metadata.
+Full host, unchanged simulator screenshots, Master Tempo host soak and IDF 6.0.2
+build gates qualify software only. Physical latency, resource headroom, real
+MP3/WAV/FLAC listening, scratch/loops, removal/reconnect, OTA and 180-minute
+exact-image acceptance remain **NOT RUN**. No persistent format changes are
+introduced by B19; source rollback discards the session index. B16 cache v5
+regenerates safely across rollback, and original v2 cue records are retained.
+
+Final B19 development build: 2,539,856 bytes (1,130,160 bytes below `0x380000`),
+ESP-IDF 6.0.2 with the unchanged P4 dependency lock. This build is not a signed
+release or an installed-device qualification.
 
 ## Provenance and rollback
 

@@ -98,6 +98,32 @@ typedef enum {
 
 typedef size_t (*audio_track_read_fn)(void *ctx, size_t offset, void *dst, size_t bytes);
 
+#define AUDIO_MP3_INDEX_SLOTS 256u
+#define AUDIO_MP3_INDEX_MAX_BYTES (1024u * 1024u * 1024u)
+#define AUDIO_MP3_INDEX_MAX_FRAMES 1000000u
+typedef struct {
+    uint32_t byte;
+    uint32_t frame;
+} audio_mp3_index_entry_t;
+
+/* Fixed-memory, session-local index. Only a complete, constant-rate MPEG
+ * header walk is authoritative; failed builds leave complete=false. */
+typedef struct {
+    audio_mp3_index_entry_t entries[AUDIO_MP3_INDEX_SLOTS];
+    uint32_t count, stride, frames, hz, frame_samples, duration_ms;
+    size_t file_size;
+    size_t audio_end; /* excludes validated trailing tags/padding */
+    bool complete;
+} audio_mp3_index_t;
+
+bool audio_mp3_index_build(audio_track_read_fn read, void *ctx, size_t file_size,
+                           audio_mp3_index_t *out);
+/* Finds an exact MPEG frame before the target with decoder reservoir lead.
+ * At most stride header reads; the caller supplies cancellation/IO admission. */
+bool audio_mp3_index_locate(const audio_mp3_index_t *index,
+                            audio_track_read_fn read, void *ctx, uint32_t target_ms,
+                            uint32_t *byte, uint32_t *skip_frames);
+
 typedef struct {
     uint32_t frames;
     uint32_t hz;

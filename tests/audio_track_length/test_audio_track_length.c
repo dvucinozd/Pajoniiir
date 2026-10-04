@@ -575,6 +575,48 @@ static void test_runtime_extension(void)
     assert(audio_track_length_at_eof(LIE_SPAN_MS, LIE_SPAN_MS, LIE_REAL_MS, false) == LIE_REAL_MS);
 }
 
+static size_t fail_read(void *ctx, size_t offset, void *dst, size_t bytes)
+{
+    mem_file_t *f = ctx;
+    if (f->reads >= 20u) return 0u; /* cancellation or read failure */
+    return mem_read(ctx, offset, dst, bytes);
+}
+
+static void test_complete_frame_index(void)
+{
+    mem_file_t f = make_file(4096u, 0u, 10000u);
+    audio_mp3_index_t index;
+    assert(audio_mp3_index_build(mem_read, &f, f.size, &index));
+    assert(index.complete && index.frames == 10001u && index.hz == 48000u);
+    assert(index.duration_ms == 10001u * 24u);
+    assert(index.count <= AUDIO_MP3_INDEX_SLOTS && index.stride > 8u);
+    for (uint32_t target = 0u; target <= index.duration_ms + 500u; target += 379u) {
+        uint32_t byte, skip;
+        f.reads = 0u;
+        assert(audio_mp3_index_locate(&index, mem_read, &f, target, &byte, &skip));
+        uint64_t wanted = (uint64_t)target * 48000u / 1000u;
+        uint64_t total = (uint64_t)10001u * 1152u;
+        if (wanted >= total) wanted = total - 1u;
+        uint32_t frame = (byte - 4096u) / LIE_FRAME_BYTES;
+        assert((byte - 4096u) % LIE_FRAME_BYTES == 0u);
+        assert((uint64_t)frame * 1152u + skip == wanted);
+        assert(f.reads < index.stride);
+    }
+    f.reads = 0u;
+    assert(!audio_mp3_index_build(fail_read, &f, f.size, &index));
+    assert(!index.complete);
+    assert(!audio_mp3_index_build(mem_read, &f, f.size - 129u, &index)); /* truncated final frame */
+    f.data[4096u + LIE_FRAME_BYTES] = 0u;
+    assert(!audio_mp3_index_build(mem_read, &f, f.size, &index)); /* broken middle */
+    put_header(f.data + 4096u + LIE_FRAME_BYTES);
+    f.data[4096u + LIE_FRAME_BYTES + 2u] = 0x90u; /* changed sample rate */
+    assert(!audio_mp3_index_build(mem_read, &f, f.size, &index));
+    f.data[6] = 0x80u; /* malformed ID3 */
+    assert(!audio_mp3_index_build(mem_read, &f, f.size, &index));
+    assert(!audio_mp3_index_build(mem_read, &f, (size_t)AUDIO_MP3_INDEX_MAX_BYTES + 1u, &index));
+    free(f.data);
+}
+
 static void test_decoder_length_authority(void)
 {
     audio_track_decode_length_t m;
@@ -603,6 +645,7 @@ static void test_decoder_length_authority(void)
 
 int main(void)
 {
+    test_complete_frame_index();
     test_decoder_length_authority();
     test_header_duration();
     test_hw_table_extrapolates_to_eof();
