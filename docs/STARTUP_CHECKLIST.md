@@ -21,7 +21,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   default-off, Overview, Library and Hot Cues in the actual firmware. Do not treat
   prototype Settings captures as completed runtime parity. Physical touch,
   render, MAIN/cue and strict timing gates remain NOT RUN. Network OTA installation
-  is authorized when reachable; ignore COM devices. Verify project/image and idle
+  is authorized when reachable. H3 failed Wi-Fi/USB acceptance; restore the
+  verified previous image before further hardware qualification. The operator
+  authorized a one-time wired Pajoniiir recovery; use only its explicitly
+  identified COM port and ignore every other device. Verify project/image and idle
   decks before an install, then collect exact-image/operator acceptance separately.
 
 - [ ] [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md):

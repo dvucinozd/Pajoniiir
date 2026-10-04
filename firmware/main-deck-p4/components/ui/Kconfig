@@ -1,10 +1,13 @@
 menu "Pajoniiir UI migration"
 config PAJONIIIR_DJ_OVERVIEW
     bool "Use dj_ui presentation (migration preview)"
+    depends on LV_USE_CUSTOM_MALLOC
     default n
     help
         Incremental package H migration. Overview, Library and Hot Cues use dj_ui
         presentation and existing transport/library state. Settings still
         use the qualified legacy presentation until their parity gates pass.
         This is a development preview, not hardware acceptance.
+        All LVGL allocations use the custom PSRAM heap so small widgets and
+        labels cannot consume internal memory needed by USB and Wi-Fi tasks.
 endmenu

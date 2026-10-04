@@ -2713,6 +2713,17 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_psram_allocator"
+        Dir = "tests/ui_psram_allocator"
+        Target = "test_ui_psram_allocator.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DESP_PLATFORM", "-Istubs", "-o", "test_ui_psram_allocator.exe",
+            "test_ui_psram_allocator.c",
+            "../../firmware/main-deck-p4/components/ui/ui_psram_allocator.c"
+        )
+      },
+      @{
         Name = "ui_settings"
         Dir = "tests/ui_settings"
         Target = "test_ui_settings.exe"

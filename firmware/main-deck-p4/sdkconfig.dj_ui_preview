@@ -1,2 +1,5 @@
 # Package H migration preview. No hardware acceptance or release implication.
 CONFIG_PAJONIIIR_DJ_OVERVIEW=y
+# Keep all LVGL objects/styles/text in external memory. The ordinary product
+# retains its existing allocator until this preview's physical gates pass.
+CONFIG_LV_USE_CUSTOM_MALLOC=y

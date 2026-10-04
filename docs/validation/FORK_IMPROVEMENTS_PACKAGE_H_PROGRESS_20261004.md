@@ -6,7 +6,58 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 MIT provenance is retained in `components/ui/DJ_UI_NOTICE.md`.
 Production M2.4 and the separate APTA branch are unchanged.
 
-## Current checkpoint: H3 Hot Cues integration
+## Current checkpoint: H3 hardware regression and recovery
+
+H3 was pushed as `cf282906ff5ffe2bc045659c59e5d6618e46a094`.
+All eight clean CI jobs passed in
+[run 37207348161](https://github.com/dvucinozd/Pajoniiir/actions/runs/37207348161).
+The operator prefers the previous design; keep it as the product basis and
+keep dj_ui as an optional preview. Further H4 Settings work is preserved in a
+local stash and paused while recovering the device.
+
+A fresh ESP-IDF 6.0.2 build from the pushed SHA produced
+`M2.4-49-gcf28290`, 2,596,416 bytes, project `main-deck-p4`.
+Image SHA-256: `59f7ba4ddb4dcd3ee44741388ac5e7de56209e34dce050b33b3215e062080da0`.
+Bundle and manifest signatures passed against the committed rel-001 public key.
+Both decks were empty/idle before the authorized local OTA. Upload returned
+`ok:true,rebooting:true`. The operator confirmed the new UI was visible.
+
+**Hardware acceptance FAIL:** Wi-Fi appeared briefly and disappeared; USB0
+storage and USB1 FLX4 were not recognized, including after full power cycles.
+The operator supplied `I:\\logs\\system.log`; a read-only evidence copy has SHA-256
+`472c475e8185774625c29b5a35e8590b088dc8272d34ab93fe12fbcb931c60d1`.
+Boot 577 on the previous image had USB mounted, 324 library tracks, FLX4/profile
+active and Wi-Fi started (88,995 internal bytes free). Boots 578-585 on H3 show
+Wi-Fi startup at about 61,955 bytes free / 31,744 largest block, then
+`WIFI_FAILED a0=45064` (`0xB008`, ESP_ERR_HTTPD_TASK). Subsequent attempts have
+about 15 KiB internal free / 5,120-byte largest block, LOW_INTERNAL_HEAP and
+bounded three-attempt give-up. HTTP needs an 8,192-byte task stack.
+No USB mounted/controller-connected events appear in these H3 boots. The log
+confirms the HTTP task allocation failure; USB recovery remains unverified.
+
+Small LVGL allocations previously used C malloc and consumed internal heap;
+the preview also retains legacy widgets. A custom LVGL PSRAM-only allocator
+now avoids that shared pool, including labels/styles and reallocations. It
+never falls back to internal memory on external OOM. Kconfig/build checks
+require the custom allocator for the preview. Ordinary builds retain their
+existing allocator and presentation. This correction is software-checked;
+its physical Wi-Fi/USB effect remains NOT RUN until recovery and installation.
+Local correction checks PASS: full P4 host runner, new allocator suite (failure
+ownership/no fallback/monitoring), unchanged eleven legacy simulator captures,
+both ESP-IDF 6.0.2 preview builds and board checks, unchanged dependency locks
+and documentation integrity. Images are 2,596,432 and 2,593,904 bytes. The
+allocator's archive anchor is verified by successful firmware linking; clean
+CI remains pending for this correction.
+
+The exact prior image `M2.4-7-gb8d9cb7` and rel-001 signatures were independently
+verified and copied to `D:\\Documents\\.codex-reviews\\Pajoniiir-recovery-M2.4-7-gb8d9cb7`.
+Image SHA-256: `0e9caf717808adbe2be526a10f59ddf768c1119eb2c914ccfe6b4fae15005d6c`.
+OTA recovery is unavailable while AP is down. One-time wired recovery was
+explicitly authorized for Pajoniiir only; physical connection/port identity
+and recovery remain pending. Do not enumerate or touch unrelated COM devices.
+Public production, tags and channels are unchanged.
+
+## H3 Hot Cues integration (software checkpoint)
 
 H2 is pushed as `ae2a9b0257629bfcc1fc9b347263cde1f02b5b7a`.
 All eight clean CI jobs passed in

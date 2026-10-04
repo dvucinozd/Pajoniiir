@@ -12,7 +12,10 @@ requires exact-image measurements.
 [H migration preview](validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md)
 provides both native layouts and opt-in Overview/Library/Hot Cues bridges. H remains open:
 Settings binding, complete touch parity, layout polish and removal
-of duplicate legacy presentation allocations still precede default enablement.
+of duplicate legacy presentation allocations remain open. The operator prefers
+the previous design; retain it as the product basis and keep dj_ui optional.
+H3 installation failed Wi-Fi/USB acceptance due to internal heap pressure;
+recovery and exact-image validation take priority over further presentation work.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5

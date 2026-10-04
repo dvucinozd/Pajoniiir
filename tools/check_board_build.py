@@ -17,6 +17,9 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
     assert ("board_ethernet" in components) == jc1060, "wrong Ethernet transport"
     assert {"board_adapter", "audio_engine", "deck_core", "library", "ui"} <= components
     config = (build / "config/sdkconfig.h").read_text()
+    if "#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1" in config:
+        assert "#define CONFIG_LV_USE_CUSTOM_MALLOC 1" in config, "preview UI must keep LVGL allocations in PSRAM"
+        assert "#define CONFIG_LV_USE_CLIB_MALLOC 1" not in config, "preview UI cannot consume internal heap for small objects"
     recorder = "#define CONFIG_AUDIO_RECORDER_ENABLED 1" in config
     experiment = "#define CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD 1" in config
     assert recorder == experiment == experimental_recorder, "experimental recorder in wrong build class"

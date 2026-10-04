@@ -37,6 +37,9 @@ physical card latency, power-loss and audio acceptance are NOT RUN.
 adds the shared dj_ui presentation and opt-in Overview/Library/Hot Cues bridges
 at both native resolutions. Settings retains the legacy runtime until its
 functional parity is implemented. H remains open; this preview is default-off.
+The operator prefers the previous design, which remains the product basis.
+The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
+recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

@@ -609,6 +609,10 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
     ppa_client_config_t ppa_cfg = { .oper_type = PPA_OPERATION_SRM };
     ESP_ERROR_CHECK(ppa_register_client(&ppa_cfg, &s_ppa));
 
+#if CONFIG_LV_USE_CUSTOM_MALLOC
+    extern void ui_psram_allocator_keep(void);
+    ui_psram_allocator_keep();
+#endif
     lv_init();
 
     s_disp = lv_display_create(s_hor_res, s_ver_res);
