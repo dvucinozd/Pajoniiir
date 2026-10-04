@@ -22,6 +22,11 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] Operator sequencing decision (2026-10-04): physical audio testing and the
+  final soak are deferred until I-L integration finishes. Keep these gates open;
+  software tests do not replace them. Retain the installed JC4880 candidate
+  while developing the Ethernet-only JC1060 Link path; ignore unrelated COM ports.
+
 - [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
   returned network/USB and operator-confirmed previous design/FLX4 controls.
   Resource gate FAILED: waveform internal-DMA probes and HTTP stack 456 bytes.

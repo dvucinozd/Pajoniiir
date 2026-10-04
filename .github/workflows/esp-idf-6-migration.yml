@@ -124,6 +124,10 @@ jobs:
           }
           exit $p4
 
+      - name: Run DJ Link codec and POSIX UDP mock with ASan and UBSan
+        shell: bash
+        run: bash tests/djlink/run_linux_sanitizers.sh
+
       - name: Run UI simulator screenshot gate
         shell: pwsh
         run: |

@@ -20,7 +20,9 @@ readiness within 60 seconds before confirmation; failure requests rollback.
 Runtime allocation, startup-phase, heap and critical-stack diagnostics now have
 host coverage and an executable physical evidence gate. Runtime memory and
 exact-image acceptance remain open; no production channel change follows from
-software verification. Next: qualify an ordinary JC4880 candidate, then I-L.
+software verification. Continue I-L software integration. The operator deferred
+physical audio tests and the final soak until the end of integration; these
+remain mandatory exact-image gates before product acceptance or publication.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

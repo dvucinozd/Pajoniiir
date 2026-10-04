@@ -43,7 +43,8 @@ endforeach()
 list(APPEND EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
-    "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest")
+    "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest"
+    "${CMAKE_CURRENT_LIST_DIR}/../common/djlink")
 if(PAJONIIIR_STORAGE_EXPERIMENT)
     list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.storage_experiment")
     if(PAJONIIIR_STORAGE_VARIANT)

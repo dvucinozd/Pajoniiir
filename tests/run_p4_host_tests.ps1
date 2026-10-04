@@ -1653,7 +1653,19 @@ Assert-FileDoesNotContain `
 
 }
 
+$djlinkSources = @(Get-ChildItem (Join-Path $RepoRoot 'firmware/common/djlink/src') -Filter *.c |
+    Sort-Object Name | ForEach-Object { $_.FullName })
 $tests = @(
+    foreach ($codecSuite in @('djlink_test', 'djlink_test2', 'test_db_bounds')) {
+        @{
+            Name = $codecSuite
+            Dir = 'tests/djlink'
+            Target = "$codecSuite.exe"
+            Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
+                '-I../../firmware/common/djlink/include', '-o', "$codecSuite.exe",
+                "$codecSuite.c") + $djlinkSources + @('-lm')
+        }
+    }
     @{
         Name = "deck_load_lock"
         Dir = "tests/deck_load_lock"

@@ -52,6 +52,9 @@ presentation remains unchanged. Exact-image resource/audio acceptance stays open
 Signed `M2.4-61-gc4912d5b` is installed: the focused empty/two-paused-track memory
 and stack floors pass with zero allocation failures. Full comparison still lacks
 the recovery largest-block measurement; listening and final soak remain open.
+At the operator's request, physical audio tests and the final soak are deferred
+until the remaining packages are integrated. They remain mandatory acceptance
+gates. Software work proceeds with I-L; the installed JC4880 image is retained.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
