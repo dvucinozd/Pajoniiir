@@ -473,10 +473,11 @@ static void ui_overview_action_play_pause(uint8_t deck)
 #endif
 }
 
-static void ui_overview_action_cue(uint8_t deck)
+static void ui_overview_action_cue(uint8_t deck, bool pressed)
 {
 #ifdef WIN32
     (void)deck;
+    if (!pressed) return;
     ui_simulator_deck_set_playing(false);
     ui_simulator_deck_set_position(0);
 #else
@@ -484,7 +485,7 @@ static void ui_overview_action_cue(uint8_t deck)
         .type  = CTRL_EV_BUTTON,
         .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_CUE, CTRL_ID_DECK2_CUE),
         .deck  = deck,
-        .value = 1,
+        .value = pressed ? 1 : 0,
         .seq   = 0
     };
     deck_core_queue_event(&ev);

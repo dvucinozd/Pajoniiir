@@ -402,6 +402,55 @@ static void test_decks_track_transport_independently(void)
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
 }
 
+static void test_cdj_cue_hold_release_and_play_commit(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, NULL);
+    ctrl_event_t cue = deck_button(CTRL_ID_DECK1_CUE);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1234u;
+    deck_core_test_apply_event(&cue);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).cue_point_ms == 1234u);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    cue.value = 0;
+    deck_core_test_apply_event(&cue);
+    cue.value = 1;
+    deck_core_test_apply_event(&cue);
+    assert(audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).cue_preview);
+    int seek_count = audio_engine_stub_deck_seek_count[CTRL_DECK_1];
+    deck_core_test_apply_event(&cue); /* repeated note cannot toggle preview */
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == seek_count);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 2200u;
+    cue.value = 0;
+    deck_core_test_apply_event(&cue);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1234u);
+    cue.value = 1;
+    deck_core_test_apply_event(&cue);
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    deck_core_test_apply_event(&play);
+    cue.value = 0;
+    deck_core_test_apply_event(&cue);
+    assert(audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).cue_preview);
+    cue.value = 1;
+    deck_core_test_apply_event(&cue);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1234u);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+    cue.value = 0;
+    deck_core_test_apply_event(&cue);
+    cue.value = 1;
+    deck_core_test_apply_event(&cue);
+    assert(audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    ctrl_event_t disconnected = flx4_connection_state(CTRL_FLX4_DISCONNECTED);
+    deck_core_test_apply_event(&disconnected);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).cue_preview);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).cue_held);
+}
+
 static void test_deck2_snapshot_follows_audio_engine_position(void)
 {
     deck_core_test_reset();
@@ -3030,6 +3079,7 @@ int main(void)
 {
     test_load_lock_uses_actual_target_deck_transport();
     test_decks_track_transport_independently();
+    test_cdj_cue_hold_release_and_play_commit();
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();

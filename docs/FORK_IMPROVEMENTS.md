@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B11 software verified; CDJ CUE/jog mode and remaining duration work pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B12 software verified; jog mode and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -344,6 +344,26 @@ Verification on 2026-10-04 for B8-B11:
   `0x380000` application budget. Dependency lock unchanged.
 - Documentation integrity and whitespace checks: PASS.
 - Hardware smoke, installed image, physical soak and OTA: NOT RUN.
+
+## B12: CDJ CUE press/release transport
+
+CUE during PLAY returns to the stored cue and pauses. While paused away from
+the cue, pressing CUE sets the current/quantized cue. Pressing at the cue
+starts a held preview; releasing pauses and returns to that cue. PLAY during
+preview commits playback so the later CUE release does not stop it. Repeated
+presses and unmatched releases do not retrigger transport. Disconnect releases
+an active preview, and deck reset/eject clears preview ownership.
+
+Touch CUE sends PRESSED, RELEASED and PRESS_LOST through the same semantic
+events as MIDI. The simulator retains its explicit transport adapter. Host
+tests cover set, preview, duplicate press, release, PLAY commit, return from
+PLAY, deck isolation and disconnect. Physical CUE feel and audible preroll:
+**NOT RUN**.
+
+Validation: full P4 host runner, both deck-core scratch configurations,
+11 unchanged simulator baselines and documentation integrity passed.
+ESP-IDF v6.0.2 P4 build passed: 2,533,696 bytes within the `0x380000`
+application budget. Dependency lock unchanged; `git diff --check` passed.
 
 ## C1: Bounded optional PWV4 color preview
 

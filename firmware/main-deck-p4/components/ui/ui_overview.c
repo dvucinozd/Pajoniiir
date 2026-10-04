@@ -79,7 +79,7 @@ static void cue_event_cb(lv_event_t *e)
 {
     uint8_t deck = ui_event_deck(e);
     if (s_overview_config.actions.cue) {
-        s_overview_config.actions.cue(deck);
+        s_overview_config.actions.cue(deck, lv_event_get_code(e) == LV_EVENT_PRESSED);
     }
 }
 
@@ -983,7 +983,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     /* Seed the paused-state styling once; per-frame updates now only run on an
      * actual play/pause transition (see ui_update_overview_deck). */
     ui_overview_apply_play_button(panel, false);
-    ui_overview_compact_button(panel->panel,
+    lv_obj_t *cue_button = ui_overview_compact_button(panel->panel,
                                deck,
                                OVERVIEW_TRANSPORT_X,
                                top_y + OVERVIEW_TRANSPORT_CUE_Y_OFFSET,
@@ -991,6 +991,10 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                                "CUE",
                                &s_style_btn_amber,
                                cue_event_cb);
+    lv_obj_remove_event_cb(cue_button, cue_event_cb);
+    lv_obj_add_event_cb(cue_button, cue_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(cue_button, cue_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(cue_button, cue_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     for (int i = 0; i < OVERVIEW_VU_SEGMENT_COUNT; i++) {
         int seg_index_from_top = OVERVIEW_VU_SEGMENT_COUNT - 1 - i;

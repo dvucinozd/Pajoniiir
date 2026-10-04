@@ -273,6 +273,7 @@ static void set_sync_master(uint8_t deck, deck_state_t *state);
 static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
 static void deck_send_led(led_id_t led, uint8_t state, uint8_t deck);
 static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state);
+static void handle_cue_button(uint8_t deck, bool pressed, deck_state_t *state);
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -1832,6 +1833,7 @@ static void on_state_event(const ctrl_event_t *ev)
          * remain latched and silent until the next track load. */
         for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
             handle_jog_touch(deck, false, &s_decks[deck]);
+            handle_cue_button(deck, false, &s_decks[deck]);
             s_decks[deck].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
         }
     } else {
@@ -1992,15 +1994,71 @@ static bool on_system_value(const ctrl_event_t *ev)
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
 
+static void handle_cue_button(uint8_t deck, bool pressed, deck_state_t *state)
+{
+    const bool uses_audio = deck_uses_audio_engine(deck);
+    if (!pressed) {
+        if (!state->cue_held) return;
+        state->cue_held = false;
+        if (!state->cue_preview) return;
+        state->cue_preview = false;
+        if (uses_audio) {
+            if (audio_engine_deck_pause(deck) != ESP_OK) return;
+            state->playing = false;
+            if (audio_engine_deck_seek(deck, state->cue_point_ms) != ESP_OK) return;
+        }
+        state->playing = false;
+        state->position_ms = state->cue_point_ms;
+        sync_legacy_compat_leds(deck);
+        return;
+    }
+    if (state->cue_held) return;
+    state->cue_held = true;
+    bool playing = uses_audio ? audio_engine_deck_is_playing(deck) : state->playing;
+    if (playing) {
+        if (uses_audio) {
+            if (audio_engine_deck_pause(deck) != ESP_OK) return;
+            state->playing = false;
+            if (audio_engine_deck_seek(deck, state->cue_point_ms) != ESP_OK) return;
+        }
+        state->playing = false;
+        state->position_ms = state->cue_point_ms;
+    } else {
+        uint32_t position = current_deck_position_ms(deck, state);
+        if (position != state->cue_point_ms) {
+            uint32_t cue = quantized_deck_position_ms(deck, state);
+            if (uses_audio && audio_engine_deck_seek(deck, cue) != ESP_OK) return;
+            state->cue_point_ms = cue;
+            state->position_ms = state->cue_point_ms;
+        } else {
+            if (uses_audio && audio_engine_deck_play(deck) != ESP_OK) return;
+            state->playing = true;
+            state->cue_preview = true;
+        }
+    }
+    sync_legacy_compat_leds(deck);
+}
+
 static void on_button(uint8_t deck, button_id_t btn, bool pressed)
 {
+    deck_state_t *state = &s_decks[normalize_deck(deck)];
+    if (btn == BTN_CUE) {
+        handle_cue_button(deck, pressed, state);
+        return;
+    }
     if (!pressed) return;
 
-    deck_state_t *state = &s_decks[normalize_deck(deck)];
     bool uses_audio = deck_uses_audio_engine(deck);
 
     switch (btn) {
     case BTN_PLAY:
+        if (state->cue_preview) {
+            /* PLAY while CUE is held commits the preview to normal playback. */
+            state->cue_preview = false;
+            state->playing = true;
+            sync_legacy_compat_leds(deck);
+            break;
+        }
         if (uses_audio && audio_engine_deck_is_playing(deck)) {
             esp_err_t rc = audio_engine_deck_pause(deck);
             if (rc == ESP_OK) {
@@ -2027,21 +2085,6 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         sync_legacy_compat_leds(deck);
         break;
 
-    case BTN_CUE:
-        // Return to the cue point (track start by default) and pause — works
-        // whether the deck is playing or already paused. Custom cue points are
-        // handled by the hot-cue pads, so CUE here is a reliable "back to cue".
-        if (uses_audio) {
-            audio_engine_deck_pause(deck);
-            audio_engine_deck_seek(deck, state->cue_point_ms);
-        }
-        state->playing     = false;
-        state->position_ms = state->cue_point_ms;
-        ESP_LOGI(TAG, "deck %u cue -> %lu ms (paused)", (unsigned)deck + 1,
-                 (unsigned long)state->cue_point_ms);
-        sync_legacy_compat_leds(deck);
-        break;
-
     case BTN_MODE:
         state->perf_mode = (perf_mode_t)((state->perf_mode + 1) % PERF_MODE_COUNT);
         ESP_LOGI(TAG, "deck %u perf mode -> %d", (unsigned)deck + 1, state->perf_mode);
@@ -2057,6 +2100,8 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         break;
 
     case BTN_EJECT:
+        state->cue_held = false;
+        state->cue_preview = false;
         if (uses_audio) {
             audio_engine_deck_stop(deck);
         }

@@ -44,6 +44,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] Compare a touch hot-cue press with the matching FLX4 pad: an empty slot
   stores, a point recalls and exits the loop, a loop cue recalls its bounds,
   and both inputs preserve play/pause. Physical confirmation: **NOT RUN**.
+- [ ] Check CUE set while paused, held preview, release-to-cue and PLAY while
+  CUE is held, using both touch and FLX4. Disconnect during preview must pause
+  and return to cue. Physical/listening confirmation: **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

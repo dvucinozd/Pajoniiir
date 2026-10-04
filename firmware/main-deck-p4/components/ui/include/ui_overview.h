@@ -24,7 +24,7 @@ typedef struct {
 typedef struct {
     void (*select_deck)(uint8_t deck);
     void (*play_pause)(uint8_t deck);
-    void (*cue)(uint8_t deck);
+    void (*cue)(uint8_t deck, bool pressed);
     void (*toggle_master_tempo)(uint8_t deck);
     void (*seek)(uint8_t deck, uint32_t target_ms);
 } ui_overview_actions_t;
