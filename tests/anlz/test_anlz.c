@@ -756,8 +756,42 @@ static void test_pwv4_color_columns(void)
           "invalid PWV4 column accepted");
 }
 
+static void test_pwv3_timing(void)
+{
+    for (unsigned kind = 0; kind < 5; ++kind) {
+        uint32_t count = kind == 4 ? ANLZ_WAVEFORM_HIGH_MAX : 150u;
+        FILE *fp = fopen(SYNTH_EXT, "wb");
+        if (!fp) exit(1);
+        w_tag(fp, ANLZ_TAG_PWV3);
+        w_be32(fp, 24u);
+        w_be32(fp, 24u + count);
+        w_be32(fp, kind == 1 ? 2u : 1u);
+        w_be32(fp, kind == 2 ? count + 1u : count);
+        w_be32(fp, kind == 3 ? 0u : 0x00960000u);
+        for (uint32_t i = 0; i < count; ++i) fputc(1, fp);
+        fclose(fp);
+        anlz_metadata_t meta = {0};
+        TEST("PWV3 timing requires validated complete uncapped entries");
+        CHECK(anlz_parse_ext(SYNTH_EXT, &meta) == ESP_OK,
+              "optional timing degraded valid waveform");
+        CHECK(meta.waveform_span_ms == (kind == 0 ? 1000u : 0u),
+              "untrusted or capped waveform used as timing");
+        anlz_free(&meta);
+    }
+    TEST("PWV3 analysis span refinement preserves PDB on large mismatch");
+    CHECK(anlz_analysis_span_ms(222000u, 222400u) == 222400u &&
+          anlz_analysis_span_ms(223000u, 222400u) == 222400u &&
+          anlz_analysis_span_ms(0u, 222400u) == 222400u &&
+          anlz_analysis_span_ms(222000u, 0u) == 222000u &&
+          anlz_analysis_span_ms(222000u, 223500u) == 223500u &&
+          anlz_analysis_span_ms(222000u, 223501u) == 222000u &&
+          anlz_analysis_span_ms(222000u, 200000u) == 222000u,
+          "analysis span bounds failed");
+}
+
 int main(int argc, char *argv[])
 {
+    test_pwv3_timing();
     printf("Pajoniiir ANLZ Parser Test\n");
     printf("============================\n");
 

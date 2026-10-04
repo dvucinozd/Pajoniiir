@@ -40,6 +40,7 @@ typedef struct {
     char dat_path[272];
     char ext_path[272];
     uint32_t duration_ms;
+    uint32_t analysis_span_ms;
     uint16_t bpm;
     uint8_t waveform_low[400];
     uint8_t has_waveform;

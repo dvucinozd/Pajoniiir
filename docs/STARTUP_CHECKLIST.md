@@ -58,6 +58,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] B15: repeat beat-jump and shift+jog through the analysis tail and near
   actual EOF on both decks, then rapid LOAD/unload/reload. Check pause/play
   continuity and deck isolation. Physical acceptance: **NOT RUN**.
+- [ ] B16: compare cold ANLZ parsing and warm metadata-cache loads for a real
+  export with whole-second PDB rounding. Check zoom/preview alignment and tail
+  playback; missing or capped PWV3 must retain the fallback. Physical acceptance:
+  **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

@@ -253,6 +253,7 @@ static uint32_t s_deck_audio_session[DECK_CORE_DECK_COUNT];
 static uint8_t s_deck_loaded_waveform_low[DECK_CORE_DECK_COUNT][400];
 static bool s_deck_loaded_has_waveform[DECK_CORE_DECK_COUNT] = {false, false};
 static uint32_t s_deck_loaded_duration_ms[DECK_CORE_DECK_COUNT] = {0, 0};
+static uint32_t s_deck_loaded_analysis_span_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_deck_loaded_bpm[DECK_CORE_DECK_COUNT] = {0, 0};
 #endif
 
@@ -816,6 +817,8 @@ static void ui_library_apply_loaded_track(uint8_t deck,
 #ifdef WIN32
     s_deck_loaded_has_waveform[deck] = has_waveform;
     s_deck_loaded_duration_ms[deck] = duration_ms;
+    s_deck_loaded_analysis_span_ms[deck] = anlz_analysis_span_ms(
+        duration_ms, meta ? meta->waveform_span_ms : 0u);
     s_deck_loaded_bpm[deck] = bpm;
     if (waveform_low) {
         memcpy(s_deck_loaded_waveform_low[deck], waveform_low, 400);
@@ -953,7 +956,7 @@ static void ui_track_load_worker(void *arg)
                 req.deck,
                 result->loaded.audio_path,
                 result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                result->loaded.duration_ms,
+                result->loaded.analysis_span_ms,
                 &result->audio_session_generation);
             if (result->rc != ESP_OK) {
                 audio_engine_deck_status_t deck_status = {0};
@@ -2187,7 +2190,12 @@ void ui_library_update(const ui_frame_context_t *ctx)
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
 {
     uint8_t idx = ui_library_deck_index(deck);
-    uint32_t metadata_ms = ui_library_deck_analysis_span_ms(deck, fallback_duration_ms);
+    uint32_t metadata_ms = fallback_duration_ms;
+#ifndef WIN32
+    if (s_loaded_media_valid[idx]) metadata_ms = s_loaded_media[idx].duration_ms;
+#else
+    if (s_deck_loaded_track_valid[idx]) metadata_ms = s_deck_loaded_duration_ms[idx];
+#endif
     audio_engine_deck_status_t status = {0};
     if (!s_deck_loaded_track_valid[idx] ||
         audio_engine_deck_get_status(idx, &status) != ESP_OK) return metadata_ms;
@@ -2200,9 +2208,10 @@ uint32_t ui_library_deck_analysis_span_ms(uint8_t deck, uint32_t fallback_durati
 {
     uint8_t idx = ui_library_deck_index(deck);
 #ifndef WIN32
-    if (s_loaded_media_valid[idx]) return s_loaded_media[idx].duration_ms;
+    if (s_loaded_media_valid[idx]) return s_loaded_media[idx].analysis_span_ms;
 #else
-    if (s_deck_loaded_track_valid[idx] && s_deck_loaded_duration_ms[idx] > 0) return s_deck_loaded_duration_ms[idx];
+    if (s_deck_loaded_track_valid[idx] && s_deck_loaded_analysis_span_ms[idx] > 0)
+        return s_deck_loaded_analysis_span_ms[idx];
 #endif
     return fallback_duration_ms;
 }

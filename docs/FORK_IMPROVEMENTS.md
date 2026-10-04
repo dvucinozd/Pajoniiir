@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B15 implemented; controller profile binding, PWV3 span refinement and MP3 EOF measurement pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B16 implemented; controller profile binding and MP3 EOF measurement pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -578,6 +578,35 @@ before allocation; v3 entries are ignored and a fresh parse writes v4. A host
 round-trip exercises hot cues, same-timestamp memory point/loop, PWV4 bytes,
 waveform detail and source-file signature invalidation. Exact firmware build,
 host and simulator gates remain required. SD media/cache behavior on hardware:
+**NOT RUN**.
+
+## B16: Validated PWV3 analysis timing
+
+The parser publishes a separate timing scalar only for a complete PWV3 payload
+with one-byte entries, matching entry count and the 150 Hz rate marker. Legacy,
+malformed or memory-capped payloads retain waveform fallback without claiming
+precise duration. The donor `428b97dd` timing selection (MIT) is adapted to the
+current metadata model: a missing PDB span accepts validated PWV3 timing;
+otherwise the difference must be at most 1,500 ms. PDB duration is preserved.
+
+The accepted analysis span travels with the generation-bound loaded track to
+the audio seek/PVBR time base and waveform UI. Playback length still comes from
+the bound audio session. This does not add an analysis-based audio EOF cutoff
+or claim measured MP3 EOF for files without reliable duration metadata.
+
+Metadata cache format v5 preserves timing on full and compact reads and rejects
+inconsistent timing on save/load. Existing v4 entries in the same cache root
+are rejected and regenerated from ANLZ; rollback firmware similarly regenerates
+its own format. Cue edit namespaces, profile ABI, partitions and OTA are unchanged.
+Parser tests cover invalid headers, exact memory cap and the 1,500 ms boundary;
+library tests preserve PDB duration and retire stale timing. Cache tests cover
+full/compact round-trip and invalid saves. Physical cold/warm cache, seek and
+waveform acceptance: **NOT RUN**.
+
+Full P4 host runner, all eleven unchanged simulator screenshots, ESP-IDF 6.0.2
+P4 build and documentation integrity pass. The image is 2,536,304 bytes against
+the unchanged `0x380000` budget; the dependency lock is unchanged. These are
+software results; heap/stack and audio timing qualification on hardware remain
 **NOT RUN**.
 
 ## Provenance and rollback

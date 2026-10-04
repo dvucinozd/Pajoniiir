@@ -1006,6 +1006,15 @@ void library_free_current_anlz(void)
     xSemaphoreGiveRecursive(s_library_mutex);
 }
 
+uint32_t library_current_analysis_span_ms(uint32_t pdb_ms)
+{
+    if (ensure_library_mutex() != ESP_OK) return pdb_ms;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    uint32_t span = s_current_meta_valid ? s_current_meta.waveform_span_ms : 0u;
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return anlz_analysis_span_ms(pdb_ms, span);
+}
+
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;

@@ -146,6 +146,7 @@ typedef struct anlz_metadata {
     /* High-resolution waveform (from PWV3 in .EXT) — heap */
     uint8_t  *waveform_high;     /* heap; NULL until anlz_parse_ext() called */
     uint32_t  waveform_high_len; /* number of valid bytes in waveform_high   */
+    uint32_t  waveform_span_ms;  /* validated, complete PWV3 timing; 0 unknown */
 
     /* Optional PWV4 color preview from .EXT. PWAV/PWV3 remain available when
      * this tag is absent or malformed. */
@@ -202,6 +203,15 @@ esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out);
  * Safe to call multiple times (idempotent).
  */
 void anlz_free(anlz_metadata_t *meta);
+
+/* Timing selection adapted from donor 428b97dd (MIT). PDB whole-second
+ * rounding may differ by up to 1.5 s; larger differences remain untrusted. */
+static inline uint32_t anlz_analysis_span_ms(uint32_t pdb_ms, uint32_t pwv3_ms)
+{
+    if (!pwv3_ms) return pdb_ms;
+    uint32_t diff = pwv3_ms > pdb_ms ? pwv3_ms - pdb_ms : pdb_ms - pwv3_ms;
+    return !pdb_ms || diff <= 1500u ? pwv3_ms : pdb_ms;
+}
 
 #ifdef __cplusplus
 }

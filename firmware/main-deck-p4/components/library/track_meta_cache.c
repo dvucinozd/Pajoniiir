@@ -26,7 +26,7 @@ static const char *CACHE_ROOT = "/sd/trackcache/v4";
 #endif
 
 #define TRACK_META_CACHE_MAGIC   0x31434D54u /* "TMC1" */
-#define TRACK_META_CACHE_VERSION 4u
+#define TRACK_META_CACHE_VERSION 5u
 #define TRACK_META_CACHE_FLAGS_LOW  0x01u
 #define TRACK_META_CACHE_FLAGS_VBR  0x02u
 #define TRACK_META_CACHE_FLAGS_HIGH 0x04u
@@ -54,6 +54,7 @@ typedef struct {
     uint8_t memory_cue_count;
     uint8_t metadata_flags;
     uint16_t reserved_v4;
+    uint32_t waveform_span_ms;
 } track_meta_cache_header_t;
 #pragma pack(pop)
 
@@ -151,6 +152,9 @@ static bool header_matches(const track_meta_cache_header_t *header,
            (header->metadata_flags & ~(TRACK_META_CACHE_MEMORY_TRUNC |
                                        TRACK_META_CACHE_COLOR_TRUNC)) == 0u &&
            header->waveform_high_len <= ANLZ_WAVEFORM_HIGH_MAX &&
+           (header->waveform_span_ms == 0u ||
+             (header->waveform_high_len < ANLZ_WAVEFORM_HIGH_MAX &&
+              header->waveform_span_ms == (uint64_t)header->waveform_high_len * 1000u / 150u)) &&
            header->color_preview_len <= ANLZ_COLOR_PREVIEW_MAX &&
            header->color_preview_len % ANLZ_COLOR_PREVIEW_ENTRY == 0u;
 }
@@ -265,6 +269,7 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
         (header.metadata_flags & TRACK_META_CACHE_MEMORY_TRUNC) != 0u;
     out_meta->color_preview_truncated =
         (header.metadata_flags & TRACK_META_CACHE_COLOR_TRUNC) != 0u;
+    out_meta->waveform_span_ms = header.waveform_span_ms;
     out_meta->has_waveform_low = (header.flags & TRACK_META_CACHE_FLAGS_LOW) != 0;
     out_meta->has_vbr = (header.flags & TRACK_META_CACHE_FLAGS_VBR) != 0;
 
@@ -340,6 +345,9 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         meta->cue_count > ANLZ_MAX_CUES ||
         meta->memory_cue_count > ANLZ_MAX_MEMORY_CUES ||
         meta->waveform_high_len > ANLZ_WAVEFORM_HIGH_MAX ||
+        (meta->waveform_span_ms != 0u &&
+          (!meta->waveform_high || meta->waveform_high_len >= ANLZ_WAVEFORM_HIGH_MAX ||
+           meta->waveform_span_ms != (uint64_t)meta->waveform_high_len * 1000u / 150u)) ||
         meta->color_preview_len > ANLZ_COLOR_PREVIEW_MAX ||
         meta->color_preview_len % ANLZ_COLOR_PREVIEW_ENTRY != 0u) {
         return ESP_ERR_INVALID_ARG;
@@ -399,6 +407,7 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
                  (meta->has_vbr ? TRACK_META_CACHE_FLAGS_VBR : 0u) |
                  (meta->waveform_high && meta->waveform_high_len > 0 ? TRACK_META_CACHE_FLAGS_HIGH : 0u),
         .waveform_high_len = meta->waveform_high && meta->waveform_high_len > 0 ? meta->waveform_high_len : 0,
+        .waveform_span_ms = meta->waveform_span_ms,
         .color_preview_len = meta->color_preview_len,
     };
     memcpy(header.persistent_id, persistent_id->bytes, sizeof(header.persistent_id));

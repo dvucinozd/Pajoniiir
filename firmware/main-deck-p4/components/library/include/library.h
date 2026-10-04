@@ -118,6 +118,7 @@ void      library_sort(int field_type, bool descending);
 void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
                                   bool *out_cache_written);
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
+uint32_t library_current_analysis_span_ms(uint32_t pdb_ms);
 void library_free_current_anlz(void);
 
 /* Selected-row state used by the UI highlight/simulator bridge. This is not a

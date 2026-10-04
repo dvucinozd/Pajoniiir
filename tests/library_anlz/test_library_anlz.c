@@ -61,9 +61,12 @@ static void cnt_free(void *p)
     }
 }
 
+static uint32_t s_payload_span;
+
 static void make_meta(anlz_metadata_t *m, uint16_t bpm, uint16_t beat_count, bool with_high)
 {
     memset(m, 0, sizeof(*m));
+    m->waveform_span_ms = s_payload_span;
     m->bpm = bpm;
     m->has_waveform_low = true;
     memset(m->waveform_low, (int)(bpm & 0xFF), sizeof(m->waveform_low));
@@ -105,6 +108,7 @@ static void reset_state(uint16_t bpm, uint16_t beats)
     s_parse_dat_result = s_parse_ext_result = s_save_result = ESP_OK;
     s_payload_bpm = bpm;
     s_payload_beats = beats;
+    s_payload_span = 0u;
 }
 
 /* ── external symbols library.c depends on ─────────────────────────────────── */
@@ -512,6 +516,7 @@ static void test_nonzero_pdb_duration_survives_anlz_enrichment(void)
     printf("== nonzero PDB/audio duration survives ANLZ enrichment ==\n");
     reset_state(126, 5);
     s_cache_load_result = ESP_OK;
+    s_payload_span = 213600u;
 
     library_track_t track;
     make_track(&track);
@@ -520,9 +525,11 @@ static void test_nonzero_pdb_duration_survives_anlz_enrichment(void)
     CHECK(library_load_anlz(&track) == ESP_OK);
     CHECK(track.bpm == 126);
     CHECK(track.duration_ms == 213456u);
+    CHECK(library_current_analysis_span_ms(track.duration_ms) == 213600u);
     CHECK(track.has_anlz == 1);
 
     library_free_current_anlz();
+    CHECK(library_current_analysis_span_ms(track.duration_ms) == 213456u);
     CHECK(s_alloc_balance == 0);
 }
 

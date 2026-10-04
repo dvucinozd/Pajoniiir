@@ -63,10 +63,17 @@ int main(void)
     meta.memory_cues_truncated = true;
     meta.waveform_high = high;
     meta.waveform_high_len = sizeof(high);
+    meta.waveform_span_ms = (uint32_t)(sizeof(high) * 1000u / 150u);
     meta.color_preview = color;
     meta.color_preview_len = sizeof(color);
     meta.color_preview_truncated = true;
 
+    meta.waveform_span_ms++;
+    CHECK(track_meta_cache_save(42, &id, "tc/track.dat", "tc/track.ext", &meta) == ESP_ERR_INVALID_ARG);
+    meta.waveform_span_ms--;
+    meta.waveform_high = NULL;
+    CHECK(track_meta_cache_save(42, &id, "tc/track.dat", "tc/track.ext", &meta) == ESP_ERR_INVALID_ARG);
+    meta.waveform_high = high;
     CHECK(track_meta_cache_save(42, &id, "tc/track.dat", "tc/track.ext", &meta) == ESP_OK);
     anlz_metadata_t loaded = {0};
     CHECK(track_meta_cache_load(42, &id, "tc/track.dat", "tc/track.ext",
@@ -80,6 +87,7 @@ int main(void)
           memcmp(loaded.color_preview, color, sizeof(color)) == 0);
     CHECK(loaded.waveform_high_len == sizeof(high) && loaded.waveform_high &&
           memcmp(loaded.waveform_high, high, sizeof(high)) == 0);
+    CHECK(loaded.waveform_span_ms == meta.waveform_span_ms);
     anlz_free(&loaded);
 
     anlz_metadata_t preview_only = {0};
@@ -89,6 +97,7 @@ int main(void)
           preview_only.color_preview_len == sizeof(color) &&
           preview_only.color_preview &&
           memcmp(preview_only.color_preview, color, sizeof(color)) == 0);
+    CHECK(preview_only.waveform_span_ms == meta.waveform_span_ms);
     anlz_free(&preview_only);
 
     source = fopen("tc/track.dat", "ab");
@@ -112,6 +121,6 @@ int main(void)
     rmdir("tc");
 
     if (s_failed) return 1;
-    puts("track_meta_cache v4 tests passed");
+    puts("track_meta_cache v5 tests passed");
     return 0;
 }

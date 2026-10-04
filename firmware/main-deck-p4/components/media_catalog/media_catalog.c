@@ -368,6 +368,8 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
         fill_catalog_track(track, out_track);
     }
     fill_loaded_track(track, out_loaded);
+    out_loaded->analysis_span_ms = anlz_ok
+        ? library_current_analysis_span_ms(track->duration_ms) : track->duration_ms;
 
 done:
     if (result != ESP_OK && out_track) {

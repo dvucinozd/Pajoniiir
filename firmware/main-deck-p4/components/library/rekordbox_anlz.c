@@ -488,6 +488,7 @@ static esp_err_t parse_all_pcob(FILE *fp, anlz_metadata_t *out)
  */
 static esp_err_t parse_pwv3(FILE *fp, anlz_metadata_t *meta)
 {
+    meta->waveform_span_ms = 0u;
     uint32_t header_size  = read_be32(fp);
     uint32_t segment_size = read_be32(fp);
 
@@ -497,6 +498,16 @@ static esp_err_t parse_pwv3(FILE *fp, anlz_metadata_t *meta)
     }
 
     uint32_t skip = header_size - 12u;
+    uint32_t entries = 0u;
+    bool timing_valid = false;
+    if (header_size >= 24u) {
+        uint32_t entry_bytes = read_be32(fp);
+        entries = read_be32(fp);
+        uint32_t rate_marker = read_be32(fp);
+        timing_valid = entry_bytes == 1u && rate_marker == 0x00960000u &&
+                       entries == segment_size - header_size;
+        skip -= 12u;
+    }
     if (fseek(fp, (long)skip, SEEK_CUR) != 0) return ESP_ERR_INVALID_ARG;
 
     uint32_t data_len = segment_size - header_size;
@@ -524,6 +535,8 @@ static esp_err_t parse_pwv3(FILE *fp, anlz_metadata_t *meta)
     const bool complete = anlz_read_exact(meta->waveform_high, data_len, fp);
     const size_t n = complete ? (size_t)data_len : 0u;
     meta->waveform_high_len = (uint32_t)n;
+    if (complete && timing_valid && entries < ANLZ_WAVEFORM_HIGH_MAX)
+        meta->waveform_span_ms = (uint32_t)((uint64_t)entries * 1000u / 150u);
 
     ANLZ_LOGI(TAG, "PWV3: %u bytes high-res waveform", (unsigned)n);
     return complete ? ESP_OK : ESP_FAIL;
