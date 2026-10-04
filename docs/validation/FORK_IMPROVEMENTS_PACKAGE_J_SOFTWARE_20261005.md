@@ -142,6 +142,12 @@ Logs: `.cache/j_host_final.log`, `.cache/j_sanitizers_final.log`, `.cache/j_soak
 matrices also cover experimental recorder/PSRAM and preview variants separately.
 The final pushed SHA and its CI run are reported together at package delivery.
 
+Initial CI [37243167572](https://github.com/dvucinozd/Pajoniiir/actions/runs/37243167572)
+on `b6f3a220` found a host-test portability error: strict Linux C11 needed
+`_POSIX_C_SOURCE` for the forced `fileno` write-failure fixture. Windows and
+the pthread sanitizer build exposed it already. The follow-up adds the feature
+declaration in that test; no firmware behavior changes and no test is removed.
+
 ## Physical gates, rollback and next work
 
 | Gate | Result |

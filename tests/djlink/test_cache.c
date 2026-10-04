@@ -1,3 +1,6 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "dj_link_cache.h"
 #include <assert.h>
 #include <string.h>
