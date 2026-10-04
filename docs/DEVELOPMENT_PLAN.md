@@ -22,6 +22,12 @@ host coverage and an executable physical evidence gate. Runtime memory and
 exact-image acceptance remain open; no production channel change follows from
 software verification. Next: qualify an ordinary JC4880 candidate, then I-L.
 
+[First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
+`M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator
+confirmed previous design/controls. Resource acceptance failed (two waveform
+internal-DMA probes and HTTP stack reserve 456 bytes). Correct allocation/stack
+ownership and repeat on a fresh pushed-source image before continuing acceptance.
+
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5
 `05296b8` and does not merge the separate APTA branch or change M2.4 production.

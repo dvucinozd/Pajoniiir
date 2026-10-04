@@ -6,6 +6,10 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`; retained MIT attribution
 in `firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md`.
 
 Status: **SOFTWARE VERIFIED; physical acceptance NOT RUN**.
+Subsequent [ordinary candidate installation](JC4880_H_CANDIDATE_20261004.md)
+restored network/USB and operator-confirmed previous design/controls, but failed
+the resource gate. That later record supersedes the installed-state statement
+below; this original software closure does not constitute physical acceptance.
 Production M2.4, public OTA channels and the separate APTA branch are unchanged.
 No OTA or COM operation is performed by this closure. The last confirmed device
 image remains recovery `M2.4-7-gb8d9cb7`, not this candidate.

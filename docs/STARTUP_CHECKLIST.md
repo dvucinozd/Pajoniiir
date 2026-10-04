@@ -22,6 +22,12 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
+  returned network/USB and operator-confirmed previous design/FLX4 controls.
+  Resource gate FAILED: waveform internal-DMA probes and HTTP stack 456 bytes.
+  Verify the focused correction on a fresh image; do not accept/publish the first
+  candidate or compare its loaded decks to an empty recovery memory baseline.
+
 - [ ] H is software verified; qualify its exact image separately. Verify one
   selected presentation, retained controller navigation and owned artwork.
   Capture `/api/status` and `/api/resources` in network/dual-USB idle and active

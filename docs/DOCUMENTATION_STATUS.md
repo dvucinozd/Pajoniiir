@@ -28,8 +28,11 @@ evidence does not qualify DDJ-400 sound or FLX4 hardware regression.
 preserves the previous design in both native resolutions and removes duplicate
 presentation trees. Seven simulator presentations, host suites and board builds
 verify software only. Runtime memory, timing, touch, audio/reconnect, guarded
-rollback and final 180-minute exact-image soak remain NOT RUN. The device remains
-on recovery `M2.4-7-gb8d9cb7`; this work performs no installation or publication.
+rollback and final 180-minute exact-image soak remain open.
+[First ordinary H installation](validation/JC4880_H_CANDIDATE_20261004.md)
+confirmed `M2.4-59-gf9260125` in `ota_0`, network/USB0/FLX4 presence and operator
+confirmation of previous design/controls. Resource gate FAILED; focused correction
+and exact-image requalification are required. No public release/channel changed.
 
 [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
 adds an explicit recorder experiment and default-off SD idle workaround.

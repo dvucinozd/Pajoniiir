@@ -42,6 +42,10 @@ key, effective hot cues, memory cues, load lock and loading/error state. Each
 build creates only its selected presentation; both use the shared Settings.
 The alternative dj_ui preview remains default-off. Allocation/stack diagnostics
 and an executable runtime resource gate support the separate physical acceptance.
+[The first ordinary H candidate](docs/validation/JC4880_H_CANDIDATE_20261004.md)
+was installed by signed OTA; network, USB0 and FLX4 returned and the operator
+confirmed the previous design and controls. Its resource gate failed on waveform
+internal-allocation probes and HTTP stack reserve; acceptance remains open.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "esp_http_server.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_app_desc.h"
 #include "audio_engine.h"
@@ -1474,7 +1475,15 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_status.written, service_status.current_bytes,
         service_status.last_error);
 
-    char p4_usb_json[2048] = {0};
+    /* Keep the bounded USB status text off the 8 KiB HTTP task stack. The
+     * single request owns this PSRAM buffer through response formatting. */
+    const size_t p4_usb_json_size = 2048u;
+    char *p4_usb_json = heap_caps_calloc(1, p4_usb_json_size,
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p4_usb_json) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for USB status");
+    }
     {
         usb_host_manager_diagnostics_t host_diag = {0};
         controller_usb_host_diagnostics_t controller_diag = {0};
@@ -1485,7 +1494,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         p4_local_controller_get_diagnostics(&local_diag);
         usb_storage_get_diagnostics(&storage_diag);
         snprintf(
-            p4_usb_json, sizeof(p4_usb_json),
+            p4_usb_json, p4_usb_json_size,
             "\"p4_usb\":{"
             "\"host\":{"
             "\"ready\":%s,\"install_result\":%d,"
@@ -1614,6 +1623,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     const size_t crash_dump_json_size = 1024u;
     char *crash_dump_json = calloc(1, crash_dump_json_size);
     if (!crash_dump_json) {
+        free(p4_usb_json);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "No memory for crash status");
     }
@@ -1621,6 +1631,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     const size_t trace_json_size = 1536u;
     char *trace_json = calloc(1, trace_json_size);
     if (!trace_json) {
+        free(p4_usb_json);
         free(crash_dump_json);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "No memory for retained trace status");
@@ -1887,6 +1898,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.psram_free,
         (unsigned)diagnostics.psram_min_free,
         (unsigned)diagnostics.psram_largest_free);
+    free(p4_usb_json);
     free(crash_dump_json);
     free(trace_json);
     if (!json || json_len < 0) {

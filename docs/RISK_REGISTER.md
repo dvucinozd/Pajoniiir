@@ -27,6 +27,13 @@ Status: **active P4-only register, reconciled 2026-09-29**.
 
 ## Release rule
 
+The [first ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
+restored AP/USB and operator-confirmed previous design/controls, but resource
+acceptance failed: two 254,976-byte waveform internal-DMA probes and HTTP stack
+reserve 456 bytes. A focused PSRAM ownership correction is software checked;
+installed-image resource acceptance, matching baseline, active sound/timing and
+final soak remain blocking gates. Do not infer acceptance from startup `ready`.
+
 Development package E adds a JC1060 target and separate build/lock/CI, sharing
 the P4 core. [E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 is software evidence only. Panel/touch/PSRAM, USB root topology, SD/Hosted

@@ -738,15 +738,10 @@ void *ui_lvgl_backend_alloc_dma_buffer(size_t bytes, size_t *aligned_bytes)
         *aligned_bytes = aligned;
     }
 
+    /* Waveform strips are large, cache-aligned PPA source buffers. Keep them
+     * in PSRAM instead of probing scarce internal DMA memory first: a normal
+     * track load must not produce a critical failed-allocation event. */
     void *buf = heap_caps_aligned_alloc(s_cache_align,
-                                        aligned,
-                                        MALLOC_CAP_INTERNAL |
-                                            MALLOC_CAP_DMA |
-                                            MALLOC_CAP_8BIT);
-    if (buf) {
-        return buf;
-    }
-    buf = heap_caps_aligned_alloc(s_cache_align,
                                   aligned,
                                   MALLOC_CAP_SPIRAM |
                                       MALLOC_CAP_DMA |
