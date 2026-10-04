@@ -165,6 +165,10 @@ int ui_library_page_selection_after_delta(int total_tracks,
 #include "esp_log.h"
 #include "ui_lvgl_backend.h"
 #include "ui_theme.h"
+#if defined(CONFIG_PAJONIIIR_BOARD_JC1060) || defined(UI_LINK_SIMULATOR)
+#define UI_LIBRARY_LINK 1
+#include "dj_link_service.h"
+#endif
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
 #include "dj_ui.h"
 static bool s_dj_ready;
@@ -214,6 +218,31 @@ static size_t s_browse_track_count;
 static uint32_t s_browse_generation;
 static uint32_t s_page_track_keys[UI_LIBRARY_PAGE_ROWS];
 static bool ui_library_track_load_busy(void);
+#ifdef UI_LIBRARY_LINK
+static bool s_link_source;
+static uint8_t s_link_peer, s_link_slot;
+static uint64_t s_link_epoch, s_link_request;
+static int s_link_local_selection;
+static uint32_t s_link_local_generation;
+static dj_link_browse_status_t s_link_status;
+static dj_link_peer_track_t s_link_rows[UI_LIBRARY_PAGE_ROWS];
+static uint32_t s_link_first;
+static struct { uint32_t id; uint8_t menu; int selection; char title[40]; } s_link_path[16];
+static unsigned s_link_depth;
+static lv_obj_t *s_label_source_button;
+static lv_obj_t *s_label_link_hint;
+static uint32_t s_link_hint_until;
+static void ui_library_source_event_cb(lv_event_t *event);
+static bool ui_library_link_request(dj_link_db_menu_t menu, uint32_t id, int selection)
+{
+    uint64_t request=dj_link_service_browse(s_link_peer,s_link_epoch,s_link_slot,menu,id);
+    if (!request) return false;
+    s_link_request=request; s_selected_track_idx=selection;
+    memset(&s_link_status,0,sizeof(s_link_status)); memset(s_link_rows,0,sizeof(s_link_rows));
+    s_link_status.state=DJ_LINK_BROWSE_LOADING;
+    return true;
+}
+#endif
 static lv_obj_t *s_row_art[UI_LIBRARY_PAGE_ROWS];
 static lv_image_dsc_t s_row_art_dsc[UI_LIBRARY_PAGE_ROWS];
 static uint16_t *s_row_art_pixels;
@@ -429,6 +458,13 @@ static int ui_library_catalog_count(void)
 
 static void ui_library_status_hold(const char *text, lv_color_t color, uint32_t hold_ms)
 {
+#ifdef UI_LIBRARY_LINK
+    if (s_label_link_hint) {
+        lv_label_set_text(s_label_link_hint,text);
+        lv_obj_set_style_text_color(s_label_link_hint,color,LV_PART_MAIN);
+        s_link_hint_until=lv_tick_get()+hold_ms;
+    }
+#endif
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_ready) dj_ui_library_set_status(text,
         lv_color_eq(color, COL_RED) ? DJ_TONE_ERROR :
@@ -441,6 +477,9 @@ static void ui_library_status_hold(const char *text, lv_color_t color, uint32_t 
 
 static int ui_library_media_count(void)
 {
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) return (int)s_link_status.count;
+#endif
     if (s_browse_mode == UI_BROWSE_NODES) return s_browse_child_count;
     if (s_browse_mode == UI_BROWSE_TRACKS) return (int)s_browse_track_count;
     return ui_library_catalog_count();
@@ -448,6 +487,9 @@ static int ui_library_media_count(void)
 
 static int ui_library_catalog_row(int view_index)
 {
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) return -1; /* Remote IDs are never local catalog keys. */
+#endif
     if (s_browse_mode == UI_BROWSE_NODES || view_index < 0) return -1;
     if (s_browse_mode == UI_BROWSE_ALL) return view_index;
     if ((size_t)view_index >= s_browse_track_count) return -1;
@@ -523,6 +565,26 @@ static bool ui_library_browse_prepare(void)
 
 static bool ui_library_browse_open_selected(void)
 {
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) {
+        int row=s_selected_track_idx-(int)s_link_first;
+        if (row<0 || row>=UI_LIBRARY_PAGE_ROWS || s_link_status.state!=DJ_LINK_BROWSE_READY) return false;
+        dj_link_peer_track_t *t=&s_link_rows[row];
+        if (t->kind==DJ_LINK_PEER_ROW_TRACK || s_link_depth>=16) return false;
+        dj_link_db_menu_t menu=t->kind==DJ_LINK_PEER_ROW_FOLDER ? DJ_LINK_DB_MENU_FOLDER : DJ_LINK_DB_MENU_PLAYLIST;
+        for (unsigned i=0;i<s_link_depth;++i)
+            if (s_link_path[i].menu==menu && s_link_path[i].id==t->rekordbox_id) return false;
+        int selected=s_selected_track_idx;
+        char title[40]; snprintf(title,sizeof(title),"%.39s",t->title);
+        uint32_t id=t->rekordbox_id;
+        if (!ui_library_link_request(menu,id,0)) return false;
+        if (s_link_depth) s_link_path[s_link_depth-1].selection=selected;
+        s_link_path[s_link_depth].id=id; s_link_path[s_link_depth].menu=(uint8_t)menu;
+        snprintf(s_link_path[s_link_depth].title,sizeof(s_link_path[s_link_depth].title),"%s",title);
+        s_link_path[s_link_depth++].selection=0;
+        ui_library_populate_rows(); return true;
+    }
+#endif
     if (s_browse_mode != UI_BROWSE_NODES ||
         s_selected_track_idx < 0 ||
         s_selected_track_idx >= s_browse_child_count ||
@@ -569,6 +631,21 @@ static bool ui_library_browse_open_selected(void)
 static void ui_library_browse_button_cb(lv_event_t *event)
 {
     (void)event;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) {
+        if (s_link_depth>1) {
+            unsigned parent=s_link_depth-2;
+            if (ui_library_link_request((dj_link_db_menu_t)s_link_path[parent].menu,
+                    s_link_path[parent].id,s_link_path[parent].selection)) --s_link_depth;
+        } else if (s_link_depth==1) {
+            if (ui_library_link_request(DJ_LINK_DB_MENU_ALL_TRACKS,0,0)) s_link_depth=0;
+        } else if (ui_library_link_request(DJ_LINK_DB_MENU_FOLDER,0,0)) {
+            s_link_depth=1; s_link_path[0].id=0; s_link_path[0].menu=DJ_LINK_DB_MENU_FOLDER;
+            s_link_path[0].selection=0; snprintf(s_link_path[0].title,sizeof(s_link_path[0].title),"PLAYLISTS");
+        }
+        ui_library_populate_rows(); return;
+    }
+#endif
     if (s_browse_mode == UI_BROWSE_ALL) {
         if (!ui_library_browse_prepare()) {
             ui_library_status_hold("NO PLAYLISTS", COL_AMBER, 1400);
@@ -601,6 +678,22 @@ static bool ui_library_load_allowed(uint8_t deck)
 {
     return deck_core_load_allowed(deck);
 }
+#ifdef UI_LIBRARY_LINK
+static esp_err_t ui_library_remote_load_admission(uint8_t deck)
+{
+    if (deck>=DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!ui_library_load_allowed(deck)) {
+        ui_library_status_hold("LOAD LOCK",COL_AMBER,2000); return ESP_ERR_INVALID_STATE;
+    }
+    if (ui_library_track_load_busy()) {
+        ui_library_status_hold("LOAD BUSY",COL_AMBER,1200); return ESP_ERR_INVALID_STATE;
+    }
+    /* J supplies a verified local artifact to the existing worker. Until then
+     * all remote audio loads are unsupported, preserving both loaded decks. */
+    ui_library_status_hold("AUDIO DOWNLOAD UNAVAILABLE",COL_AMBER,2000);
+    return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
 
 static lv_color_t ui_library_status_color_for_text(const char *text)
 {
@@ -694,6 +787,38 @@ static void ui_library_update_source_label(void)
     int count = ui_library_media_count();
     ui_library_page_t page = ui_library_page_for_selection(count,
                                                             s_selected_track_idx);
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) {
+        char text[160], source[32];
+        snprintf(source,sizeof(source),"LINK #%u %s",s_link_peer,
+            s_link_slot==DJLINK_SLOT_SD ? "SD" : s_link_slot==DJLINK_SLOT_LAPTOP ? "RB" : "USB");
+        const char *path=s_link_depth ? s_link_path[s_link_depth-1].title : "ALL TRACKS";
+        if (s_link_status.state==DJ_LINK_BROWSE_READY)
+            snprintf(text,sizeof(text),"%s / %.28s  %lu/%lu%s  %d/%d",source,path,
+                (unsigned long)s_link_status.count,(unsigned long)s_link_status.total,
+                s_link_status.total>s_link_status.count ? " TRUNCATED" : "",
+                page.page_count ? page.page_index+1 : 0,page.page_count);
+        else if (s_link_status.state==DJ_LINK_BROWSE_LOADING)
+            snprintf(text,sizeof(text),"%s / %.28s  BROWSE %lu/%lu",source,path,
+                (unsigned long)s_link_status.received,(unsigned long)s_link_status.total);
+        else snprintf(text,sizeof(text),"%s  %s",source,s_link_status.error[0] ? s_link_status.error : "UNAVAILABLE");
+        if (s_label_library_source) lv_label_set_text(s_label_library_source,text);
+        if (s_label_library_browse) lv_label_set_text(s_label_library_browse,s_link_depth ? "BACK" : "PLAYLISTS");
+        if (s_label_source_button) lv_label_set_text(s_label_source_button,source);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        if (s_dj_ready) {
+            dj_ui_library_set_info(source,(uint16_t)count,(uint16_t)(page.page_count ? page.page_index+1 : 0),(uint16_t)page.page_count);
+            dj_ui_library_set_source_label(source); dj_ui_library_set_status(text,
+                s_link_status.state==DJ_LINK_BROWSE_READY ? DJ_TONE_OK : DJ_TONE_WARN);
+            dj_ui_library_set_playlists_label(s_link_depth ? "BACK" : "PLAYLISTS");
+        }
+#endif
+        ui_library_set_page_button_enabled(s_btn_library_page_prev,page.page_index>0);
+        ui_library_set_page_button_enabled(s_btn_library_page_next,page.page_count>0 && page.page_index+1<page.page_count);
+        return;
+    }
+    if (s_label_source_button) lv_label_set_text(s_label_source_button,"LOCAL USB");
+#endif
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_ready) {
         dj_ui_library_set_info_unit(s_browse_mode == UI_BROWSE_ALL ? "LOCAL USB" :
@@ -814,8 +939,35 @@ static void ui_library_populate_rows(void)
         if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
     memset(s_page_track_keys, 0, sizeof(s_page_track_keys));
     if (s_library_table) lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source && s_library_table)
+        for (int r=0;r<page.row_count;++r) for (int c=0;c<5;++c)
+            lv_table_set_cell_value(s_library_table,r,c,"");
+#endif
     for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
         int view_index = ui_library_page_absolute_index(&page, visible_row);
+#ifdef UI_LIBRARY_LINK
+        if (s_link_source) {
+            int at=view_index-(int)s_link_first;
+            if (at<0 || at>=UI_LIBRARY_PAGE_ROWS) continue;
+            const dj_link_peer_track_t *t=&s_link_rows[at];
+            ui_library_row_text_t text;
+            ui_library_format_row_text(&text,t->title,
+                t->kind==DJ_LINK_PEER_ROW_FOLDER ? "FOLDER" : t->kind==DJ_LINK_PEER_ROW_PLAYLIST ? "PLAYLIST" : t->artist,
+                "",(uint16_t)(t->bpm100/100), (uint32_t)t->duration_s*1000);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+            s_dj_rows[visible_row]=text;
+#endif
+            if (s_library_table) {
+                lv_table_set_cell_value(s_library_table,visible_row,0,text.title);
+                lv_table_set_cell_value(s_library_table,visible_row,1,text.artist);
+                lv_table_set_cell_value(s_library_table,visible_row,2,"");
+                lv_table_set_cell_value(s_library_table,visible_row,3,t->kind ? "" : text.bpm);
+                lv_table_set_cell_value(s_library_table,visible_row,4,t->kind ? "" : text.duration);
+            }
+            continue;
+        }
+#endif
         if (s_browse_mode == UI_BROWSE_NODES) {
             const pdb_playlist_t *node =
                 &s_browse_nodes[s_browse_children[view_index]];
@@ -1138,6 +1290,9 @@ static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t ge
 
 static void ui_apply_usb_removed(void)
 {
+#ifdef UI_LIBRARY_LINK
+    if (!s_link_source)
+#endif
     ui_library_browse_reset();
     /* Cancel the worker without releasing its single-flight slot. The worker
      * must publish/retire its exact audio session before a reconnect can start
@@ -1331,6 +1486,15 @@ static esp_err_t ui_library_publish_simulated_track(
 static esp_err_t ui_library_load_selected_deck(uint8_t deck)
 {
     if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) {
+        int at=s_selected_track_idx-(int)s_link_first;
+        if (at<0 || at>=UI_LIBRARY_PAGE_ROWS || s_link_status.state!=DJ_LINK_BROWSE_READY) return ESP_ERR_NOT_FOUND;
+        if (s_link_rows[at].kind!=DJ_LINK_PEER_ROW_TRACK)
+            return ui_library_browse_open_selected() ? ESP_OK : ESP_ERR_INVALID_STATE;
+        return ui_library_remote_load_admission(deck);
+    }
+#endif
     if (s_browse_mode == UI_BROWSE_NODES)
         return ui_library_browse_open_selected() ? ESP_OK : ESP_ERR_NOT_FOUND;
     int catalog_row = ui_library_catalog_row(s_selected_track_idx);
@@ -1448,6 +1612,9 @@ static uint32_t ui_library_selected_key(void)
 static void library_sort_artist_event_cb(lv_event_t *e)
 {
     (void)e;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) { ui_library_status_hold("LINK SOURCE ORDER",COL_AMBER,1200); return; }
+#endif
     if (s_browse_mode != UI_BROWSE_ALL) return;
     if (!s_library_ready) return;
 #ifndef WIN32
@@ -1471,6 +1638,9 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 static void library_sort_name_event_cb(lv_event_t *e)
 {
     (void)e;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) { ui_library_status_hold("LINK SOURCE ORDER",COL_AMBER,1200); return; }
+#endif
     if (s_browse_mode != UI_BROWSE_ALL) return;
     if (!s_library_ready) return;
 #ifndef WIN32
@@ -1494,6 +1664,9 @@ static void library_sort_name_event_cb(lv_event_t *e)
 static void library_sort_bpm_event_cb(lv_event_t *e)
 {
     (void)e;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) { ui_library_status_hold("LINK SOURCE ORDER",COL_AMBER,1200); return; }
+#endif
     if (s_browse_mode != UI_BROWSE_ALL) return;
     if (!s_library_ready) return;
 #ifndef WIN32
@@ -1517,6 +1690,9 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
 static void library_sort_key_event_cb(lv_event_t *e)
 {
     (void)e;
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) { ui_library_status_hold("LINK SOURCE ORDER",COL_AMBER,1200); return; }
+#endif
     if (s_browse_mode != UI_BROWSE_ALL) return;
     if (!s_library_ready) return;
 #ifndef WIN32
@@ -1587,7 +1763,11 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
                              (int)row < page.row_count
             ? s_page_track_keys[row] : 0u;
 
-        if (track_key != 0u) {
+        if (track_key != 0u
+#ifdef UI_LIBRARY_LINK
+            || (s_link_source && row < (uint32_t)page.row_count)
+#endif
+        ) {
             bool loaded_d1 = s_deck_loaded_track_valid[CTRL_DECK_1] && (s_deck_loaded_track_key[CTRL_DECK_1] == track_key);
             bool loaded_d2 = s_deck_loaded_track_valid[CTRL_DECK_2] && (s_deck_loaded_track_key[CTRL_DECK_2] == track_key);
 
@@ -1804,6 +1984,23 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_text_align(s_label_library_source, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
+#ifdef UI_LIBRARY_LINK
+    lv_obj_t *source_btn=lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(source_btn);
+    lv_obj_add_style(source_btn,&s_style_btn_secondary,LV_PART_MAIN);
+    lv_obj_set_size(source_btn,130,36); lv_obj_set_pos(source_btn,660,395);
+    lv_obj_add_event_cb(source_btn,ui_library_source_event_cb,LV_EVENT_CLICKED,NULL);
+    lv_obj_remove_flag(source_btn,LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    s_label_source_button=lv_label_create(source_btn); lv_label_set_text(s_label_source_button,"LOCAL USB");
+    lv_obj_set_style_text_font(s_label_source_button,&lv_font_montserrat_14,LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_source_button,COL_TEXT_MUTED,LV_PART_MAIN);
+    lv_obj_align(s_label_source_button,LV_ALIGN_CENTER,0,0);
+    s_label_link_hint=lv_label_create(s_library_screen);
+    lv_obj_set_pos(s_label_link_hint,660,440); lv_obj_set_width(s_label_link_hint,130);
+    lv_obj_set_style_text_font(s_label_link_hint,&lv_font_montserrat_14,LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_link_hint,COL_TEXT_MUTED,LV_PART_MAIN);
+    lv_label_set_text(s_label_link_hint,"");
+#endif
 
     s_btn_library_browse = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(s_btn_library_browse);
@@ -2056,6 +2253,9 @@ void ui_refresh_library(void)
     if (!s_library_ready) {
         return;
     }
+#ifdef UI_LIBRARY_LINK
+    if (s_link_source) return; /* Local USB refresh cannot replace remote navigation. */
+#endif
     ui_library_browse_reset();
     int n = ui_library_media_count();
 
@@ -2172,11 +2372,37 @@ void ui_library_update(const ui_frame_context_t *ctx)
 #ifndef UI_LIBRARY_HOST_TEST
     ui_library_update_artwork();
 #endif
-    if (s_browse_mode != UI_BROWSE_ALL &&
+    if (
+#ifdef UI_LIBRARY_LINK
+        !s_link_source &&
+#endif
+        s_browse_mode != UI_BROWSE_ALL &&
         library_generation() != s_browse_generation) {
         ui_library_browse_reset();
         ui_library_populate_rows();
     }
+#ifdef UI_LIBRARY_LINK
+    if (s_label_link_hint && s_link_hint_until && (int32_t)(lv_tick_get()-s_link_hint_until)>=0) {
+        lv_label_set_text(s_label_link_hint,""); s_link_hint_until=0;
+    }
+    if (s_link_source) {
+        uint32_t first=(uint32_t)(s_selected_track_idx/UI_LIBRARY_PAGE_ROWS)*UI_LIBRARY_PAGE_ROWS;
+        dj_link_browse_status_t status;
+        if (dj_link_service_page(s_link_request,first,&status,s_link_rows) && status.request_id==s_link_request) {
+            bool changed=status.revision!=s_link_status.revision || status.state!=s_link_status.state || first!=s_link_first;
+            s_link_status=status; s_link_first=first;
+            if (status.state==DJ_LINK_BROWSE_READY && s_selected_track_idx>=(int)status.count)
+                s_selected_track_idx=status.count ? (int)status.count-1 : 0;
+            if (changed) ui_library_populate_rows();
+        }
+    }
+    dj_link_incoming_load_t incoming;
+    if (dj_link_service_take_load(&incoming)) {
+        /* Same LVGL owner, stopped-only lock and single-flight admission as
+         * touch/MIDI. No source switch, deck mutation or premature ACK. */
+        (void)ui_library_remote_load_admission(incoming.deck);
+    }
+#endif
     const uint32_t refresh_requested =
         ui_event_counter_sample(&s_library_refresh_events);
 #ifndef WIN32
@@ -2370,6 +2596,63 @@ void ui_library_sort_column(int column)
 }
 
 void ui_library_toggle_playlists(void) { ui_library_browse_button_cb(NULL); }
+
+void ui_library_cycle_source(void)
+{
+#ifdef UI_LIBRARY_LINK
+    /* Explicitly cycle LOCAL -> peer USB/SD or rekordbox -> LOCAL. Keep local
+     * selection/navigation untouched while browsing another source. */
+    static dj_link_discovery_t *peers;
+    if (!peers) {
+#ifndef WIN32
+        peers=heap_caps_calloc(1,sizeof(*peers),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+#else
+        peers=calloc(1,sizeof(*peers));
+#endif
+    }
+    if (!peers || !dj_link_service_snapshot(peers)) {
+        ui_library_status_hold("LINK SERVICE UNAVAILABLE",COL_AMBER,1400); return;
+    }
+    bool advance=!s_link_source;
+    for (unsigned i=0;i<DJ_LINK_PEERS;++i) {
+        const dj_link_peer_t *p=&peers->peers[i];
+        if (!p->present || !p->number) continue;
+        for (unsigned slot_index=0;slot_index<(p->device_type==3 ? 1u : 2u);++slot_index) {
+            uint8_t slot=p->device_type==3 ? DJLINK_SLOT_LAPTOP : slot_index ? DJLINK_SLOT_SD : DJLINK_SLOT_USB;
+            if (!advance) {
+                if (p->number==s_link_peer && slot==s_link_slot) advance=true;
+                continue;
+            }
+            uint64_t request=dj_link_service_browse(p->number,p->source_epoch,slot,DJ_LINK_DB_MENU_ALL_TRACKS,0);
+            if (!request) { ui_library_status_hold("LINK BUSY",COL_AMBER,1400); return; }
+            if (!s_link_source) {
+                s_link_local_selection=s_selected_track_idx;
+                s_link_local_generation=library_generation();
+            }
+            s_link_source=true; s_link_peer=p->number; s_link_slot=slot;
+            s_link_epoch=p->source_epoch; s_link_request=request; s_link_depth=0;
+            s_selected_track_idx=0; s_link_first=0;
+            memset(&s_link_status,0,sizeof(s_link_status)); memset(s_link_rows,0,sizeof(s_link_rows));
+            s_link_status.state=DJ_LINK_BROWSE_LOADING; ui_library_populate_rows(); return;
+        }
+    }
+    if (s_link_source) {
+        dj_link_service_cancel_browse(); s_link_source=false;
+        if (library_generation()!=s_link_local_generation) {
+            ui_library_browse_reset(); s_link_local_selection=0;
+        }
+        int count=ui_library_media_count();
+        s_selected_track_idx=s_link_local_selection<count ? s_link_local_selection : 0;
+        ui_library_populate_rows();
+    } else ui_library_status_hold("NO LINK PEERS",COL_AMBER,1400);
+#endif
+}
+#ifdef UI_LIBRARY_LINK
+static void ui_library_source_event_cb(lv_event_t *event)
+{
+    (void)event; ui_library_cycle_source();
+}
+#endif
 
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
 void ui_library_dj_enable(void)

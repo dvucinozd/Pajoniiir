@@ -151,3 +151,19 @@ with truncation/progress, live source-epoch validation at result publication and
 Library source/visible-page bridge. Incoming load must enter the existing
 load-lock/admission path; no direct deck mutation or premature network load ack.
 J then supplies verified local downloads; K supplies authoritative-clock sync.
+
+## I4b: runtime browse and software closure
+
+The Ethernet-bound nonblocking TCP adapter, worker-owned 2,000-row PSRAM cache,
+copied visible metadata pages and actual Library source/menu bridge are now
+implemented. Invalid source/claim epochs, old command IDs and incomplete lists
+cannot become completed UI rows. Incoming load uses LVGL stopped/busy admission;
+metadata-only audio remains unavailable until J and is never acknowledged early.
+
+The [2026-10-05 I software closure](FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md)
+supersedes the pending I4b statements above. Full host runner, nine Linux
+sanitizer suites, all eight simulator presentations and both ordinary IDF 6.0.2
+builds pass; dependency locks are unchanged. JC1060 final local image is
+2,581,280 bytes and JC4880 remains 2,557,216 bytes. Actual Ethernet/peer/DDJ-400
+hardware acceptance is NOT RUN. No OTA/COM/publication occurred; operator-deferred
+audio and final soak remain open. Next work is J.

@@ -41,7 +41,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
 | H | Previous product design with new features at 800x480 and 1024x600 | Software verified; c4912d5b installed on JC4880. Focused AP/USB, operator design/controls and paused-track absolute resources PASS; full baseline/audio/soak acceptance open |
-| I | MIT djlink codec, Ethernet discovery/claim/browse | I1-I3 and I4a DBServer model/TCP mocks software verified; runtime browse cache/Library bridge pending |
+| I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Pending |
 | K | Epoch-bound network clock, controlled sync and tempo master | Pending |
 | L | Project-bound OTA, documentation, qualification and release candidate | Pending |

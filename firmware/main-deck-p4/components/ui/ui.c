@@ -1165,6 +1165,7 @@ esp_err_t ui_init(void) {
         .on_lib_select=ui_library_select_visible_row, .on_lib_load=ui_dj_library_load,
         .on_lib_sort=ui_dj_library_sort, .on_lib_page=ui_dj_library_page,
         .on_lib_playlists=ui_library_toggle_playlists,
+        .on_lib_source=ui_library_cycle_source,
     };
 #ifdef WIN32
     bool ethernet = UI_HOR_RES == 1024;

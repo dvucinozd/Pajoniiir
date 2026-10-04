@@ -26,12 +26,15 @@ remain mandatory exact-image gates before product acceptance or publication.
 [I1-I3](validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md) add the MIT
 codec, bounded peer/epoch model, a shared two-player claim coordinator and a
 default-off JC1060 Ethernet worker. UDP sockets require the actual Ethernet
-netif; no Wi-Fi/default-interface fallback exists. Next: serialized DBServer
-browse and its source/UI integration, followed by J-K and L release gates.
-I4a now verifies the serialized DBServer model, 2,000-row cap, exact TCP framing
-and stale connection callbacks, including actual localhost TCP sanitizer mocks.
-Its Ethernet TCP adapter and owned Library browse cache remain I4b; no on-device
-browse or network load is claimed by the model-only step.
+netif; no Wi-Fi/default-interface fallback exists.
+[I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md)
+includes the nonblocking Ethernet-bound TCP adapter, serialized DBServer worker,
+owned 2,000-row cache, visible metadata and Library source/folder/playlist bridge.
+Incomplete lists and stale epochs never publish completed rows. Touch/controller
+and incoming loads share stopped/busy admission; metadata-only loads remain
+unsupported until J supplies verified audio. Real UDP/TCP sanitizers and the Link
+Library simulator pass. Physical peer interoperability is NOT RUN. Next: J safe
+download/cache, K sync/master, then L final compatibility/release gates.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

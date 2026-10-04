@@ -50,7 +50,9 @@ bool dj_link_udp_open(dj_link_udp_t *t, const char *name,
         struct timeval timeout = {.tv_sec=0, .tv_usec=40000};
         if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) goto fail;
         struct sockaddr_in address = {.sin_family=AF_INET, .sin_port=htons(ports[i]),
-            .sin_addr={.s_addr=htonl(INADDR_ANY)}};
+            /* Status/load commands are unicast to our Ethernet address.
+             * Discovery/beat retain broadcast reception. */
+            .sin_addr={.s_addr=htonl(i == 2 ? ip : INADDR_ANY)}};
         if (bind(fd, (struct sockaddr *)&address, sizeof(address)) < 0) goto fail;
     }
     t->broadcast_ip = ip | ~netmask;

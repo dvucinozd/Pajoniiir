@@ -127,6 +127,7 @@ void ui_library_select_visible_row(uint8_t row);
 void ui_library_page_delta(int delta);
 void ui_library_sort_column(int column);
 void ui_library_toggle_playlists(void);
+void ui_library_cycle_source(void);
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
 void ui_library_dj_enable(void);
 #endif

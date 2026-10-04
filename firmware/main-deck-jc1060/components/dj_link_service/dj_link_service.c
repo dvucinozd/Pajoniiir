@@ -1,5 +1,6 @@
 #include "dj_link_service.h"
 #include "dj_link_udp.h"
+#include "dj_link_tcp.h"
 #include "board_ethernet.h"
 #include "app_settings.h"
 #include "esp_heap_caps.h"
@@ -9,6 +10,7 @@
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
 #include <errno.h>
@@ -19,6 +21,52 @@ static const char *TAG = "dj_link";
 static TaskHandle_t s_task;
 static SemaphoreHandle_t s_snapshot_lock;
 static dj_link_discovery_t *s_model, *s_snapshot;
+static SemaphoreHandle_t s_browse_lock;
+static dj_link_browse_t *s_browse;
+static dj_link_peer_track_t *s_rows;
+static dj_link_tcp_t s_tcp;
+typedef struct {
+    uint64_t id, epoch;
+    uint32_t menu_id;
+    uint8_t peer, slot, menu;
+} browse_command_t;
+static QueueHandle_t s_commands, s_loads;
+static uint64_t s_command_id;
+static portMUX_TYPE s_command_lock = portMUX_INITIALIZER_UNLOCKED;
+uint64_t dj_link_service_browse(uint8_t peer, uint64_t epoch, uint8_t slot,
+    dj_link_db_menu_t menu, uint32_t menu_id)
+{
+    if (!s_commands || !peer || !epoch || menu > DJ_LINK_DB_MENU_PLAYLIST) return 0;
+    portENTER_CRITICAL(&s_command_lock);
+    uint64_t id = ++s_command_id;
+    portEXIT_CRITICAL(&s_command_lock);
+    browse_command_t cmd = {.id=id,.epoch=epoch,.menu_id=menu_id,.peer=peer,.slot=slot,.menu=(uint8_t)menu};
+    return xQueueSend(s_commands,&cmd,0) == pdTRUE ? id : 0;
+}
+void dj_link_service_cancel_browse(void)
+{
+    if (!s_commands) return;
+    /* Cancel supersedes pending menus rather than failing behind a full queue. */
+    xQueueReset(s_commands);
+    browse_command_t cmd = {0}; (void)xQueueSend(s_commands,&cmd,0);
+}
+bool dj_link_service_page(uint64_t request_id, uint32_t first, dj_link_browse_status_t *status,
+    dj_link_peer_track_t rows[DJ_LINK_BROWSE_PAGE_ROWS])
+{
+    if (!status || !rows || !s_browse_lock || xSemaphoreTake(s_browse_lock,0)!=pdTRUE) return false;
+    if (s_browse->status.request_id!=request_id) {
+        xSemaphoreGive(s_browse_lock); return false;
+    }
+    (void)dj_link_browse_page(s_browse,first,status,rows);
+    xSemaphoreGive(s_browse_lock); return true;
+}
+bool dj_link_service_take_load(dj_link_incoming_load_t *out)
+{
+    if (!out || !s_loads || xQueueReceive(s_loads,out,0)!=pdTRUE ||
+        xSemaphoreTake(s_snapshot_lock,0)!=pdTRUE) return false;
+    bool current=dj_link_browse_load_current(s_snapshot,out,(uint32_t)(esp_timer_get_time()/1000));
+    xSemaphoreGive(s_snapshot_lock); return current;
+}
 static portMUX_TYPE s_summary_lock = portMUX_INITIALIZER_UNLOCKED;
 static struct {
     dj_link_phase_t phase;
@@ -91,11 +139,13 @@ static void worker(void *unused)
             /* This exact Ethernet netif owns every inbound/outbound socket.
              * No default route, AP, Wi-Fi netif or INADDR_ANY fallback binding. */
             if (esp_netif_get_netif_impl_name(netif, name) == ESP_OK &&
-                dj_link_udp_open(&transport, name, ip, mask, ports)) {
+                dj_link_udp_open(&transport, name, ip, mask, ports) &&
+                dj_link_tcp_bind(&s_tcp,name,ip)) {
                 opened_ip = ip; opened_mask = mask; socket_error = false;
                 dj_link_discovery_configure(s_model, true, ip, mac, now);
                 ESP_LOGI(TAG, "Ethernet transport %s opened; claiming two players", name);
             } else {
+                dj_link_udp_close(&transport); dj_link_tcp_close(&s_tcp);
                 socket_error = true; retry_at = now + 2000;
                 dj_link_discovery_configure(s_model, true, 0, mac, now);
                 ESP_LOGW(TAG, "Ethernet transport refused: errno=%d", errno);
@@ -106,7 +156,13 @@ static void worker(void *unused)
                 int received = dj_link_udp_receive(&transport, &packet, i == 0 ? 40 : 0);
                 if (received < 0) { socket_error = true; break; }
                 if (!received) break;
-                (void)dj_link_discovery_ingest(s_model, packet.port, packet.bytes,
+                dj_link_incoming_load_t load;
+                if (packet.port == DJLINK_PORT_STATUS &&
+                    dj_link_browse_parse_load(s_model,packet.source_ip,packet.bytes,packet.len,&load)) {
+                    /* No network ACK: the LVGL owner must accept a complete
+                     * load through the shared gate first (J supplies audio). */
+                    load.received_ms=now_ms(); (void)xQueueSend(s_loads,&load,0);
+                } else (void)dj_link_discovery_ingest(s_model, packet.port, packet.bytes,
                     packet.len, packet.source_ip, now_ms());
             }
             now = now_ms();
@@ -120,7 +176,26 @@ static void worker(void *unused)
                 dj_link_discovery_configure(s_model, enabled, 0, mac, now);
             }
         }
-        dj_link_discovery_tick(s_model, now_ms()); publish(socket_error);
+        dj_link_discovery_tick(s_model, now_ms());
+        xSemaphoreTake(s_browse_lock,portMAX_DELAY);
+        browse_command_t command;
+        if (xQueueReceive(s_commands,&command,0)==pdTRUE) {
+            if (!command.peer) dj_link_browse_cancel(s_browse);
+            else {
+                if (!dj_link_browse_start(s_browse,s_model,command.peer,command.epoch,
+                        command.slot,(dj_link_db_menu_t)command.menu,command.menu_id,now_ms())) {
+                    dj_link_browse_cancel(s_browse);
+                    s_browse->status.state=DJ_LINK_BROWSE_UNAVAILABLE;
+                    snprintf(s_browse->status.error,sizeof(s_browse->status.error),"SOURCE UNAVAILABLE");
+                }
+                s_browse->status.request_id=command.id;
+            }
+        }
+        /* Invalidate before delivering socket bytes and before publishing rows. */
+        if (dj_link_browse_validate(s_browse,s_model)) dj_link_tcp_poll(&s_tcp,now_ms());
+        dj_link_browse_poll(s_browse,s_model,now_ms());
+        xSemaphoreGive(s_browse_lock);
+        publish(socket_error);
         vTaskDelay(pdMS_TO_TICKS(opened_ip ? 1 : 40));
     }
 }
@@ -130,15 +205,29 @@ esp_err_t dj_link_service_init(void)
     if (!board_ethernet_netif()) return ESP_ERR_INVALID_STATE;
     s_model = heap_caps_calloc(1, sizeof(*s_model), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     s_snapshot = heap_caps_calloc(1, sizeof(*s_snapshot), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    s_browse = heap_caps_calloc(1,sizeof(*s_browse),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    s_rows = heap_caps_calloc(DJ_LINK_DB_TRACK_LIMIT,sizeof(*s_rows),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     s_snapshot_lock = xSemaphoreCreateMutex();
-    if (!s_model || !s_snapshot || !s_snapshot_lock) goto fail;
+    s_browse_lock = xSemaphoreCreateMutex();
+    s_commands = xQueueCreate(4,sizeof(browse_command_t));
+    s_loads = xQueueCreate(1,sizeof(dj_link_incoming_load_t));
+    if (!s_model || !s_snapshot || !s_snapshot_lock || !s_browse || !s_rows ||
+        !s_browse_lock || !s_commands || !s_loads) goto fail;
+    dj_link_db_io_t io = {.connect=dj_link_tcp_connect,.send=dj_link_tcp_send,
+        .close=dj_link_tcp_close,.ctx=&s_tcp};
+    dj_link_browse_init(s_browse,s_rows,&io); dj_link_tcp_init(&s_tcp,&s_browse->db);
     dj_link_discovery_init(s_model); *s_snapshot = *s_model;
     if (xTaskCreatePinnedToCoreWithCaps(worker, "dj_link_eth", 6144, NULL, 2, &s_task, 0,
         MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT) != pdPASS) goto fail;
     return ESP_OK;
 fail:
     if (s_snapshot_lock) vSemaphoreDelete(s_snapshot_lock);
+    if (s_browse_lock) vSemaphoreDelete(s_browse_lock);
+    if (s_commands) vQueueDelete(s_commands);
+    if (s_loads) vQueueDelete(s_loads);
+    heap_caps_free(s_browse); heap_caps_free(s_rows);
     heap_caps_free(s_model); heap_caps_free(s_snapshot);
     s_snapshot_lock = NULL; s_model = s_snapshot = NULL;
+    s_browse_lock=NULL; s_browse=NULL; s_rows=NULL; s_commands=s_loads=NULL;
     return ESP_ERR_NO_MEM;
 }

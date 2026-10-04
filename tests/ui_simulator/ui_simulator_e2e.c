@@ -207,6 +207,88 @@ static unsigned count_objects(lv_obj_t *object, const lv_obj_class_t *type)
     return count;
 }
 
+#ifdef UI_LINK_SIMULATOR
+extern void ui_link_mock_available(bool available);
+extern void ui_link_mock_empty(void);
+extern void ui_link_mock_error(void);
+extern void ui_link_mock_pending(bool pending);
+extern void ui_link_mock_load(uint8_t deck);
+extern uint32_t ui_link_mock_visible_first(void);
+static lv_obj_t *link_table(lv_obj_t *root)
+{
+    if (lv_obj_check_type(root,&lv_table_class) && lv_obj_is_visible(root) &&
+        lv_table_get_row_count(root)>1) return root;
+    for (uint32_t i=0;i<lv_obj_get_child_count(root);++i) {
+        lv_obj_t *t=link_table(lv_obj_get_child(root,(int32_t)i)); if (t) return t;
+    }
+    return NULL;
+}
+static void link_row(const char *expected)
+{
+    lv_obj_t *table=link_table(lv_screen_active());
+    if (!table || strcmp(lv_table_get_cell_value(table,0,0),expected)) fail("Link row/page did not match owned snapshot");
+}
+static int link_scenario(const char *output)
+{
+    click_label("LIBRARY"); pump(256);
+    ui_library_select_delta(2);
+    deck_loaded_track_summary_t before={0},after={0};
+    deck_core_get_loaded_track(CTRL_DECK_1,&before);
+    if (!click_label("LOCAL USB")) fail("Link source selector missing");
+    save_ppm(output,"link_loading"); pump(256);
+    link_row("Remote track 1"); save_ppm(output,"link_tracks");
+    ui_library_page_delta(1); pump(256);
+    if (ui_link_mock_visible_first()!=8) fail("visible page did not drive metadata window");
+    link_row("Remote track 9");
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_ERR_NOT_SUPPORTED)
+        fail("metadata-only Link track was accepted as loaded audio");
+    deck_core_get_loaded_track(CTRL_DECK_1,&after);
+    if (after.track_key!=before.track_key) fail("remote metadata load changed existing deck");
+    ui_link_mock_load(CTRL_DECK_1); pump(256);
+    if (!find_visible_label(lv_screen_active(),"AUDIO DOWNLOAD UNAVAILABLE")) fail("incoming load bypassed common audio admission");
+    ctrl_event_t play={.type=CTRL_EV_BUTTON,.deck=CTRL_DECK_1,.id=BTN_PLAY,.value=1};
+    deck_core_test_apply_event(&play);
+    ui_link_mock_load(CTRL_DECK_1); pump(256);
+    if (!find_visible_label(lv_screen_active(),"LOAD LOCK")) fail("incoming load bypassed playing-deck load lock");
+    deck_core_test_apply_event(&play); ui_simulator_deck_set_playing(false);
+    ui_link_mock_pending(true);
+    click_label("PLAYLISTS"); pump(256);
+    if (link_table(lv_screen_active())) fail("pending new menu displayed old completed rows");
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_ERR_NOT_FOUND)
+        fail("pending new menu admitted a stale row");
+    ui_link_mock_pending(false); pump(256); link_row("Subfolder");
+    save_ppm(output,"link_folders");
+    ui_library_select_delta(1);
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_OK) fail("controller LOAD did not open remote playlist");
+    pump(256); link_row("Remote track 1"); save_ppm(output,"link_playlist");
+    click_label("SORT NAME"); pump(64); link_row("Remote track 1");
+    click_label("BACK"); pump(256); link_row("Subfolder");
+    uint32_t parent_row=0,parent_col=0;
+    lv_obj_t *parent_table=link_table(lv_screen_active());
+    if (parent_table) lv_table_get_selected_cell(parent_table,&parent_row,&parent_col);
+    if (!parent_table || parent_row!=1) fail("remote playlist BACK lost parent selection");
+    click_label("BACK"); pump(256); link_row("Remote track 1");
+    ui_refresh_library(); pump(64); link_row("Remote track 1");
+    ui_link_mock_empty(); pump(256);
+    if (link_table(lv_screen_active())) fail("empty remote list kept old rows");
+    save_ppm(output,"link_empty");
+    ui_link_mock_error(); pump(256);
+    if (link_table(lv_screen_active())) fail("failed remote list kept completed rows");
+    save_ppm(output,"link_error");
+    ui_link_mock_available(false); pump(256);
+    if (link_table(lv_screen_active())) fail("lost source retained remote rows");
+    save_ppm(output,"link_unavailable");
+    click_label("LINK #1 RB"); pump(256);
+    lv_obj_t *table=link_table(lv_screen_active());
+    uint32_t selected=0,column=0;
+    if (table) lv_table_get_selected_cell(table,&selected,&column);
+    if (!table || selected!=2) fail("local source selection was not restored");
+    save_ppm(output,"link_local_restored");
+    if (s_failures) return 1;
+    puts("PASS real Library Link source, page, playlist order, admission, loss and local restoration"); return 0;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -234,6 +316,9 @@ int main(int argc, char **argv)
     }
 
     pump(3200);
+#ifdef UI_LINK_SIMULATOR
+    return link_scenario(argv[1]);
+#endif
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (count_objects(lv_screen_active(), &lv_table_class) != 0)
         fail("preview instantiated a hidden legacy Library table");

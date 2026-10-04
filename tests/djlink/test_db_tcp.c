@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE 1
 #include "dj_link_db.h"
+#include "dj_link_tcp.h"
 #include "djlink/dbserver.h"
 #include "djlink/status.h"
 #include <arpa/inet.h>
@@ -16,9 +17,7 @@ typedef enum { NORMAL, BAD_MAGIC, DISCONNECT, SILENT } mock_db_mode_t;
 typedef struct { int discovery, database; uint16_t db_port; mock_db_mode_t mode; } peer_t;
 typedef struct {
     dj_link_db_t client;
-    int fd;
-    bool connected;
-    uint64_t connection_epoch;
+    dj_link_tcp_t tcp;
     unsigned rows, reported;
 } owner_t;
 static uint32_t clock_ms(void)
@@ -109,18 +108,13 @@ static void *peer_worker(void *context)
 }
 static int connect_owner(void *context, uint32_t ip, uint16_t port)
 {
-    owner_t *o = context; assert(o->fd == -1);
-    o->fd = socket(AF_INET, SOCK_STREAM, 0); assert(o->fd >= 0); timeout(o->fd);
-    struct sockaddr_in address = {.sin_family=AF_INET, .sin_port=htons(port), .sin_addr={.s_addr=htonl(ip)}};
-    assert(connect(o->fd, (struct sockaddr *)&address, sizeof(address)) == 0);
-    o->connection_epoch = o->client.connection_epoch;
-    o->connected = true; return 0;
+    return dj_link_tcp_connect(&((owner_t *)context)->tcp,ip,port);
 }
 static int send_owner(void *context, const uint8_t *buf, size_t len)
-{ send_all(((owner_t *)context)->fd, buf, len, false); return 0; }
+{ return dj_link_tcp_send(&((owner_t *)context)->tcp,buf,len); }
 static void close_owner(void *context)
 {
-    owner_t *o = context; if (o->fd >= 0) close(o->fd); o->fd = -1; o->connected = false;
+    dj_link_tcp_close(&((owner_t *)context)->tcp);
 }
 static void begin_owner(void *context, uint32_t count) { ((owner_t *)context)->reported = count; }
 static void row_owner(void *context, uint32_t index, const dj_link_peer_track_t *t, bool detail)
@@ -133,29 +127,20 @@ static void scenario(mock_db_mode_t mode)
     peer_t peer = {.mode=mode}; uint16_t discovery_port;
     peer.discovery = listen_local(&discovery_port); peer.database = listen_local(&peer.db_port);
     pthread_t thread; assert(pthread_create(&thread, NULL, peer_worker, &peer) == 0);
-    owner_t owner = {.fd=-1};
+    owner_t owner = {0};
     dj_link_db_io_t io = {.connect=connect_owner, .send=send_owner, .close=close_owner,
         .list_begin=begin_owner, .track=row_owner, .ctx=&owner};
     dj_link_db_init(&owner.client, &io, 2000); owner.client.discovery_port = discovery_port;
+    dj_link_tcp_init(&owner.tcp,&owner.client);
+    assert(dj_link_tcp_bind(&owner.tcp,"lo",INADDR_LOOPBACK));
     owner.client.step_timeout_ms = mode == SILENT ? 100 : 1000;
     uint32_t started = clock_ms();
     dj_link_db_start(&owner.client, INADDR_LOOPBACK, 2, DJLINK_SLOT_USB, 4, 7, started);
     while (!owner.client.list_done && owner.client.phase != DJ_LINK_DB_FAILED) {
         uint32_t now = clock_ms(); assert((uint32_t)(now-started) < 3000);
-        if (owner.connected) {
-            owner.connected = false;
-            dj_link_db_on_connected(&owner.client, owner.connection_epoch, now);
-        }
-        if (owner.fd >= 0) {
-            struct pollfd p = {.fd=owner.fd, .events=POLLIN};
-            if (poll(&p, 1, 10) > 0 && p.revents) {
-                uint8_t buf[257]; int n = recv(owner.fd, buf, sizeof(buf), 0);
-                uint64_t epoch = owner.connection_epoch;
-                if (n > 0) dj_link_db_on_data(&owner.client, epoch, buf, (size_t)n, now);
-                else dj_link_db_on_closed(&owner.client, epoch, now);
-            }
-        }
+        dj_link_tcp_poll(&owner.tcp,now);
         dj_link_db_poll(&owner.client, clock_ms());
+        usleep(1000);
     }
     if (mode == NORMAL) assert(owner.rows == 2 && owner.reported == 2 && owner.client.list_done);
     else assert(owner.client.phase == DJ_LINK_DB_FAILED && !owner.client.list_done);
@@ -164,6 +149,22 @@ static void scenario(mock_db_mode_t mode)
 }
 int main(void)
 {
+    dj_link_db_t client={0}; dj_link_tcp_t tcp;
+    dj_link_tcp_init(&tcp,&client);
+    assert(!dj_link_tcp_bind(&tcp,"",INADDR_LOOPBACK));
+    assert(!dj_link_tcp_bind(&tcp,"lo",0));
+    assert(dj_link_tcp_connect(&tcp,INADDR_LOOPBACK,12523)<0 && tcp.fd==-1);
+    assert(dj_link_tcp_bind(&tcp,"missing0",INADDR_LOOPBACK));
+    assert(dj_link_tcp_connect(&tcp,INADDR_LOOPBACK,12523)<0 && tcp.fd==-1);
+    uint16_t port; int listener=listen_local(&port);
+    assert(dj_link_tcp_bind(&tcp,"lo",INADDR_LOOPBACK));
+    assert(dj_link_tcp_connect(&tcp,INADDR_LOOPBACK,port)==0);
+    uint8_t bytes[DJ_LINK_DB_TX_MAX+1]={0};
+    assert(dj_link_tcp_send(&tcp,bytes,sizeof(bytes))<0);
+    assert(dj_link_tcp_send(&tcp,bytes,128)==0);
+    assert(dj_link_tcp_send(&tcp,bytes,1)<0);
+    dj_link_tcp_close(&tcp); dj_link_tcp_poll(&tcp,0);
+    assert(tcp.fd==-1 && tcp.tx_len==0); close(listener);
     scenario(NORMAL); scenario(BAD_MAGIC); scenario(DISCONNECT); scenario(SILENT);
     puts("PASS real TCP DBServer discovery/setup/fragments/browse, malformed, disconnect, timeout");
     return 0;

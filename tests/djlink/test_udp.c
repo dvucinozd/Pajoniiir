@@ -21,6 +21,7 @@ int main(void)
     for (unsigned i = 0; i < 3; ++i) {
         struct sockaddr_in addr; socklen_t len = sizeof(addr);
         assert(getsockname(t.fd[i], (struct sockaddr *)&addr, &len) == 0);
+        assert(addr.sin_addr.s_addr == htonl(i==2 ? 0x7f000001 : INADDR_ANY));
         addr.sin_addr.s_addr = htonl(0x7f000001);
         uint8_t payload[] = {1,2,3,4};
         assert(sendto(sender, payload, sizeof(payload), 0, (struct sockaddr *)&addr, len) == sizeof(payload));
@@ -32,6 +33,13 @@ int main(void)
         assert(dj_link_udp_receive(&t, &packet, 40) == 0);
     }
     assert(dj_link_udp_receive(&t, &packet, 1) == 0);
+    struct sockaddr_in status; socklen_t status_len=sizeof(status);
+    assert(getsockname(t.fd[2],(struct sockaddr *)&status,&status_len)==0);
+    int one=1; assert(setsockopt(sender,SOL_SOCKET,SO_BROADCAST,&one,sizeof(one))==0);
+    status.sin_addr.s_addr=htonl(0x7fffffff);
+    uint8_t broadcast=1;
+    assert(sendto(sender,&broadcast,1,0,(struct sockaddr *)&status,status_len)==1);
+    assert(dj_link_udp_receive(&t,&packet,40)==0); /* No broadcast LOAD commands. */
     /* Discovery flood cannot starve beat/status receive. */
     for (unsigned i = 0; i < 3; ++i) {
         struct sockaddr_in addr; socklen_t len = sizeof(addr);

@@ -134,6 +134,14 @@ endforeach()
 get_target_property(runtime_sources ui_simulator_e2e SOURCES)
 get_target_property(runtime_includes ui_simulator_e2e INCLUDE_DIRECTORIES)
 get_target_property(runtime_definitions ui_simulator_e2e COMPILE_DEFINITIONS)
+add_executable(ui_link_wide_e2e ${runtime_sources} simulator_link.c)
+target_include_directories(ui_link_wide_e2e PRIVATE ${runtime_includes}
+    "${REPO_ROOT}/firmware/common/dj_link_core/include"
+    "${REPO_ROOT}/firmware/common/djlink/include"
+    "${REPO_ROOT}/firmware/main-deck-jc1060/components/dj_link_service/include")
+target_compile_definitions(ui_link_wide_e2e PRIVATE ${runtime_definitions}
+    UI_LINK_SIMULATOR=1 DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
+target_link_libraries(ui_link_wide_e2e PRIVATE lvgl m)
 foreach(layout IN ITEMS compact wide)
     add_executable(ui_product_${layout}_e2e ${runtime_sources})
     target_include_directories(ui_product_${layout}_e2e PRIVATE ${runtime_includes})

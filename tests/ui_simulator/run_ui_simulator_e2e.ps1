@@ -3,7 +3,7 @@ param(
     [switch]$UpdateBaselines,
     [switch]$KeepArtifacts,
     [string]$LvglPath,
-    [ValidateSet('legacy','product-compact','product-wide','native-compact','native-wide','runtime-compact','runtime-wide')]
+    [ValidateSet('legacy','product-compact','product-wide','native-compact','native-wide','runtime-compact','runtime-wide','link-wide')]
     [string]$Presentation = 'legacy'
 )
 
@@ -21,7 +21,7 @@ $Height = 480
 $Target = 'ui_simulator_e2e'
 if ($Presentation -ne 'legacy') {
     $parts = $Presentation.Split('-')
-    $Target = if ($parts[0] -eq 'native') { "dj_ui_$($parts[1])_e2e" } elseif ($parts[0] -eq 'product') { "ui_product_$($parts[1])_e2e" } else { "dj_ui_runtime_$($parts[1])_e2e" }
+    $Target = if ($parts[0] -eq 'link') { 'ui_link_wide_e2e' } elseif ($parts[0] -eq 'native') { "dj_ui_$($parts[1])_e2e" } elseif ($parts[0] -eq 'product') { "ui_product_$($parts[1])_e2e" } else { "dj_ui_runtime_$($parts[1])_e2e" }
     $OutputDir = Join-Path $CacheRoot "screenshots-$Presentation"
     $ManifestPath = Join-Path $ScriptDir "baselines-$Presentation.json"
     if ($parts[1] -eq 'wide') { $Width = 1024; $Height = 600 }
@@ -144,6 +144,9 @@ if ($Presentation -eq 'legacy' -or $Presentation.StartsWith('product-')) {
 if (-not $Presentation.StartsWith('native-')) { $Captures += @('overview_empty', 'library_unavailable') }
 if ($Presentation.StartsWith('native-')) {
     $Captures = @('dj_overview','dj_library','dj_hotcues','dj_settings','dj_screensaver','dj_settings_restored','dj_empty','dj_error','dj_loading')
+}
+if ($Presentation -eq 'link-wide') {
+    $Captures = @('link_loading','link_tracks','link_folders','link_playlist','link_empty','link_error','link_unavailable','link_local_restored')
 }
 foreach ($name in $Captures) {
     $path = Join-Path $OutputDir "$name.ppm"

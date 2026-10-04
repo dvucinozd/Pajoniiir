@@ -33,6 +33,12 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   free. Remove/reconnect Ethernet and replace peer IP/MAC; stale requests must
   fail. Verify no Link traffic uses Wi-Fi and no local library is advertised.
   Record real peer model/version; codec/socket mocks do not prove interoperability.
+  [I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md)
+  adds single-session TCP browse and the Library selector. Verify USB/SD and
+  rekordbox sources, folders, ordered playlists, visible-page metadata, 2,000-row
+  truncation, cancel/timeout and source loss without stale rows/artwork. Incoming
+  LOAD must respect LOAD LOCK/busy and must not ACK or replace a deck before J
+  provides a verified local file. Network audio downloads are not part of I.
 
 - [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
   returned network/USB and operator-confirmed previous design/FLX4 controls.

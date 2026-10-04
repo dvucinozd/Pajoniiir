@@ -55,6 +55,16 @@ The core is not copied. Both signed-manifest and application descriptor checks
 use the running project identity. See [E software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md);
 new-board physical acceptance remains NOT RUN.
 
+Package I isolates Link to the JC1060 Ethernet worker. A sans-I/O DBServer model
+and strictly interface/local-IP-bound nonblocking adapter share one session and
+one request. Its PSRAM cache owns at most 2,000 metadata rows; only bounded page
+copies cross into LVGL. Source/claim/connection epochs and command IDs reject
+stale publication. The Library owner handles navigation and incoming load
+admission without network or filesystem work. Metadata-only LOAD cannot alter a
+deck; J must supply verified local audio before acceptance/ACK. Local library
+advertising and Wi-Fi Link are absent. See the
+[I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
+
 Package F separates the authoritative MAIN sink from USB cue mirroring.
 JC4880 defaults to blocking PCM5102A I2S pacing; its FLX4 format, attenuation
 and ring clock corrections remain unchanged. JC1060 defaults to USB MAIN 1/2

@@ -58,8 +58,12 @@ gates. Software work proceeds with I-L; the installed JC4880 image is retained.
 [Package I progress](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md)
 adds bounded Link discovery, two distinct player claims and an Ethernet-only
 JC1060 worker. Link is default-off with a persistent Settings switch. Codec,
-claim and UDP mock sanitizer tests pass; browse remains in development and
-actual CDJ/Rekordbox interoperability remains NOT RUN.
+claim and real UDP/TCP sanitizer tests pass. The serialized DBServer worker and
+owned 2,000-row Library cache support track/folder/playlist browsing and visible
+metadata with epoch cancellation and truncation/progress. Metadata-only LOAD is
+explicitly refused until J supplies verified downloads; actual CDJ/Rekordbox
+interoperability remains NOT RUN. See the
+[I software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

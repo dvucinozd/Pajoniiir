@@ -17,6 +17,12 @@ in current code/file formats. They do not imply an active S3 processor.
 The isolated development branch also has a separate JC1060 target sharing
 the P4 core with its own identity, BSP, lock and CI build. [Package E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 does not qualify or release this board. All JC1060 physical gates are NOT RUN.
+[Package I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md)
+adds default-off Ethernet-only discovery, two-player claims and serialized
+DBServer browse with a bounded owned Library cache. Software/mock/simulator
+results do not qualify real CDJ or rekordbox peers. Incoming/touch/controller
+metadata-only LOADs respect the same lock/busy checks and remain unsupported
+until J supplies verified downloaded audio; no premature load ACK is sent.
 [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
 UAC1 packed 16/24-bit formats and USB MAIN/cue pacing. The service API selects
 an available sink only with both decks stopped and recorder inactive. Host/build

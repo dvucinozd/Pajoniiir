@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "width": 1024,
+  "height": 600,
+  "lvgl_commit": "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
+  "captures": {
+    "link_loading": "14c6cd42b44979f105d14649021f9ed3486bdf38ff0ec40777ce6c8f82cbaba7",
+    "link_tracks": "1af9afa137d42b63fffe3d21799799d78c05d5d1043bbf987583cea7ffa55448",
+    "link_folders": "0934a0b2578ea70d71537e3d6a5711ae444e5d4f0e41843856dfcd1e89bdfcb2",
+    "link_playlist": "acc0ad82cf5bdd657f5c34a00af3d8eef85edbb6d8ffe749907f8067b3845fab",
+    "link_empty": "1f584cf9ec65b92101fe941a8dfb4736ec933bf1a171f335c8c534c755f38703",
+    "link_error": "aaaa639c1192b724c4abe9bf0da408781fb224df8443fe93da403a2104aafb66",
+    "link_unavailable": "23cc1fa0e8ca784a9c9140e8f12c802f2d08db6f5a2ea06b932f385b49cc4ef4",
+    "link_local_restored": "c8bfb38bd07295d7a9bc1e85e7af2568099348086cc384ca4801ed5b221814df"
+  }
+}
