@@ -33,6 +33,10 @@ acceptance failed: two 254,976-byte waveform internal-DMA probes and HTTP stack
 reserve 456 bytes. A focused PSRAM ownership correction is software checked;
 installed-image resource acceptance, matching baseline, active sound/timing and
 final soak remain blocking gates. Do not infer acceptance from startup `ready`.
+The installed `M2.4-61-gc4912d5b` clears failed-allocation/HTTP-stack and absolute
+largest-block failures in the empty/two-paused-track scenarios through ordinary
+PSRAM LVGL and bounded buffer ownership. Full comparison still lacks the recovery
+largest block; active audio/timing, listening and final soak remain unaccepted.
 
 Development package E adds a JC1060 target and separate build/lock/CI, sharing
 the P4 core. [E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)

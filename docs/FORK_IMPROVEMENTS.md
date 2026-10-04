@@ -6,6 +6,10 @@ Donor: [kayrozen/Pajoniiir](https://github.com/kayrozen/Pajoniiir/tree/428b97dd4
 frozen at `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323).
 The [2026-10-04 software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 records the pushed checkpoint and hardware gates left unrun.
+That handoff is historical. The [current H candidate record](validation/JC4880_H_CANDIDATE_20261004.md)
+confirms installed JC4880 `M2.4-61-gc4912d5b`, previous design/FLX4 controls,
+AP/USB recovery and focused paused-track resource floors. Full baseline/audio/
+soak qualification remains open; JC1060/DDJ-400/Link physical gates are NOT RUN.
 
 ## Scope and delivery status
 
@@ -33,7 +37,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
 | F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
-| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; one selected presentation/shared Settings; allocation/stack/resource gates. H3 historical hardware FAIL recovered; final physical acceptance NOT RUN |
+| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; c4912d5b installed on JC4880. Focused AP/USB, operator design/controls and paused-track absolute resources PASS; full baseline/audio/soak acceptance open |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Pending |
 | J | Full persistent media identity, cancellable download, atomic cache | Pending |
 | K | Epoch-bound network clock, controlled sync and tempo master | Pending |

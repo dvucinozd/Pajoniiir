@@ -31,6 +31,10 @@ The first correction removed failed allocations and restored HTTP stack reserve.
 Two paused loads still failed the 12 KiB internal largest-block floor, so ordinary
 LVGL moves to the tested PSRAM-only allocator. Repeat exact-image measurements;
 do not waive or lower the gate to make the candidate pass.
+`M2.4-61-gc4912d5b` is now installed with ordinary PSRAM LVGL. Both clean regular
+builds and eight CI jobs pass. Empty/two-paused-track absolute heap/stack floors
+pass with zero allocation failures. Recovery largest-block baseline, active
+audio/timing and final soak remain open; see the candidate record for raw evidence.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5

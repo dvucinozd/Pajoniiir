@@ -49,6 +49,9 @@ internal-allocation probes and HTTP stack reserve; acceptance remains open.
 Those probes/stack failures were corrected. A subsequent two-track reserve
 failure requires PSRAM-only LVGL allocation in ordinary builds too; the previous
 presentation remains unchanged. Exact-image resource/audio acceptance stays open.
+Signed `M2.4-61-gc4912d5b` is installed: the focused empty/two-paused-track memory
+and stack floors pass with zero allocation failures. Full comparison still lacks
+the recovery largest-block measurement; listening and final soak remain open.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

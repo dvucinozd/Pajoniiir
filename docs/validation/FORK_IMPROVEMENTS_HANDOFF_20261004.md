@@ -5,7 +5,11 @@
 This is the historical B5 checkpoint. Subsequent packages A-G and current
 software evidence are tracked in [the live integration log](../FORK_IMPROVEMENTS.md)
 and [G closure](FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
-All physical gates remain NOT RUN; the hardware is still unavailable.
+Hardware was unavailable at this historical checkpoint. The later
+[H candidate record](JC4880_H_CANDIDATE_20261004.md) supersedes that state:
+JC4880 `M2.4-61-gc4912d5b` has focused installed-image, AP/USB, operator design/
+controls and paused-track resource evidence. Full baseline/audio/soak acceptance
+remains open; new JC1060/DDJ-400/Link hardware is still unavailable.
 
 - Integration branch: `codex/fork-improvements`.
 - Worktree: `C:\Users\Daniel\.codex\worktrees\fork-improvements\DDJ-FFL4`.

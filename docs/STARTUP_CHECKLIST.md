@@ -30,6 +30,12 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   The first correction cleared failures/HTTP stack pressure, but two paused loads
   still failed the largest-block floor. Verify ordinary PSRAM LVGL on the next
   immutable candidate, retaining internal audio/USB DMA policy.
+  `M2.4-61-gc4912d5b` passes focused empty/two-paused-track absolute heap/stack
+  floors with zero failed allocations. Capture the missing recovery largest-block
+  baseline and active playback evidence before full resource acceptance.
+  Signed installation/one idle soft reboot restored the same version, AP/API,
+  USB0 and FLX4. Operator confirmed previous design/controls on the exact image.
+  These focused results do not close the full reconnect, sound or soak matrix.
 
 - [ ] H is software verified; qualify its exact image separately. Verify one
   selected presentation, retained controller navigation and owned artwork.

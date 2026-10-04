@@ -37,6 +37,11 @@ The subsequent `M2.4-60-g6dfaf241` cleared allocation/HTTP stack failures, but
 two paused loads failed the internal largest-block floor. Ordinary UI allocation
 now uses PSRAM too; another fresh candidate is required. This supersedes earlier
 statements that only preview uses custom LVGL allocation.
+Current installed image is `M2.4-61-gc4912d5b` in `ota_0`. Both clean ordinary
+builds/CI pass. Empty/two-paused-track absolute resource floors pass, allocation
+failures zero; full baseline comparison and active/listening/soak gates stay open.
+One idle soft reboot restored the same image, AP/API and both USB paths. Operator
+confirmed previous design/FLX4 controls on this exact version after reboot.
 
 [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
 adds an explicit recorder experiment and default-off SD idle workaround.
