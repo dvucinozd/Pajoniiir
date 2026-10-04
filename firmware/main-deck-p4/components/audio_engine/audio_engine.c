@@ -54,6 +54,7 @@
 #include "audio_smart_cfx.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "audio_load_validation_gate.h"
+#include "audio_engine_memory.h"
 #include "controller_usb_host.h"
 #include "controller_usb_audio_stream.h"
 #endif
@@ -6658,11 +6659,15 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     out_snapshot->wdt_trace_current_valid =
         audio_wdt_trace_read(&s_audio_wdt_journal,
                              &out_snapshot->wdt_trace_current);
-    out_snapshot->heap_free = esp_get_free_heap_size();
-    out_snapshot->internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    out_snapshot->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 #endif
     AE_UNLOCK();
+#if !AE_PC
+    /* Heap walks take their own allocator locks. Keep those outside the audio
+     * state mutex: diagnostics must not extend a mixer/control critical section.
+     * These are observation-time heap values, not an atomic audio snapshot.
+     * Minimum-free is the allocator's lifetime low-water mark since boot. */
+    audio_engine_snapshot_memory(out_snapshot);
+#endif
 }
 
 esp_err_t audio_engine_set_cue_mode(uint8_t mode)

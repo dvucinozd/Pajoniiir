@@ -37,6 +37,33 @@ embedded project names and the 0x380000 budget pass; both locks are unchanged.
 Preview builds also pass. Initial simultaneous dependency resolution collided
 on the Component Manager Git-cache index lock; serial builds resolved it
 without changing dependencies or deleting another process's lock.
+Startup guard is pushed as `31a873965c76b0b5e108ba441eee8ca3c04dd386`;
+all eight jobs passed in
+[CI run 37213150173](https://github.com/dvucinozd/Pajoniiir/actions/runs/37213150173).
+
+## Memory telemetry foundation
+
+The existing `/api/status` diagnostics retain `heap_free`, `internal_free` and
+`psram_free` and add `internal_min_free`, `internal_largest_free`, `dma_free`,
+`dma_min_free`, `dma_largest_free`, `psram_min_free`, `psram_largest_free`.
+DMA observations require both INTERNAL and DMA capabilities. Minimum-free
+values are allocator lifetime low-water marks; they are not reset between
+playback scenarios. Heap queries execute outside the audio state mutex and
+do not change sample processing, pacing, DMA policy or allocator selection.
+
+This exposes the measurements needed for admission/baseline work; it does not
+complete allocation-failure, critical-stack, LVGL or startup-phase diagnostics,
+nor establish a physical memory PASS. The recovery image predates the new
+fields: missing measurements cannot be treated as zero or a passing gate.
+
+Memory telemetry verification PASS: full P4 host runner, including all retained
+static guards; focused audio-engine suite reports 485 PASS / 0 FAIL (optional
+external MP3-to-WAV invocation skipped without an input file). Both ordinary
+ESP-IDF 6.0.2 builds pass: JC4880 2,548,288 bytes, JC1060 2,545,776 bytes.
+Board checks, app budget, unchanged locks and documentation checks pass.
+Heap queries are isolated in `audio_engine_memory.c`; the existing prohibition
+against largest-block-based full-track allocation in the playback engine is
+retained unchanged. No memory qualification or new device installation follows.
 
 ## Historical checkpoint: H3 hardware regression and recovery
 

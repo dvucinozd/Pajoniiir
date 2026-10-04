@@ -2,7 +2,7 @@ idf_component_register(
     # Master Tempo granular time-stretch DSP.
     SRCS "audio_engine.c" "audio_load_validation_gate.c" "audio_diag.c" "audio_eof_policy.c" "audio_start_gate.c" "audio_output_bookkeeping.c" "audio_keylock.c" "audio_censor.c" "audio_uac_health.c" "audio_eq.c" "audio_filter.c" "audio_smart_cfx.c" "audio_mixer.c" "audio_pcm_ring.c" "audio_pcm_timeline.c" "audio_scratch_buffer.c" "audio_scratch.c" "audio_resampler.c" "audio_delay_fx.c" "audio_flanger_fx.c" "audio_pad_fx.c" "audio_output_mixer.c" "audio_output_sink.c" "audio_output_timing.c" "audio_wdt_trace.c" "audio_compressed_cache.c" "audio_fw_preload.c" "audio_fw_runtime.c" "audio_fw_task_context.c" "audio_fw_task_plan.c" "audio_format.c" "audio_decoder.c" "audio_wav_decoder.c" "audio_flac_decoder.c"
          "audio_cue_preroll.c" "audio_seek_skip.c" "audio_track_length.c"
-         "audio_loop_resize.c"
+         "audio_loop_resize.c" "audio_engine_memory.c"
     INCLUDE_DIRS "include"
     REQUIRES log board_adapter esp_codec_dev esp_timer media_io_gate audio_recorder service_log controller_usb_host controller_usb_audio
     # minimp3.h and dr_flac.h are single-header libraries included from this dir.

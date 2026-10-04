@@ -1745,7 +1745,14 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "%s,"
         "\"heap_free\":%u,"
         "\"internal_free\":%u,"
-        "\"psram_free\":%u"
+        "\"internal_min_free\":%u,"
+        "\"internal_largest_free\":%u,"
+        "\"dma_free\":%u,"
+        "\"dma_min_free\":%u,"
+        "\"dma_largest_free\":%u,"
+        "\"psram_free\":%u,"
+        "\"psram_min_free\":%u,"
+        "\"psram_largest_free\":%u"
         "}"
         "}",
         audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
@@ -1840,7 +1847,14 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         beat_fx_echo_diag_json,
         (unsigned)diagnostics.heap_free,
         (unsigned)diagnostics.internal_free,
-        (unsigned)diagnostics.psram_free);
+        (unsigned)diagnostics.internal_min_free,
+        (unsigned)diagnostics.internal_largest_free,
+        (unsigned)diagnostics.dma_free,
+        (unsigned)diagnostics.dma_min_free,
+        (unsigned)diagnostics.dma_largest_free,
+        (unsigned)diagnostics.psram_free,
+        (unsigned)diagnostics.psram_min_free,
+        (unsigned)diagnostics.psram_largest_free);
     free(crash_dump_json);
     free(trace_json);
     if (!json || json_len < 0) {
