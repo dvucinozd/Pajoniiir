@@ -2,9 +2,9 @@
 
 ## Repository state
 
-This is the historical B5 checkpoint. Subsequent packages A-F and current
+This is the historical B5 checkpoint. Subsequent packages A-G and current
 software evidence are tracked in [the live integration log](../FORK_IMPROVEMENTS.md)
-and [F closure](FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md).
+and [G closure](FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
 All physical gates remain NOT RUN; the hardware is still unavailable.
 
 - Integration branch: `codex/fork-improvements`.

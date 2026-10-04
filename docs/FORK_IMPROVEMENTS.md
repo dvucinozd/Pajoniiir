@@ -32,7 +32,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Software verified; DDJ-400 hardware acceptance NOT RUN; UAC belongs to F |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
 | F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
-| G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verification in progress; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
+| G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
 | H | Shared dj_ui presentation at 800x480 and 1024x600 | Pending |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Pending |
 | J | Full persistent media identity, cancellable download, atomic cache | Pending |

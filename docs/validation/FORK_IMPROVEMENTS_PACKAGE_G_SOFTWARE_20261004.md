@@ -1,6 +1,6 @@
 # Package G — SDMMC experiments and fail-closed recorder
 
-Status: software verification in progress; all physical gates **NOT RUN**.
+Status: **software verified; all physical gates NOT RUN**.
 Branch `codex/fork-improvements`, following F `0666a9a`.
 Donor reference `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323).
 The SD idle adaptation preserves p3a copyright and Apache-2.0 with local
@@ -120,4 +120,38 @@ keep partial recordings and apply the existing signed service OTA policy.
 
 ## Final checkpoint
 
-Pending final firmware and remote CI results.
+Implementation `d9025101d62af38df43e247b6b60fab95842693c` was pushed and
+verified against the remote branch. [CI run 37200184833](https://github.com/dvucinozd/Pajoniiir/actions/runs/37200184833)
+passed all six jobs: host regression/simulator, both ordinary builds, both
+recorder builds and JC1060 PSRAM/bounce. Each firmware job checks lock stability,
+app budget/identity, resampler precision and linked SD/DWC wrappers.
+
+Local final-source builds embed `M2.4-45-gd902510` and use IDF 6.0.2:
+
+| Target / variant | Bytes | SHA-256 |
+| --- | ---: | --- |
+| JC4880 ordinary | 2,547,168 | `ef20dec5f8c16ed3e972ebb905349c55c082294bf90d9ad502ed4a399420fe37` |
+| JC1060 ordinary | 2,544,640 | `b8d8e68100d2919699b553dc8041769583dd6f437e15e4b6d91ceb76ebd11932` |
+| JC4880 REC / idle-on | 2,560,352 | `59658c9bcb4f7daa719c4086c902e6726186f41faa8b042e65ff245bfc3aaeae` |
+| JC4880 REC / idle-off | 2,559,824 | `903ab60570f3e223d78209e0a9f72f38b6b2b5499b743c3266e5782f26284da2` |
+| JC1060 REC / internal USB DMA | 2,557,888 | `469713d4673547cff4c85db3762966eab29c0d5d22f970fc194e3a9340f6e75f` |
+| JC1060 REC / PSRAM USB DMA + SD bounce | 2,558,240 | `f900816924ef6583c611529f260ba9e7e7cc3ae65749ce010adc175de70ace0a` |
+
+Both JC4880 A/B builds passed locally; comparing generated SDKCONFIG entries
+confirmed their only configuration difference is `CONFIG_PAJONIIIR_SD_IDLE_WAIT`.
+All are below the unchanged `0x380000` application limit. Both dependency locks
+remain unchanged. Local host closure ran 117 compiled/functional suite entries
+plus static/API/signing checks; the threaded reservation test completed 20,000
+acquisitions without simultaneous REC/download ownership. The production OTA
+packager was executed against all three experiment flag fixtures and rejected
+them before binary/signing work.
+
+Ordinary linker DIRAM used/free is 296,816/275,552 bytes on JC4880 and
+293,461/278,907 on JC1060, 72 additional static bytes each versus F. Internal
+`.text` remains 82,556 and 80,312 bytes respectively. These are linker counts,
+not measured runtime DMA heap, PSRAM availability or stack reserves; those
+remain NOT RUN. No blanket IRAM relocation was added.
+
+No image was signed, installed or released. The subsequent closure checkpoint
+only records evidence and does not change firmware source. H is next; the SD
+workaround and recorder remain experimental pending physical measurement.
