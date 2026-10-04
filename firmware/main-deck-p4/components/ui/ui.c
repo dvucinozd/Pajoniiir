@@ -479,10 +479,10 @@ static void ui_switch_tab(int target_idx)
     s_active_tab = target_idx;
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (s_dj_container) {
-        if (target_idx == UI_TAB_OVERVIEW) {
+        if (target_idx == UI_TAB_OVERVIEW || target_idx == UI_TAB_LIBRARY) {
             lv_obj_add_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
-            dj_ui_show_tab(DJ_TAB_OVERVIEW);
+            dj_ui_show_tab((dj_tab_t)target_idx);
         } else {
             lv_obj_add_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
@@ -566,6 +566,17 @@ static void ui_dj_button(uint8_t deck, uint8_t id, uint16_t value)
 #endif
 }
 static void ui_dj_tab(dj_tab_t tab) { ui_switch_tab((int)tab); }
+static void ui_dj_library_load(uint8_t deck, uint8_t row)
+{
+    ui_library_select_visible_row(row);
+    (void)ui_library_load_selected_for_deck(deck);
+}
+static void ui_dj_library_sort(dj_sort_t sort)
+{
+    if (sort >= DJ_SORT_ARTIST && sort <= DJ_SORT_KEY)
+        ui_library_sort_column((int)sort - (int)DJ_SORT_ARTIST);
+}
+static void ui_dj_library_page(int8_t delta) { ui_library_page_delta(delta); }
 static void ui_dj_play(uint8_t deck)
 {
     ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY,
@@ -1115,6 +1126,9 @@ esp_err_t ui_init(void) {
         .on_fx_toggle=ui_dj_fx_toggle, .on_fx_select=ui_dj_fx_select,
         .on_fx_channel=ui_dj_fx_channel, .on_fx_beat=ui_dj_fx_beat,
         .on_fx_level=ui_dj_fx_level,
+        .on_lib_select=ui_library_select_visible_row, .on_lib_load=ui_dj_library_load,
+        .on_lib_sort=ui_dj_library_sort, .on_lib_page=ui_dj_library_page,
+        .on_lib_playlists=ui_library_toggle_playlists,
     };
 #ifdef WIN32
     bool ethernet = UI_HOR_RES == 1024;
@@ -1126,6 +1140,7 @@ esp_err_t ui_init(void) {
     recorder = true;
 #endif
     ui_dj_bridge_init(s_dj_container, &dj_callbacks, ethernet, recorder);
+    ui_library_dj_enable();
     ui_switch_tab(UI_TAB_OVERVIEW);
 #endif
 
@@ -1394,8 +1409,8 @@ void ui_update(void) {
 
     ui_status_update(&ctx);
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
-    if (ctx.active_tab == UI_TAB_OVERVIEW) ui_dj_bridge_update(&ctx);
-    else ui_overview_update(&ctx);
+    ui_dj_bridge_update(&ctx);
+    if (ctx.active_tab != UI_TAB_OVERVIEW) ui_overview_update(&ctx);
 #else
     ui_overview_update(&ctx);
 #endif

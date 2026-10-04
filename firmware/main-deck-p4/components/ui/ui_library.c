@@ -165,6 +165,11 @@ int ui_library_page_selection_after_delta(int total_tracks,
 #include "esp_log.h"
 #include "ui_lvgl_backend.h"
 #include "ui_theme.h"
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+#include "dj_ui.h"
+static bool s_dj_ready;
+static ui_library_row_text_t s_dj_rows[UI_LIBRARY_PAGE_ROWS];
+#endif
 
 #ifndef WIN32
 #include "audio_engine.h"
@@ -181,6 +186,7 @@ int ui_library_page_selection_after_delta(int total_tracks,
 static const char *TAG = "ui_library";
 
 static ui_library_config_t s_library_config;
+static void library_page_event_cb(lv_event_t *e);
 static lv_obj_t *s_library_screen = NULL;
 static lv_obj_t *s_library_table = NULL;
 static lv_obj_t *s_label_library_source = NULL;
@@ -225,6 +231,9 @@ static void ui_library_update_artwork(void)
             continue;
         }
         const uint16_t *pixels = ui_artwork_get(key, UI_ARTWORK_ROW);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        if (s_dj_ready) dj_ui_library_set_row_art((uint8_t)row, pixels);
+#endif
         if (!pixels) continue;
         if (s_row_art_key[row] != key) {
             memcpy(s_row_art_pixels + row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
@@ -419,6 +428,11 @@ static int ui_library_catalog_count(void)
 
 static void ui_library_status_hold(const char *text, lv_color_t color, uint32_t hold_ms)
 {
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready) dj_ui_library_set_status(text,
+        lv_color_eq(color, COL_RED) ? DJ_TONE_ERROR :
+        lv_color_eq(color, COL_GREEN) ? DJ_TONE_OK : DJ_TONE_WARN);
+#endif
     if (s_library_config.actions.status_hold) {
         s_library_config.actions.status_hold(text, color, hold_ms);
     }
@@ -679,6 +693,20 @@ static void ui_library_update_source_label(void)
     int count = ui_library_media_count();
     ui_library_page_t page = ui_library_page_for_selection(count,
                                                             s_selected_track_idx);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready) {
+        dj_ui_library_set_info_unit(s_browse_mode == UI_BROWSE_ALL ? "LOCAL USB" :
+            s_browse_mode == UI_BROWSE_NODES ? "PLAYLISTS" : "PLAYLIST",
+            (uint16_t)(count > UINT16_MAX ? UINT16_MAX : count),
+            s_browse_mode == UI_BROWSE_NODES ? "ITEMS" : "TRACKS",
+            (uint16_t)(page.page_count ? page.page_index + 1 : 0),
+            (uint16_t)page.page_count);
+        dj_ui_library_set_playlists_label(s_browse_mode == UI_BROWSE_ALL ? "PLAYLISTS" : "BACK");
+        /* A remote source selector arrives with Link; local USB is the only
+         * current source and must not pretend to perform a source switch. */
+        dj_ui_library_set_source_label("LOCAL USB");
+    }
+#endif
     if (s_label_library_source) {
         if (s_browse_mode == UI_BROWSE_NODES) {
             lv_label_set_text_fmt(s_label_library_source,
@@ -740,6 +768,9 @@ static void ui_library_fill_visible_row(int visible_row, int track_index)
 
     ui_library_row_text_t text;
     ui_library_format_row_text(&text, title, artist, key, bpm, duration_ms);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_dj_rows[visible_row] = text;
+#endif
 #ifndef UI_LIBRARY_HOST_TEST
     /* Leave the first 40 pixels for the cover overlay. */
     lv_table_set_cell_value_fmt(s_library_table, visible_row, 0,
@@ -756,6 +787,9 @@ static void ui_library_fill_visible_row(int visible_row, int track_index)
 static void ui_library_select_visible_cell(void)
 {
     ui_library_page_t page = ui_library_refresh_page_cache();
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready) dj_ui_library_set_selected(page.row_count ? (int8_t)page.selected_row : -1);
+#endif
     if (s_library_table && page.row_count > 0) {
         lv_table_set_selected_cell(s_library_table,
                                    (uint32_t)page.selected_row, 0);
@@ -769,6 +803,9 @@ static void ui_library_populate_rows(void)
     }
 
     ui_library_page_t page = ui_library_refresh_page_cache();
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    memset(s_dj_rows, 0, sizeof s_dj_rows);
+#endif
     ui_artwork_begin_page();
     memset(s_row_art_key, 0, sizeof(s_row_art_key));
     for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row)
@@ -780,6 +817,12 @@ static void ui_library_populate_rows(void)
         if (s_browse_mode == UI_BROWSE_NODES) {
             const pdb_playlist_t *node =
                 &s_browse_nodes[s_browse_children[view_index]];
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+            snprintf(s_dj_rows[visible_row].title, sizeof s_dj_rows[visible_row].title,
+                     "%s", node->name);
+            snprintf(s_dj_rows[visible_row].artist, sizeof s_dj_rows[visible_row].artist,
+                     "%s", node->is_folder ? "FOLDER" : "PLAYLIST");
+#endif
             lv_table_set_cell_value(s_library_table, visible_row, 0, node->name);
             lv_table_set_cell_value(s_library_table, visible_row, 1,
                                     node->is_folder ? "FOLDER" : "PLAYLIST");
@@ -799,6 +842,18 @@ static void ui_library_populate_rows(void)
             ui_library_fill_visible_row(visible_row, track_index);
         }
     }
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready) {
+        dj_track_t rows[UI_LIBRARY_PAGE_ROWS] = {0};
+        for (int i = 0; i < page.row_count; ++i) {
+            rows[i] = (dj_track_t){.title=s_dj_rows[i].title,
+                .artist=s_dj_rows[i].artist, .key=s_dj_rows[i].key,
+                .bpm_text=s_dj_rows[i].bpm, .time_text=s_dj_rows[i].duration};
+        }
+        dj_ui_library_set_rows(rows, (uint8_t)page.row_count);
+        if (s_browse_mode != UI_BROWSE_ALL) dj_ui_library_set_sort(DJ_SORT_NONE, false);
+    }
+#endif
     ui_library_select_visible_cell();
     ui_library_update_source_label();
     lv_obj_invalidate(s_library_table);
@@ -1475,10 +1530,8 @@ static void library_sort_key_event_cb(lv_event_t *e)
     ui_library_populate_rows();
 }
 
-static void library_page_event_cb(lv_event_t *e)
+void ui_library_page_delta(int page_delta)
 {
-    lv_obj_t *button = lv_event_get_target(e);
-    int page_delta = (int)(intptr_t)lv_obj_get_user_data(button);
     int count = ui_library_media_count();
     int new_idx = ui_library_page_selection_after_delta(count,
                                                          s_selected_track_idx,
@@ -1588,6 +1641,9 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 
 void ui_library_init(const ui_library_config_t *config)
 {
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_dj_ready = false;
+#endif
     memset(&s_library_config, 0, sizeof(s_library_config));
     ui_load_gate_reset(&s_track_load_gate);
     ui_event_counter_reset(&s_library_refresh_events);
@@ -2185,6 +2241,31 @@ void ui_library_update(const ui_frame_context_t *ctx)
             lv_obj_set_style_text_color(s_label_indicator_status, COL_TEXT_MUTED, LV_PART_MAIN);
         }
     }
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready && ctx && s_active_tab == 1) {
+        bool busy = ui_library_track_load_busy();
+        dj_ui_library_set_load_enabled(!busy);
+        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; ++d) {
+            dj_ui_library_set_load_locked(d, s_browse_mode != UI_BROWSE_NODES &&
+                                            !deck_core_load_allowed(d));
+            int8_t loaded = -1;
+            if (s_browse_mode != UI_BROWSE_NODES && s_deck_loaded_track_valid[d])
+                for (uint8_t row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row)
+                    if (s_page_track_keys[row] && s_page_track_keys[row] == s_deck_loaded_track_key[d])
+                        loaded = (int8_t)row;
+            dj_ui_library_set_loaded(d, loaded);
+        }
+        bool d1 = ctx->deck_state[0].playing, d2 = ctx->deck_state[1].playing;
+        dj_ui_library_set_deck_status(d1 && d2 ? DJ_DECKS : d1 ? 0 : d2 ? 1 : ctx->active_deck,
+                                     busy ? "LOADING" : d1 || d2 ? "ACTIVE" : "READY");
+        audio_engine_deck_status_t status = {0};
+        /* Show decoder progress only when that request deck is actually loading.
+         * Metadata stages have no percentage; never reuse another deck's value. */
+        bool progress = busy && audio_engine_deck_get_status(s_library_load_request_deck, &status) == ESP_OK &&
+                        status.state == AE_LOADING;
+        dj_ui_library_set_progress(progress ? status.load_progress : -1);
+    }
+#endif
 }
 
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
@@ -2203,6 +2284,53 @@ uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms
                                     status.loaded, status.session_generation,
                                     status.duration_ms);
 }
+
+static void library_page_event_cb(lv_event_t *e)
+{
+    lv_obj_t *button = lv_event_get_target(e);
+    ui_library_page_delta((int)(intptr_t)lv_obj_get_user_data(button));
+}
+
+void ui_library_select_visible_row(uint8_t row)
+{
+    ui_library_page_t page = ui_library_current_page();
+    int index = ui_library_page_absolute_index(&page, row);
+    if (index < 0 || index >= ui_library_media_count()) return;
+    s_selected_track_idx = index;
+    ui_library_select_visible_cell();
+}
+
+void ui_library_sort_column(int column)
+{
+    if (s_browse_mode != UI_BROWSE_ALL || ui_library_track_load_busy()) return;
+#ifndef WIN32
+    if (media_catalog_load_in_progress()) return;
+#endif
+    switch (column) {
+    case 0: library_sort_artist_event_cb(NULL); break;
+    case 1: library_sort_name_event_cb(NULL); break;
+    case 2: library_sort_bpm_event_cb(NULL); break;
+    case 3: library_sort_key_event_cb(NULL); break;
+    default: return;
+    }
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_ready) {
+        static const dj_sort_t sorts[] = {DJ_SORT_ARTIST,DJ_SORT_NAME,DJ_SORT_BPM,DJ_SORT_KEY};
+        bool desc[] = {s_sort_artist_desc,s_sort_name_desc,s_sort_bpm_desc,s_sort_key_desc};
+        dj_ui_library_set_sort(sorts[column], desc[column]);
+    }
+#endif
+}
+
+void ui_library_toggle_playlists(void) { ui_library_browse_button_cb(NULL); }
+
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+void ui_library_dj_enable(void)
+{
+    s_dj_ready = true;
+    ui_library_populate_rows();
+}
+#endif
 
 uint32_t ui_library_deck_analysis_span_ms(uint8_t deck, uint32_t fallback_duration_ms)
 {

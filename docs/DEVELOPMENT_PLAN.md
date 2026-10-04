@@ -10,8 +10,8 @@ fault/ownership tests. Regular builds keep recorder and SD wait experiments off.
 Card latency, fault injection and MAIN/cue listening remain NOT RUN; acceptance
 requires exact-image measurements.
 [H migration preview](validation/FORK_IMPROVEMENTS_PACKAGE_H_PROGRESS_20261004.md)
-provides both native layouts and an opt-in Overview bridge. H remains open:
-Library/Hot Cues/Settings binding, complete touch parity, layout polish and removal
+provides both native layouts and opt-in Overview/Library bridges. H remains open:
+Hot Cues/Settings binding, complete touch parity, layout polish and removal
 of duplicate legacy presentation allocations still precede default enablement.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the

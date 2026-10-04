@@ -1565,11 +1565,11 @@ static void compact_layout(void)
         if (lv_obj_get_x(o) >= 858) { lv_obj_set_x(o, 634); lv_obj_set_width(o, 150); }
     }
     /* Loading/errors remain visible beside the primary LOAD controls;
-     * sort/source/navigation are secondary scroll content on this panel. */
+     * playlist navigation is primary; sort/source are secondary scroll content. */
     lv_obj_set_y(lv_obj_get_parent(g.lib_msg), 174);
-    for (int k = 0; k < 4; ++k) lv_obj_set_y(g.sort_btn[k], 252 + k * 50);
-    lv_obj_set_y(g.lib_src_btn, 452);
-    lv_obj_set_y(g.lib_pl_btn, 498);
+    lv_obj_set_y(g.lib_pl_btn, 252);
+    for (int k = 0; k < 4; ++k) lv_obj_set_y(g.sort_btn[k], 302 + k * 50);
+    lv_obj_set_y(g.lib_src_btn, 502);
     lv_obj_set_x(g.lib_next, 528); lv_obj_set_width(g.lib_info, 410);
     int y = 0;
     for (uint32_t k = 0; k < lv_obj_get_child_count(g.page[3]); ++k) {
@@ -2108,6 +2108,9 @@ void dj_ui_set_fx(const char *name, uint8_t channel, uint8_t beat_index, uint16_
 
 void dj_ui_library_set_rows(const dj_track_t *rows, uint8_t count)
 {
+    /* A page/folder transition must reveal its new first rows, even when the
+     * compact operator scrolled down to a secondary navigation action. */
+    lv_obj_scroll_to(g.page[DJ_TAB_LIBRARY], 0, 0, LV_ANIM_OFF);
     if (count > DJ_LIB_ROWS) count = DJ_LIB_ROWS;
     g.rows = count;
     if (g.sel >= count) g.sel = -1;
@@ -2148,6 +2151,7 @@ void dj_ui_library_set_row_art(uint8_t row, const uint16_t *px)
 void dj_ui_library_set_loaded(uint8_t deck, int8_t row)
 {
     if (deck >= DJ_DECKS) return;
+    if (g.loaded[deck] == row) return;
     g.loaded[deck] = row;
     refresh_rows();
 }
@@ -2187,6 +2191,11 @@ void dj_ui_library_set_sort(dj_sort_t sort, bool descending)
 void dj_ui_library_set_deck_status(uint8_t deck, const char *status)
 {
     if (deck > DJ_DECKS) return;
+    char title[16];
+    if (deck == DJ_DECKS) snprintf(title, sizeof title, "DECK 1+2");
+    else snprintf(title, sizeof title, "DECK %u", (unsigned)(deck + 1));
+    if (!strcmp(lv_label_get_text(g.lib_deck), title) &&
+        !strcmp(lv_label_get_text(g.lib_status), status ? status : "")) return;
     lv_color_t c = deck == DJ_DECKS ? C_INK : g.deck[deck].color;
     if (deck == DJ_DECKS) lv_label_set_text(g.lib_deck, "DECK 1+2");
     else lv_label_set_text_fmt(g.lib_deck, "DECK %u", (unsigned)(deck + 1));

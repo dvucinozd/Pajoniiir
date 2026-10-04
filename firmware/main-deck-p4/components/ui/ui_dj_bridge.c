@@ -213,7 +213,8 @@ void ui_dj_bridge_update(const ui_frame_context_t *f)
             dj_ui_wave_set_strip(d, NULL, 0, 0);
             dj_ui_wave_set_image(d, DJ_WAVE_MINI, NULL, 0);
             dj_ui_set_artwork_pixels(d, NULL);
-            dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
+            if (f->active_tab != DJ_TAB_LIBRARY)
+                dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
             s->metadata_valid = false;
             s->cache.valid = false;
             ui_position_interpolator_init(&s->position);
@@ -270,7 +271,8 @@ void ui_dj_bridge_update(const ui_frame_context_t *f)
         dj_ui_set_vu(d, (uint8_t)(peak > 255u ? 255u : peak));
         dj_ui_set_sync(d, state->sync_enabled ? DJ_SYNC_LOCAL : DJ_SYNC_OFF);
         dj_ui_set_cue_point(d, track.valid, state->cue_point_ms);
-        dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
+        if (f->active_tab != DJ_TAB_LIBRARY)
+            dj_ui_library_set_load_locked(d, !deck_core_load_allowed(d));
         const anlz_metadata_t *meta = f->deck_meta[d];
         ui_beat_indicator_state_t beat = ui_beat_indicator_calculate(
             position, meta ? meta->beats : NULL,

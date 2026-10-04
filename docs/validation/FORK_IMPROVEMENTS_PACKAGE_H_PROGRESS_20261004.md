@@ -6,6 +6,41 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 MIT provenance is retained in `components/ui/DJ_UI_NOTICE.md`.
 Production M2.4 and the separate APTA branch are unchanged.
 
+## Current checkpoint: H2 Library integration
+
+H1 is pushed as `3e4e816016819affec4ce12c8414ea847c1c41a5`.
+All eight clean CI jobs passed in
+[run 37205163757](https://github.com/dvucinozd/Pajoniiir/actions/runs/37205163757),
+including both preview builds, ordinary builds, storage experiments and host gates.
+
+H2 connects actual Library rows, artwork and hierarchical playlists to dj_ui.
+The existing owner retains catalog selection, generations, load admission and
+worker publication. Shared presentation actions handle touch row selection,
+page movement, sort and playlist navigation; no second catalog or loader exists.
+Sorting preserves the selected track identity and remains forbidden within
+playlist order. Artwork is copied from the bounded worker/cache during update.
+Decoder progress is read from the requested deck only while it is loading;
+metadata stages do not invent a percentage. Loaded-row marks, playing/ready
+status and per-deck load locks come from current state. Opening a folder does
+not falsely apply a playing deck's track-load lock.
+
+On compact displays PLAYLISTS/BACK is visible next to the primary LOAD controls.
+Folder/page transitions reset page scroll so new first rows are visible. Sorting
+and source information remain secondary scroll content. Local USB is explicitly
+the only current source; remote browse/download arrives in I/J.
+
+Actual-runtime tests pass on both resolutions, including new touch row/LOAD,
+sort-selection preservation, D2 isolation and folder navigation assertions.
+Screenshot baselines are reviewed after these changes. The preview remains
+default-off. Hot Cues/Settings and legacy allocation removal remain unfinished;
+the H1 historical scope below describes the earlier checkpoint, not H2 scope.
+
+H2 local verification: full P4 host runner and all five exact screenshot gates
+PASS; both ESP-IDF 6.0.2 preview builds and board/budget checks PASS. Image sizes:
+JC4880 2,594,816 bytes; JC1060 2,592,304 bytes. Both dependency locks are unchanged.
+Documentation integrity and staged whitespace checks pass before push. H2 clean
+container CI is pending; physical gates remain NOT RUN.
+
 ## H1 scope
 
 The common component now contains the donor presentation adapted to LVGL 9.5.0,

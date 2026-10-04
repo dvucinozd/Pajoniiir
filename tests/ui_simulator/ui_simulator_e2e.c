@@ -96,9 +96,35 @@ static lv_obj_t *find_visible_label(lv_obj_t *root, const char *text)
     return NULL;
 }
 
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+/* Secondary compact controls live below the viewport. Locate only within
+ * unhidden pages, then exercise LVGL scrolling before sending the touch. */
+static lv_obj_t *find_scroll_label(lv_obj_t *root, const char *text)
+{
+    if (!root || lv_obj_has_flag(root, LV_OBJ_FLAG_HIDDEN)) return NULL;
+    if (lv_obj_check_type(root, &lv_label_class) &&
+        !strcmp(lv_label_get_text(root), text)) return root;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(root); ++i) {
+        lv_obj_t *found = find_scroll_label(lv_obj_get_child(root, (int32_t)i), text);
+        if (found) return found;
+    }
+    return NULL;
+}
+#endif
+
 static bool click_label(const char *text)
 {
     lv_obj_t *label = find_visible_label(lv_screen_active(), text);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (!label) {
+        lv_obj_t *offscreen = find_scroll_label(lv_screen_active(), text);
+        if (offscreen) {
+            lv_obj_scroll_to_view_recursive(offscreen, LV_ANIM_OFF);
+            pump(64);
+            label = find_visible_label(lv_screen_active(), text);
+        }
+    }
+#endif
     if (!label) {
         fprintf(stderr, "Missing visible label: %s\n", text);
         return false;
@@ -243,6 +269,10 @@ int main(int argc, char **argv)
     save_ppm(argv[1], "library");
 
     if (!click_label("PLAYLISTS")) fail("playlist browser did not open");
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (!find_visible_label(lv_screen_active(), "Sets"))
+        fail("playlist transition retained scroll that hides its new rows");
+#endif
     save_ppm(argv[1], "library_playlist_root");
     if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_OK)
         fail("folder row did not open");
@@ -350,6 +380,25 @@ int main(int argc, char **argv)
         fail("unloaded audio retained its duration");
     audio_engine_stub_deck_loaded[CTRL_DECK_1] = true;
     audio_engine_stub_duration_ms[CTRL_DECK_1] = 0u;
+
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    /* Exercise the real row callback and touch LOAD, not a direct test API. */
+    if (!click_label("LIBRARY") || !click_label("Static Bloom") ||
+        !click_label("LOAD DECK 2")) fail("dj_ui row selection/touch LOAD failed");
+    deck_loaded_track_summary_t d2_touch = {0}, d1_touch = {0};
+    if (!deck_core_get_loaded_track(CTRL_DECK_2, &d2_touch) ||
+        d2_touch.track_key != 1003u) fail("touch LOAD ignored selected row/deck");
+    if (!deck_core_get_loaded_track(CTRL_DECK_1, &d1_touch) ||
+        d1_touch.track_key != before.track_key) fail("D2 touch LOAD changed D1");
+    if (!click_label("SORT NAME") || !click_label("LOAD DECK 2"))
+        fail("dj_ui sort/touch LOAD failed");
+    if (!deck_core_get_loaded_track(CTRL_DECK_2, &d2_touch) ||
+        d2_touch.track_key != 1003u) fail("sort lost the selected track identity");
+    if (!click_label("PLAYLISTS") || !click_label("LOAD DECK 1"))
+        fail("touch LOAD did not open the selected folder");
+    if (!click_label("BACK") || !click_label("BACK"))
+        fail("touch playlist navigation did not restore all tracks");
+#endif
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

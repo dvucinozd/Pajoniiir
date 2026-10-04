@@ -119,6 +119,14 @@ esp_err_t ui_library_select_delta(int delta);
 esp_err_t ui_library_load_selected(void);
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
 void ui_library_update(const ui_frame_context_t *ctx);
+/* LVGL-owner presentation actions; share the controller's selection/admission. */
+void ui_library_select_visible_row(uint8_t row);
+void ui_library_page_delta(int delta);
+void ui_library_sort_column(int column);
+void ui_library_toggle_playlists(void);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+void ui_library_dj_enable(void);
+#endif
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms);
 uint32_t ui_library_deck_analysis_span_ms(uint8_t deck, uint32_t fallback_duration_ms);
 uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm);
