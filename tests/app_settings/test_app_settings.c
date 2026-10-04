@@ -250,6 +250,30 @@ static void test_ota_clear_persists_tombstone_and_reports_failure(void)
     CHECK(!app_settings_ota_has_password());
 }
 
+static void test_link_is_default_off_and_durable(void)
+{
+    puts("== Ethernet Link is default-off, durable, and does not publish failed writes ==");
+    reset_all();
+    CHECK(app_settings_get().dj_link == 0);
+    app_settings_set_dj_link(1);
+    CHECK(app_settings_get().dj_link == 1);
+    CHECK(strcmp(g_test_nvs.last_key, "dj_link") == 0);
+    g_test_nvs.fail_next_set = 1;
+    app_settings_set_dj_link(0);
+    CHECK(app_settings_get().dj_link == 1);
+    app_settings_test_reset();
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().dj_link == 1);
+    app_settings_set_dj_link(0);
+    app_settings_test_reset();
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().dj_link == 0);
+    g_test_nvs.stored_dj_link = 9;
+    app_settings_test_reset();
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().dj_link == 0);
+}
+
 int main(void)
 {
     test_setter_before_worker_persists_synchronously();
@@ -265,6 +289,7 @@ int main(void)
     test_product_setter_cannot_restore_retired_speaker();
     test_ota_configuration_is_one_durable_blob();
     test_ota_clear_persists_tombstone_and_reports_failure();
+    test_link_is_default_off_and_durable();
 
     printf("TESTS_RUN=%d\n", s_checks);
     if (s_failures == 0) {

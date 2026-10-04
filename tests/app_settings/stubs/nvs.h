@@ -33,6 +33,8 @@ typedef struct {
     int      has_stored_audio_out;
     uint8_t  stored_schema_version;
     int      has_stored_schema_version;
+    uint8_t  stored_dj_link;
+    int      has_stored_dj_link;
     /* Injection: non-zero makes the next set_u8 fail. */
     int      fail_next_set;
     uint8_t  blob[512];
@@ -84,12 +86,20 @@ static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *key, uint8_t
         g_test_nvs.stored_schema_version = value;
         g_test_nvs.has_stored_schema_version = 1;
     }
+    if (key && strcmp(key, "dj_link") == 0) {
+        g_test_nvs.stored_dj_link = value;
+        g_test_nvs.has_stored_dj_link = 1;
+    }
     return ESP_OK;
 }
 
 static inline esp_err_t nvs_get_u8(nvs_handle_t handle, const char *key, uint8_t *out)
 {
     (void)handle;
+    if (key && out && strcmp(key, "dj_link") == 0 && g_test_nvs.has_stored_dj_link) {
+        *out = g_test_nvs.stored_dj_link;
+        return ESP_OK;
+    }
     if (key && out && strcmp(key, "backlight") == 0 && g_test_nvs.has_stored_backlight) {
         *out = g_test_nvs.stored_backlight;
         return ESP_OK;

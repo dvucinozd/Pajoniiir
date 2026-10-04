@@ -15,6 +15,8 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
     assert ("bsp_jc1060" in components) == jc1060, "wrong display BSP"
     assert ("bsp_jc4880" in components) != jc1060, "wrong display BSP"
     assert ("board_ethernet" in components) == jc1060, "wrong Ethernet transport"
+    for link_component in ("djlink", "dj_link_core", "dj_link_service"):
+        assert (link_component in components) == jc1060, "DJ Link must be isolated to JC1060 Ethernet"
     assert {"board_adapter", "audio_engine", "deck_core", "library", "ui"} <= components
     config = (build / "config/sdkconfig.h").read_text()
     assert "#define CONFIG_LV_USE_CUSTOM_MALLOC 1" in config, "UI must keep LVGL allocations in PSRAM"

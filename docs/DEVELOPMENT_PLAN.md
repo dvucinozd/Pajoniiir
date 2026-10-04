@@ -23,6 +23,11 @@ exact-image acceptance remain open; no production channel change follows from
 software verification. Continue I-L software integration. The operator deferred
 physical audio tests and the final soak until the end of integration; these
 remain mandatory exact-image gates before product acceptance or publication.
+[I1-I3](validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md) add the MIT
+codec, bounded peer/epoch model, a shared two-player claim coordinator and a
+default-off JC1060 Ethernet worker. UDP sockets require the actual Ethernet
+netif; no Wi-Fi/default-interface fallback exists. Next: serialized DBServer
+browse and its source/UI integration, followed by J-K and L release gates.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

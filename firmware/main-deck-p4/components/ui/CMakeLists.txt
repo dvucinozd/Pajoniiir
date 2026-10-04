@@ -1,3 +1,8 @@
+set(ui_link_requires)
+idf_build_get_property(ui_project PROJECT_NAME)
+if(ui_project STREQUAL "main-deck-jc1060")
+    list(APPEND ui_link_requires dj_link_service)
+endif()
 idf_component_register(
     SRCS "ui.c"
          "dj_ui.c"
@@ -37,5 +42,5 @@ idf_component_register(
          "ui_status.c"
          "ui_idle.c"
     INCLUDE_DIRS "include"
-    REQUIRES log deck_core library board_adapter audio_engine audio_recorder service_log app_settings control_link firmware_health media_catalog media_io_gate hot_cue_store fatfs esp_lcd esp_lcd_touch esp_timer esp_driver_gpio esp_driver_ppa esp_mm idf::lvgl__lvgl
+    REQUIRES log deck_core library board_adapter audio_engine audio_recorder service_log app_settings control_link firmware_health media_catalog media_io_gate hot_cue_store fatfs esp_lcd esp_lcd_touch esp_timer esp_driver_gpio esp_driver_ppa esp_mm idf::lvgl__lvgl ${ui_link_requires}
 )

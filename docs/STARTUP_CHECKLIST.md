@@ -27,6 +27,13 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   software tests do not replace them. Retain the installed JC4880 candidate
   while developing the Ethernet-only JC1060 Link path; ignore unrelated COM ports.
 
+- [ ] Package I Ethernet acceptance remains NOT RUN. On JC1060, verify the saved
+  Link switch defaults OFF, waits for Ethernet DHCP, claims two different numbers,
+  withdraws/reclaims on conflict and reports observer mode if fewer than two are
+  free. Remove/reconnect Ethernet and replace peer IP/MAC; stale requests must
+  fail. Verify no Link traffic uses Wi-Fi and no local library is advertised.
+  Record real peer model/version; codec/socket mocks do not prove interoperability.
+
 - [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
   returned network/USB and operator-confirmed previous design/FLX4 controls.
   Resource gate FAILED: waveform internal-DMA probes and HTTP stack 456 bytes.

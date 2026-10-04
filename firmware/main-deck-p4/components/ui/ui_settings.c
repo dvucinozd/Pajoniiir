@@ -4,6 +4,9 @@
 #include "audio_recorder.h"
 #endif
 #include "service_log.h"
+#if CONFIG_PAJONIIIR_BOARD_JC1060
+#include "dj_link_service.h"
+#endif
 #endif
 
 #include <limits.h>
@@ -331,18 +334,29 @@ static void wifi_remote_event_cb(lv_event_t *event)
 {
     lv_obj_t *sw = lv_event_get_target(event);
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    bool ethernet = s_config.hor_res == 1024;
 #ifndef WIN32
-    app_settings_set_wifi_remote(on ? 1 : 0);
+    ethernet = board_capabilities_get()->ethernet;
+    if (ethernet) {
+        app_settings_set_dj_link(on ? 1 : 0);
+        on = app_settings_get().dj_link != 0;
+    } else {
+        app_settings_set_wifi_remote(on ? 1 : 0);
+        on = app_settings_get().wifi_remote != 0;
+    }
 #endif
-    if (s_wifi_toggle_cb) {
+    if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+    if (!ethernet && s_wifi_toggle_cb) {
         s_wifi_toggle_cb(on);
     }
     if (s_label_wifi_remote) {
-        lv_label_set_text(s_label_wifi_remote, on ? "P4 REMOTE: ON" : "P4 REMOTE: OFF");
+        lv_label_set_text(s_label_wifi_remote, ethernet ? (on ? "DJ LINK: ON" : "DJ LINK: OFF") :
+                          (on ? "P4 REMOTE: ON" : "P4 REMOTE: OFF"));
         lv_obj_set_style_text_color(s_label_wifi_remote,
                                     on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
     }
-    ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
+    ESP_LOGI(TAG, "%s: %s", ethernet ? "Ethernet Link" : "Wi-Fi remote", on ? "on" : "off");
 }
 
 #if !defined(WIN32) && CONFIG_AUDIO_RECORDER_ENABLED
@@ -482,7 +496,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     int bl_init = cfg.backlight_pct;
     s_master_trim_preset = ui_settings_master_trim_sanitize_preset(cfg.master_trim_preset);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(s_master_trim_preset));
-    bool wifi_remote_init = (cfg.wifi_remote != 0);
+    bool wifi_remote_init = board_capabilities_get()->ethernet ? cfg.dj_link != 0 : cfg.wifi_remote != 0;
 #else
     int bl_init = 80;
     s_master_trim_preset = 0;
@@ -671,9 +685,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                   &lv_font_montserrat_14,
                                                   96, 41);
     if (ethernet) {
-        lv_obj_add_flag(sw_wifi, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(s_label_wifi_remote, "DJ LINK: UNAVAILABLE");
-        lv_obj_set_x(s_label_wifi_remote, 16);
+        lv_label_set_text(s_label_wifi_remote, wifi_remote_init ? "DJ LINK: ON" : "DJ LINK: OFF");
     }
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS");
@@ -834,6 +846,14 @@ void ui_settings_update(const ui_frame_context_t *ctx)
         return;
     }
 #ifndef WIN32
+#if CONFIG_PAJONIIIR_BOARD_JC1060
+    if (s_label_wifi_remote) {
+        char status[64];
+        dj_link_service_format_status(status, sizeof(status));
+        if (strcmp(lv_label_get_text(s_label_wifi_remote), status))
+            lv_label_set_text(s_label_wifi_remote, status);
+    }
+#endif
     ui_settings_update_controller_status_label(&ctx->deck_state[CTRL_DECK_1]);
     ui_settings_update_sd_status_label(false);
 #if CONFIG_AUDIO_RECORDER_ENABLED

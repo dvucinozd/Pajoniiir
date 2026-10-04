@@ -258,6 +258,7 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(handle, "cue_mode", &value) == ESP_OK && value <= 1) next.cue_mode = value;
         if (nvs_get_u8(handle, "master_trim", &value) == ESP_OK && value <= 2) next.master_trim_preset = value;
         if (nvs_get_u8(handle, "wifi_rem", &value) == ESP_OK && value <= 1) next.wifi_remote = value;
+        if (nvs_get_u8(handle, "dj_link", &value) == ESP_OK && value <= 1) next.dj_link = value;
         bool migrate_legacy_ota = load_ota_config(handle, ota_ssid, ota_pass, ota_url);
         if (migrate_legacy_ota) {
             ota_config_blob_t blob;
@@ -323,6 +324,7 @@ DEFINE_U8_SETTER(app_settings_set_time_remain, time_remain, "time_rem", (void)0)
 DEFINE_U8_SETTER(app_settings_set_cue_mode, cue_mode, "cue_mode", if (value > 1) value = 0)
 DEFINE_U8_SETTER(app_settings_set_master_trim_preset, master_trim_preset, "master_trim", if (value > 2) value = 0)
 DEFINE_U8_SETTER(app_settings_set_wifi_remote, wifi_remote, "wifi_rem", value = value ? 1 : 0)
+DEFINE_U8_SETTER(app_settings_set_dj_link, dj_link, "dj_link", value = value ? 1 : 0)
 
 /* ── Backlight: live now, persisted once the slider settles ──────────────── *
  *

@@ -55,6 +55,11 @@ the recovery largest-block measurement; listening and final soak remain open.
 At the operator's request, physical audio tests and the final soak are deferred
 until the remaining packages are integrated. They remain mandatory acceptance
 gates. Software work proceeds with I-L; the installed JC4880 image is retained.
+[Package I progress](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md)
+adds bounded Link discovery, two distinct player claims and an Ethernet-only
+JC1060 worker. Link is default-off with a persistent Settings switch. Codec,
+claim and UDP mock sanitizer tests pass; browse remains in development and
+actual CDJ/Rekordbox interoperability remains NOT RUN.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
