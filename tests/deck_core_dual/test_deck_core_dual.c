@@ -2897,8 +2897,25 @@ static void test_smoke_log_policy_logs_deferred_buttons_only_on_press(void)
                                                       CTRL_PAD_ACTION_VALUE(PERF_MODE_HOT_CUE, 3, false, false)));
 }
 
+static void test_load_lock_uses_actual_target_deck_transport(void)
+{
+    deck_core_test_reset();
+    audio_engine_stub_deck_playing[CTRL_DECK_1] = false;
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = true;
+    assert(deck_core_get_load_lock());
+    assert(deck_core_load_allowed(CTRL_DECK_1));
+    assert(!deck_core_load_allowed(CTRL_DECK_2));
+    assert(!deck_core_load_allowed(DECK_CORE_DECK_COUNT));
+    deck_core_set_load_lock(false);
+    assert(deck_core_load_allowed(CTRL_DECK_2));
+    deck_core_set_load_lock(true);
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = false;
+    assert(deck_core_load_allowed(CTRL_DECK_2));
+}
+
 int main(void)
 {
+    test_load_lock_uses_actual_target_deck_transport();
     test_decks_track_transport_independently();
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();

@@ -101,6 +101,11 @@ deck_state_t deck_core_get_state(void);
 
 // Thread-safe snapshot of one deck state.
 deck_state_t deck_core_get_deck_state(uint8_t deck);
+/* LOAD LOCK defaults on: no replacement while the destination deck plays.
+ * Both UI admission and the asynchronous worker recheck this verdict. */
+void deck_core_set_load_lock(bool on);
+bool deck_core_get_load_lock(void);
+bool deck_core_load_allowed(uint8_t deck);
 void deck_core_toggle_master_tempo(uint8_t deck);
 
 // Snapshot of the global Beat FX state. Beat FX DSP is not applied yet; this is

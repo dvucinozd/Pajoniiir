@@ -370,6 +370,11 @@ static void ui_library_status_hold(const char *text, lv_color_t color, uint32_t 
     }
 }
 
+static bool ui_library_load_allowed(uint8_t deck)
+{
+    return deck_core_load_allowed(deck);
+}
+
 static lv_color_t ui_library_status_color_for_text(const char *text)
 {
     if (s_library_config.actions.status_color_for_text) {
@@ -673,6 +678,11 @@ static void ui_track_load_worker(void *arg)
     } else if (!ui_library_track_load_is_current(req.load_id)) {
         result->rc = ESP_ERR_INVALID_STATE;
         ui_track_load_set_status(result, "LOAD CANCELLED", "LOAD CANCELLED");
+    } else if (!deck_core_load_allowed(req.deck)) {
+        /* PLAY may have started while metadata was read. Preserve the current
+         * deck, audio session and loaded-track snapshot in that case. */
+        result->rc = ESP_ERR_INVALID_STATE;
+        ui_track_load_set_status(result, "LOAD LOCK", "LOAD LOCK");
     } else {
         if (req.deck == CTRL_DECK_1) {
             (void)audio_engine_deck_clear_loop(req.deck);
@@ -895,7 +905,10 @@ static void ui_poll_track_load_result(void)
                 ui_library_release_deck_audio(result.deck);
                 ui_library_apply_empty_track(result.deck);
             }
-            ui_library_status_hold(display, ui_library_status_color_for_text(display), 3500);
+            ui_library_status_hold(display,
+                                   strcmp(display, "LOAD LOCK") == 0
+                                       ? COL_AMBER : ui_library_status_color_for_text(display),
+                                   3500);
             ui_library_set_load_busy(false, display);
             ui_library_finish_track_load_id(result.load_id);
             continue;
@@ -989,11 +1002,16 @@ static esp_err_t ui_library_publish_simulated_track(
 }
 #endif
 
-static void ui_library_load_selected_deck(uint8_t deck)
+static esp_err_t ui_library_load_selected_deck(uint8_t deck)
 {
+    if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!ui_library_load_allowed(deck)) {
+        ui_library_status_hold("LOAD LOCK", COL_AMBER, 2000);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!ui_library_try_begin_track_load()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
     ui_library_set_load_busy(true, "LOAD BUSY");
 
@@ -1002,7 +1020,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
     if (!track) {
         ui_library_set_load_busy(false, NULL);
         ui_library_finish_track_load();
-        return;
+        return ESP_ERR_NOT_FOUND;
     }
 
     library_set_selected_track_index(s_selected_track_idx);
@@ -1014,7 +1032,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
         ui_library_apply_empty_track(deck);
         ui_library_set_load_busy(false, "LOAD ERR");
         ui_library_finish_track_load();
-        return;
+        return ESP_FAIL;
     }
     s_deck_loaded_track_key[deck] = track->track_id;
     s_deck_loaded_track_valid[deck] = true;
@@ -1041,16 +1059,16 @@ static void ui_library_load_selected_deck(uint8_t deck)
         ESP_LOGW(TAG, "Catalog changed while resolving index %d", s_selected_track_idx);
         ui_library_set_load_busy(false, "LIBRARY CHANGED");
         ui_library_finish_track_load();
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
     ui_library_status_hold("LOADING", COL_ACCENT, 1500);
-    (void)ui_submit_track_load(s_selected_track_idx, item.track_key, generation, deck);
-    return;
+    return ui_submit_track_load(s_selected_track_idx, item.track_key, generation, deck);
 #endif
     ui_library_status_hold("TRACK LOADED", COL_GREEN, 2000);
     ui_library_set_load_busy(false, "TRACK LOADED");
     ui_library_finish_track_load();
+    return ESP_OK;
 }
 
 static void library_load_event_cb(lv_event_t *e)
@@ -1060,7 +1078,7 @@ static void library_load_event_cb(lv_event_t *e)
         lv_obj_t *btn = lv_event_get_target(e);
         deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(btn);
     }
-    ui_library_load_selected_deck(deck);
+    (void)ui_library_load_selected_deck(deck);
 }
 
 static void ui_library_preserve_selection_by_key(uint32_t target_key)
@@ -1745,12 +1763,9 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
     }
 
     ui_lvgl_lock();
-    uint8_t old_deck = s_library_load_request_deck;
-    s_library_load_request_deck = deck;
-    library_load_event_cb(NULL);
-    s_library_load_request_deck = old_deck;
+    esp_err_t rc = ui_library_load_selected_deck(deck);
     ui_lvgl_unlock();
-    return ESP_OK;
+    return rc;
 }
 
 void ui_library_update(const ui_frame_context_t *ctx)
@@ -1920,6 +1935,7 @@ esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
     if (track_key == 0u || deck >= DECK_CORE_DECK_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!ui_library_load_allowed(deck)) return ESP_ERR_INVALID_STATE;
     if (media_catalog_generation() != generation) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1941,6 +1957,8 @@ esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
     return rc;
 #else
     (void)generation;
+    if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!ui_library_load_allowed(deck)) return ESP_ERR_INVALID_STATE;
     int index = library_find_row_by_key(track_key);
     if (index < 0) {
         return ESP_ERR_NOT_FOUND;
@@ -1963,6 +1981,8 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     }
     return ui_library_load_track_identity_for_deck(item.track_key, generation, deck);
 #else
+    if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!ui_library_load_allowed(deck)) return ESP_ERR_INVALID_STATE;
     if (index < 0 || index >= library_count()) {
         return ESP_ERR_INVALID_ARG;
     }

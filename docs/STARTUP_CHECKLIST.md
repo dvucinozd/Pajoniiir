@@ -29,6 +29,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] Confirm the expected Rekordbox library count before relying on the media.
 - [ ] For a reconnect test, record which root was removed and avoid accidental
   movement of the other cable.
+- [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
+  playing destination deck rejects touch, FLX4 and Web Remote LOAD without
+  changing its track; pause/stop that deck before loading another track.
+  Physical confirmation remains **NOT RUN**.
 - [ ] After FLX4 reconnect, confirm profile, MIDI IN/OUT, UAC, LEDs and held
   controls have converged to the P4-owned state.
 - [ ] Do not advertise a non-FLX4 profile from host fixtures alone.

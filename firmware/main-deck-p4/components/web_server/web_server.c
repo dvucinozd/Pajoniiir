@@ -2156,6 +2156,12 @@ static esp_err_t api_load_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "API Load Request: key=0x%08x generation=%u deck=%d",
              (unsigned)track_key, (unsigned)generation, deck);
 
+    if (!deck_core_load_allowed(deck)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Deck is playing (load lock)",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
     esp_err_t rc = ui_library_load_track_identity_for_deck(track_key, generation, deck);
     if (rc != ESP_OK) {
         service_log_event(SERVICE_LOG_WEB_LOAD_REQ_FAILED, SERVICE_LOG_WARN,

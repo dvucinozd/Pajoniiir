@@ -1655,6 +1655,17 @@ Assert-FileDoesNotContain `
 
 $tests = @(
     @{
+        Name = "deck_load_lock"
+        Dir = "tests/deck_load_lock"
+        Target = "test_deck_load_lock.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-o", "test_deck_load_lock.exe", "test_deck_load_lock.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c"
+        )
+    },
+    @{
         Name = "audio_loop_resize"
         Dir = "tests/audio_loop_resize"
         Target = "test_audio_loop_resize.exe"
@@ -2470,6 +2481,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
             "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c"
         )
@@ -2513,6 +2525,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
             "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c"
         )

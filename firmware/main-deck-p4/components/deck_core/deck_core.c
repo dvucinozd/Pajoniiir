@@ -1,5 +1,6 @@
 #include "deck_core.h"
 #include "deck_loaded_track_store.h"
+#include "deck_load_lock.h"
 #include "control_link.h"
 #include "flx4_led_snapshot.h"
 #include "freertos/FreeRTOS.h"
@@ -64,6 +65,7 @@ static SemaphoreHandle_t s_reset_done_sem;
 static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
 static deck_core_beat_jump_page_t s_beat_jump_page = DECK_CORE_BEAT_JUMP_PAGE_DEFAULT;
+static bool s_load_lock = true;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static bool              s_loaded_hot_cue_mask_valid[DECK_CORE_DECK_COUNT];
@@ -3112,6 +3114,24 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
     return snap;
 }
 
+void deck_core_set_load_lock(bool on)
+{
+    __atomic_store_n(&s_load_lock, on, __ATOMIC_RELEASE);
+}
+
+bool deck_core_get_load_lock(void)
+{
+    return __atomic_load_n(&s_load_lock, __ATOMIC_ACQUIRE);
+}
+
+bool deck_core_load_allowed(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return false;
+    const bool playing = deck_core_get_deck_state(deck).playing;
+    return deck_load_lock_allows(
+        deck_load_lock_check(deck_core_get_load_lock(), playing));
+}
+
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 {
     deck_core_beat_fx_state_t snap = {0};
@@ -3248,6 +3268,7 @@ bool deck_core_get_loaded_track(uint8_t deck,
 #if defined(DECK_CORE_PC_TEST)
 void deck_core_test_reset(void)
 {
+    deck_core_set_load_lock(true);
     deck_loaded_track_store_reset(&s_loaded_tracks);
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);

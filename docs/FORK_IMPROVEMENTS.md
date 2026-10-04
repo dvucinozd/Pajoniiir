@@ -16,7 +16,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | Package | Scope | Current state |
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B5 software verified; remainder pending |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
 | C | Hierarchical playlists, bounded artwork, PWV4 | Pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
@@ -227,6 +227,35 @@ Verification on 2026-10-04:
   drift and clipping. Documentation integrity and diff whitespace: PASS.
 - Physical loop resize while both decks play, scratch interaction, MAIN/cue
   listening and exact-image soak: **NOT RUN**.
+
+## B6: Default-on load lock for local and remote requests
+
+The donor's pure `deck_load_lock` verdict module is imported from `428b97dd`
+under MIT. P4 `deck_core` owns a default-on switch and bases its decision on
+the destination deck's actual audio transport state. Touch, controller and
+Web Remote loads enter the same Library admission path. A rejected request
+does not reserve the single-flight load slot or mutate the loaded deck. The
+worker repeats the verdict after metadata resolution, immediately before its
+existing deck reset and audio bind; PLAY during metadata loading therefore
+rejects the pending load without replacing the current track. Web Remote
+reports `409 Conflict` with an explicit load-lock message for an already
+playing deck.
+
+The switch has a core setter/getter for the future Settings page. This step
+does not persist the switch in NVS or present a UI toggle, so the default-on
+policy applies after reboot. CDJ-style held-CUE transport behavior and the
+complete cue merge are separate remaining package B work.
+
+Verification on 2026-10-04:
+
+- Pure verdict and dual-deck core tests: PASS, including actual target-deck
+  playback state, default-on policy and explicit switch-off behavior.
+- Complete P4 host runner: PASS. UI simulator E2E: PASS; a rejected LOAD
+  preserves the loaded track and all seven screenshot hashes remain unchanged.
+- ESP-IDF 6.0.2 P4 build: PASS; application 2,510,944 bytes, 1,159,072
+  below the `0x380000` budget; dependency lock unchanged.
+- Real touch/FLX4/Web Remote load rejection, PLAY-during-worker race and
+  operator audio confirmation on JC4880: **NOT RUN**.
 
 ## Provenance and rollback
 

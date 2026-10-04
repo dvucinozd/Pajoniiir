@@ -6,7 +6,10 @@
 
 #include "lvgl.h"
 #include "ui.h"
+#include "ui_library.h"
 #include "splash_screen.h"
+
+extern void ui_simulator_deck_set_playing(bool playing);
 
 #define DISPLAY_WIDTH 800
 #define DISPLAY_HEIGHT 480
@@ -202,6 +205,20 @@ int main(int argc, char **argv)
     if (framebuffer_hash() != settings_hash) {
         fail("Settings screen was not restored exactly after screensaver");
     }
+
+    /* The same Library action used by touch and deferred controller LOAD must
+     * refuse the playing destination before it replaces its track snapshot. */
+    deck_loaded_track_summary_t before = {0}, after = {0};
+    const bool had_track = deck_core_get_loaded_track(CTRL_DECK_1, &before);
+    ui_simulator_deck_set_playing(true);
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_ERR_INVALID_STATE) {
+        fail("load lock accepted a playing destination deck");
+    }
+    if (deck_core_get_loaded_track(CTRL_DECK_1, &after) != had_track ||
+        (had_track && after.track_key != before.track_key)) {
+        fail("rejected load changed the current track");
+    }
+    ui_simulator_deck_set_playing(false);
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

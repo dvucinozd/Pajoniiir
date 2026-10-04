@@ -62,6 +62,7 @@ add_executable(ui_simulator_e2e
     "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/beat_jump.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_core.c"
+    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_load_lock.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/media_identity.c"
     "${REPO_ROOT}/tests/deck_core_dual/control_link_stub.c"
