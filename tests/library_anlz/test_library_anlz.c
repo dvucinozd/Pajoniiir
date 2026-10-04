@@ -253,12 +253,18 @@ bool media_io_gate_is_available(void) { return s_gate_available; }
 static pdb_track_t s_pdb_tracks[TEST_PDB_MAX_TRACKS];
 static int s_pdb_track_count;
 static esp_err_t s_pdb_open_result = ESP_ERR_NOT_FOUND;
+static pdb_playlist_t s_pdb_playlists[4];
+static pdb_playlist_entry_t s_pdb_entries[8];
+static int s_pdb_playlist_count, s_pdb_entry_count;
 
 static void reset_pdb_fixture(void)
 {
     memset(s_pdb_tracks, 0, sizeof(s_pdb_tracks));
     s_pdb_track_count = 0;
     s_pdb_open_result = ESP_ERR_NOT_FOUND;
+    s_pdb_playlist_count = s_pdb_entry_count = 0;
+    memset(s_pdb_playlists, 0, sizeof(s_pdb_playlists));
+    memset(s_pdb_entries, 0, sizeof(s_pdb_entries));
 }
 
 esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
@@ -304,6 +310,26 @@ esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)
     }
     *out = s_pdb_tracks[index];
     return ESP_OK;
+}
+int pdb_playlist_count(const pdb_t *pdb) { return pdb ? s_pdb_playlist_count : 0; }
+int pdb_playlist_entry_count(const pdb_t *pdb) { return pdb ? s_pdb_entry_count : 0; }
+esp_err_t pdb_get_playlist(const pdb_t *pdb, int index, pdb_playlist_t *out)
+{
+    if (!pdb || !out || index < 0 || index >= s_pdb_playlist_count)
+        return ESP_ERR_INVALID_ARG;
+    *out = s_pdb_playlists[index];
+    return ESP_OK;
+}
+esp_err_t pdb_get_playlist_entry(const pdb_t *pdb, int index, pdb_playlist_entry_t *out)
+{
+    if (!pdb || !out || index < 0 || index >= s_pdb_entry_count)
+        return ESP_ERR_INVALID_ARG;
+    *out = s_pdb_entries[index];
+    return ESP_OK;
+}
+const char *pdb_artwork_path(const pdb_t *pdb, uint32_t artwork_id)
+{
+    return pdb && artwork_id == 77u ? "/PIONEER/Artwork/77.jpg" : NULL;
 }
 
 /* ── helpers ───────────────────────────────────────────────────────────────── */
@@ -716,6 +742,57 @@ static void test_catalog_publication_rejects_mid_copy_unmount(void)
     reset_gate_stats();
 }
 
+static void test_playlist_and_artwork_publish_with_generation(void)
+{
+    printf("== playlist order and artwork are bound to catalog generation ==\n");
+    library_clear();
+    reset_pdb_fixture();
+    s_pdb_open_result = ESP_OK;
+    s_pdb_track_count = 2;
+    set_pdb_track(0, 1001u, "Zulu", "A", "1A", 120u);
+    set_pdb_track(1, 1002u, "Alpha", "B", "2A", 121u);
+    s_pdb_tracks[0].artwork_id = 77u;
+    s_pdb_playlist_count = 1;
+    s_pdb_playlists[0].id = 9u;
+    snprintf(s_pdb_playlists[0].name, sizeof(s_pdb_playlists[0].name), "Favorites");
+    s_pdb_entry_count = 2;
+    s_pdb_entries[0] = (pdb_playlist_entry_t){9u, 0u, 1001u};
+    s_pdb_entries[1] = (pdb_playlist_entry_t){9u, 1u, 1002u};
+    CHECK(library_init() == ESP_OK);
+
+    uint32_t generation = library_generation();
+    pdb_playlist_t list = {0};
+    uint32_t seen_generation = 0u;
+    CHECK(library_playlist_count() == 1);
+    CHECK(library_get_playlist(0, &list, &seen_generation) == ESP_OK);
+    CHECK(list.id == 9u && seen_generation == generation);
+    uint32_t keys[2] = {0};
+    size_t count = 0u;
+    CHECK(library_playlist_track_keys(9u, NULL, 0u, &count,
+                                      &seen_generation) == ESP_ERR_INVALID_SIZE);
+    CHECK(count == 2u && seen_generation == generation);
+    CHECK(library_playlist_track_keys(9u, keys, 2u, &count,
+                                      &seen_generation) == ESP_OK);
+    CHECK(keys[0] == 1001u && keys[1] == 1002u);
+    char path[PDB_ARTWORK_PATH_MAX] = {0};
+    CHECK(library_artwork_path_for_key(1001u, generation, path,
+                                       sizeof(path)) == ESP_OK);
+    CHECK(strcmp(path, "/PIONEER/Artwork/77.jpg") == 0);
+
+    library_sort(1, false);
+    CHECK(row_track_id(0) == 1002u);
+    CHECK(library_playlist_track_keys(9u, keys, 2u, &count,
+                                      &seen_generation) == ESP_OK);
+    CHECK(keys[0] == 1001u && keys[1] == 1002u);
+    CHECK(library_artwork_path_for_key(1001u, generation, path,
+                                       sizeof(path)) == ESP_ERR_INVALID_STATE);
+    library_clear();
+    CHECK(library_playlist_count() == 0);
+    CHECK(library_artwork_path_for_key(1001u, seen_generation, path,
+                                       sizeof(path)) == ESP_ERR_INVALID_STATE);
+    reset_pdb_fixture();
+}
+
 int main(void)
 {
     printf("=== library_anlz tests ===\n");
@@ -733,6 +810,7 @@ int main(void)
     test_identity_accessors_track_row_order();
     test_catalog_publication_does_not_reacquire_media_gate();
     test_catalog_publication_rejects_mid_copy_unmount();
+    test_playlist_and_artwork_publish_with_generation();
 
     printf("TESTS_RUN=%u\n", s_checks);
     if (s_failures == 0) {

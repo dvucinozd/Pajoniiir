@@ -193,6 +193,34 @@ void library_clear(void)
 
 uint32_t library_generation(void) { return s_generation; }
 int library_count(void) { return s_initialized ? FIXTURE_TRACK_COUNT : 0; }
+int library_playlist_count(void) { return s_initialized ? 2 : 0; }
+esp_err_t library_get_playlist(int index, pdb_playlist_t *out,
+                               uint32_t *out_generation)
+{
+    if (!out || !out_generation || !s_initialized || index < 0 || index >= 2)
+        return ESP_ERR_NOT_FOUND;
+    memset(out, 0, sizeof(*out));
+    out->id = index == 0 ? 10u : 11u;
+    out->parent_id = index == 0 ? 0u : 10u;
+    out->is_folder = index == 0;
+    snprintf(out->name, sizeof(out->name), "%s", index == 0 ? "Sets" : "Night Set");
+    *out_generation = s_generation;
+    return ESP_OK;
+}
+esp_err_t library_playlist_track_keys(uint32_t playlist_id,
+                                      uint32_t *out_keys, size_t capacity,
+                                      size_t *out_count,
+                                      uint32_t *out_generation)
+{
+    if (!out_count || !out_generation || playlist_id != 11u || !s_initialized)
+        return ESP_ERR_NOT_FOUND;
+    *out_count = 2u;
+    *out_generation = s_generation;
+    if (!out_keys || capacity < 2u) return ESP_ERR_INVALID_SIZE;
+    out_keys[0] = 1003u;
+    out_keys[1] = 1001u;
+    return ESP_OK;
+}
 
 esp_err_t library_get(int index, library_track_t *out)
 {

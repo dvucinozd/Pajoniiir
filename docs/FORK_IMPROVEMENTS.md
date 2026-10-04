@@ -17,7 +17,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
-| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C2 parser work software verified; catalog/UI/workers pending |
+| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C3 parser, catalog and JC4880 playlist UI software verified; JPEG worker and color rendering pending |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
@@ -298,7 +298,30 @@ the live media catalog or displayed in Library. That integration is the next
 part of package C. No real Rekordbox export or hardware was available for this
 step: physical verification is **NOT RUN**.
 
+## C3: Catalog publication and hierarchical Library browse
+
+The local catalog now publishes playlist nodes, export-ordered track keys and
+artwork paths in the same generation as its track records. Global sort changes
+only the catalog row order; a playlist retains its exported track order.
+Artwork path lookup requires the exact catalog generation. USB removal and
+rebuild retire the playlist view, preventing stale keys from loading another
+medium's track.
+
+The existing 800x480 Library screen gains a PLAYLISTS/BACK button. Folder and
+playlist rows open in place, and LOAD on a playlist song uses the existing
+identity, load lock and worker path. Draw callbacks use a compact visible-page
+key snapshot; they do no PDB or filesystem reads. A simulator fixture covers a
+folder, its playlist, export order and three-step return to all tracks.
+
+Verification on 2026-10-04: focused catalog tests, full P4 host runner,
+ESP-IDF 6.0.2 P4 build and ten UI simulator screenshot/navigation checks
+passed. Application size was 2,517,632 bytes, 1,152,384 below the `0x380000`
+budget; the dependency lock did not change. The changed Library screenshots
+were visually reviewed before replacing their baselines. Real USB browse,
+touch and playback: **NOT RUN**.
+
 ## Provenance and rollback
+
 
 
 

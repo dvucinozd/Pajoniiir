@@ -178,6 +178,25 @@ int main(int argc, char **argv)
     }
     save_ppm(argv[1], "library");
 
+    if (!click_label("PLAYLISTS")) fail("playlist browser did not open");
+    save_ppm(argv[1], "library_playlist_root");
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_OK)
+        fail("folder row did not open");
+    pump(64);
+    save_ppm(argv[1], "library_playlist_folder");
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_OK)
+        fail("playlist row did not open");
+    pump(64);
+    save_ppm(argv[1], "library_playlist_tracks");
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1) != ESP_OK)
+        fail("first playlist track did not load");
+    deck_loaded_track_summary_t playlist_track = {0};
+    if (!deck_core_get_loaded_track(CTRL_DECK_1, &playlist_track) ||
+        playlist_track.track_key != 1003u)
+        fail("playlist order did not select export's first track");
+    if (!click_label("BACK") || !click_label("BACK") ||
+        !click_label("BACK")) fail("playlist hierarchy did not return to all tracks");
+
     if (!click_label("HOT CUES")) {
         fail("Hot Cues navigation failed");
     }

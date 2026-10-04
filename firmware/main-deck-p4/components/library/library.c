@@ -61,6 +61,10 @@ static uint32_t         s_generation = 0;
 static uint8_t          s_export_digest[32];
 static bool             s_export_digest_valid = false;
 static pdb_import_stats_t s_import_stats;
+static pdb_playlist_t *s_playlists;
+static int s_playlist_count;
+static pdb_playlist_entry_t *s_playlist_entries;
+static int s_playlist_entry_count;
 static SemaphoreHandle_t s_library_mutex = NULL;
 static bool             s_index_building = false;
 
@@ -89,6 +93,13 @@ static void library_copy_str(char *dst, size_t dst_len, const char *src)
         i++;
     }
     dst[i] = '\0';
+}
+
+static void *library_optional_alloc(size_t count, size_t item_size)
+{
+    if (!count) return NULL;
+    void *ptr = heap_caps_calloc(count, item_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return ptr ? ptr : calloc(count, item_size);
 }
 
 static esp_err_t ensure_library_mutex(void)
@@ -403,6 +414,10 @@ esp_err_t library_init(void)
         library_copy_str(lt->artist,    sizeof(lt->artist),    pt.artist);
         library_copy_str(lt->album,     sizeof(lt->album),     pt.album);
         lt->track_id = pt.track_id;
+        lt->artwork_id = pt.artwork_id;
+        const char *art_path = pdb_artwork_path(pdb, pt.artwork_id);
+        if (art_path)
+            library_copy_str(lt->artwork_path, sizeof(lt->artwork_path), art_path);
         lt->bpm      = pt.bpm;
         lt->duration_ms = (uint32_t)pt.duration_s * 1000u;
         library_copy_str(lt->key, sizeof(lt->key), pt.key);
@@ -412,12 +427,38 @@ esp_err_t library_init(void)
 
     pdb_import_stats_t import_stats;
     pdb_get_import_stats(pdb, &import_stats);
+    const int parsed_playlists = pdb_playlist_count(pdb);
+    const int parsed_entries = pdb_playlist_entry_count(pdb);
+    pdb_playlist_t *build_playlists = (pdb_playlist_t *)library_optional_alloc(
+        (size_t)parsed_playlists, sizeof(pdb_playlist_t));
+    pdb_playlist_entry_t *build_entries = (pdb_playlist_entry_t *)library_optional_alloc(
+        (size_t)parsed_entries, sizeof(pdb_playlist_entry_t));
+    int build_playlist_count = 0;
+    int build_entry_count = 0;
+    if ((parsed_playlists && !build_playlists) || (parsed_entries && !build_entries)) {
+        import_stats.playlists_truncated = true;
+        free(build_playlists);
+        free(build_entries);
+        build_playlists = NULL;
+        build_entries = NULL;
+    } else {
+        for (int i = 0; i < parsed_playlists; ++i) {
+            if (pdb_get_playlist(pdb, i, &build_playlists[build_playlist_count]) == ESP_OK)
+                build_playlist_count++;
+        }
+        for (int i = 0; i < parsed_entries; ++i) {
+            if (pdb_get_playlist_entry(pdb, i, &build_entries[build_entry_count]) == ESP_OK)
+                build_entry_count++;
+        }
+    }
     pdb_close(pdb);
 
     if (!media_io_gate_is_available()) {
         media_lost = true;
     }
     if (media_lost) {
+        free(build_playlists);
+        free(build_entries);
         xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
         s_index_building = false;
         xSemaphoreGiveRecursive(s_library_mutex);
@@ -431,6 +472,8 @@ esp_err_t library_init(void)
 
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
     if (s_generation != build_generation) {
+        free(build_playlists);
+        free(build_entries);
         /* library_clear() ran while the media was being parsed (for example,
          * because the drive was removed).  Never republish that stale index. */
         s_index_building = false;
@@ -443,6 +486,12 @@ esp_err_t library_init(void)
     s_active_order_buf = build_order_buf;
     s_track_count = build_count;
     s_import_stats = import_stats;
+    free(s_playlists);
+    free(s_playlist_entries);
+    s_playlists = build_playlists;
+    s_playlist_entries = build_entries;
+    s_playlist_count = build_playlist_count;
+    s_playlist_entry_count = build_entry_count;
     memcpy(s_export_digest, build_export_digest, sizeof(s_export_digest));
     s_export_digest_valid = true;
     if (s_ui_track_idx >= build_count) {
@@ -507,6 +556,96 @@ void library_get_import_stats(pdb_import_stats_t *stats)
     xSemaphoreGiveRecursive(s_library_mutex);
 }
 
+int library_playlist_count(void)
+{
+    if (ensure_library_mutex() != ESP_OK) return 0;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    int count = s_playlist_count;
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return count;
+}
+
+esp_err_t library_get_playlist(int index, pdb_playlist_t *out,
+                               uint32_t *out_generation)
+{
+    if (!out || !out_generation || ensure_library_mutex() != ESP_OK)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    esp_err_t rc = ESP_ERR_NOT_FOUND;
+    if (index >= 0 && index < s_playlist_count && s_playlists) {
+        *out = s_playlists[index];
+        *out_generation = s_generation;
+        rc = ESP_OK;
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return rc;
+}
+
+esp_err_t library_playlist_track_keys(uint32_t playlist_id,
+                                      uint32_t *out_keys, size_t capacity,
+                                      size_t *out_count,
+                                      uint32_t *out_generation)
+{
+    if (!playlist_id || !out_count || !out_generation ||
+        ensure_library_mutex() != ESP_OK) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    *out_generation = s_generation;
+    *out_count = 0u;
+    bool found = false;
+    for (int i = 0; i < s_playlist_count; ++i) {
+        if (s_playlists[i].id == playlist_id && !s_playlists[i].is_folder) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    for (int i = 0; i < s_playlist_entry_count; ++i) {
+        if (s_playlist_entries[i].playlist_id == playlist_id) (*out_count)++;
+    }
+    if (!out_keys || capacity < *out_count) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return *out_count == 0u ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    }
+    size_t next = 0u;
+    for (int i = 0; i < s_playlist_entry_count; ++i) {
+        if (s_playlist_entries[i].playlist_id == playlist_id)
+            out_keys[next++] = s_playlist_entries[i].track_id;
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return ESP_OK;
+}
+
+esp_err_t library_artwork_path_for_key(uint32_t track_key,
+                                       uint32_t expected_generation,
+                                       char *out_path, size_t path_capacity)
+{
+    if (!track_key || !out_path || !path_capacity ||
+        ensure_library_mutex() != ESP_OK) return ESP_ERR_INVALID_ARG;
+    out_path[0] = '\0';
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    esp_err_t rc = expected_generation == s_generation
+        ? ESP_ERR_NOT_FOUND : ESP_ERR_INVALID_STATE;
+    if (rc == ESP_ERR_NOT_FOUND) {
+        library_track_t *tracks = active_tracks();
+        for (int i = 0; tracks && i < s_track_count; ++i) {
+            if (library_track_key(&tracks[i]) != track_key) continue;
+            size_t length = strlen(tracks[i].artwork_path);
+            if (length != 0u && length + 1u <= path_capacity) {
+                memcpy(out_path, tracks[i].artwork_path, length + 1u);
+                rc = ESP_OK;
+            } else if (length != 0u) {
+                rc = ESP_ERR_INVALID_SIZE;
+            }
+            break;
+        }
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return rc;
+}
+
 void library_clear(void)
 {
     if (ensure_library_mutex() != ESP_OK) return;
@@ -517,6 +656,12 @@ void library_clear(void)
     }
     s_track_count = 0;
     s_import_stats = (pdb_import_stats_t){0};
+    free(s_playlists);
+    free(s_playlist_entries);
+    s_playlists = NULL;
+    s_playlist_entries = NULL;
+    s_playlist_count = 0;
+    s_playlist_entry_count = 0;
     memset(s_export_digest, 0, sizeof(s_export_digest));
     s_export_digest_valid = false;
     s_generation++;

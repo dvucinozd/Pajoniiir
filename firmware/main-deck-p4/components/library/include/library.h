@@ -48,6 +48,8 @@ typedef struct {
     char     album[LIBRARY_STR_MAX];
     char     key[16];
     uint32_t track_id;
+    uint32_t artwork_id;
+    char     artwork_path[PDB_ARTWORK_PATH_MAX];
     uint16_t bpm;
     uint32_t duration_ms;
     /* Set on the private load-worker copy before ANLZ/cache resolution. */
@@ -70,6 +72,19 @@ uint32_t  library_generation(void);
 esp_err_t library_export_digest(uint8_t out_digest[32], uint32_t *out_generation);
 int       library_count(void);
 void      library_get_import_stats(pdb_import_stats_t *stats);
+int       library_playlist_count(void);
+esp_err_t library_get_playlist(int index, pdb_playlist_t *out,
+                               uint32_t *out_generation);
+/* Returns ordered track keys for one playlist. A NULL buffer reports required
+ * count; no partial results are written if capacity is insufficient. */
+esp_err_t library_playlist_track_keys(uint32_t playlist_id,
+                                      uint32_t *out_keys, size_t capacity,
+                                      size_t *out_count,
+                                      uint32_t *out_generation);
+/* Resolve artwork only for the generation that supplied the track key. */
+esp_err_t library_artwork_path_for_key(uint32_t track_key,
+                                       uint32_t expected_generation,
+                                       char *out_path, size_t path_capacity);
 esp_err_t library_get(int index, library_track_t *out);
 esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,
