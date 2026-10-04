@@ -55,6 +55,7 @@
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "audio_load_validation_gate.h"
 #include "controller_usb_host.h"
+#include "controller_usb_audio_stream.h"
 #endif
 
 #include <math.h>
@@ -1132,6 +1133,13 @@ static SemaphoreHandle_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT];
 #endif
 
 static bool s_lifecycle_loads_blocked;
+static bool s_usb_main_sink;
+
+audio_main_sink_t audio_engine_get_main_sink(void)
+{
+    return __atomic_load_n(&s_usb_main_sink, __ATOMIC_ACQUIRE) ?
+        AUDIO_MAIN_SINK_USB : AUDIO_MAIN_SINK_PCM5102A;
+}
 static uint32_t s_lifecycle_session_generation[AUDIO_ENGINE_DECK_COUNT];
 #if AE_PC
 static audio_engine_lifecycle_test_hook_t s_after_internal_stop_hook;
@@ -3625,7 +3633,7 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     }
 
 #if CONFIG_BSP_PCM5102A_MAIN_OUT
-    if (s_main_i2s_tx) {
+    if (!s_usb_main_sink && s_main_i2s_tx) {
         /* PCM5102A starts at the BSP default clock; align it to the loaded
          * track before the first blocking I2S write or playback will be paced
          * at the wrong sample rate. */
@@ -3638,7 +3646,7 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     }
 #endif
 
-    if (s_codec) {
+    if (!s_usb_main_sink && s_codec) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
             .channel         = 2,
@@ -3982,10 +3990,16 @@ static void ae_output_task(void *arg)
             }
 #endif
 #if !defined(AUDIO_ENGINE_PC_TEST)
-            (void)controller_usb_host_write_audio(
+            const esp_err_t idle_usb_rc = controller_usb_host_write_audio(
                 master_out, hp_out, AE_OUT_FRAMES, s_output_sample_rate);
-            const esp_err_t idle_main_rc = audio_output_write_main(
-                master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+            const esp_err_t idle_main_rc = s_usb_main_sink ? idle_usb_rc :
+                audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+            if (s_usb_main_sink && idle_main_rc == ESP_ERR_INVALID_STATE) {
+                /* An idle USB-only board may have no controller yet. No audio
+                 * timeline is consumed here; allow connect/load later. */
+                vTaskDelay(pdMS_TO_TICKS(5));
+                continue;
+            }
             if (idle_main_rc != ESP_OK &&
                 idle_main_rc != ESP_ERR_NOT_SUPPORTED) {
                 audio_output_mark_sink_fault(idle_main_rc, ESP_OK);
@@ -4094,7 +4108,7 @@ static void ae_output_task(void *arg)
         }
         ae_wdt_trace(AUDIO_WDT_PHASE_MONITOR, 0u);
 #if !defined(AUDIO_ENGINE_PC_TEST)
-        (void)controller_usb_host_write_audio(
+        const esp_err_t usb_rc = controller_usb_host_write_audio(
             master_out, hp_out, AE_OUT_FRAMES, s_output_sample_rate);
 #else
         (void)hp_out;
@@ -4105,7 +4119,12 @@ static void ae_output_task(void *arg)
             phase_mark = now;
         }
         ae_wdt_trace(AUDIO_WDT_PHASE_MAIN_I2S, 0u);
+#if AE_FW
+        esp_err_t main_rc = s_usb_main_sink ? usb_rc :
+            audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+#else
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+#endif
         {
             int64_t now = esp_timer_get_time();
             ae_phase_note(AE_PH_MAIN, now - phase_mark);
@@ -4114,7 +4133,7 @@ static void ae_output_task(void *arg)
         /* When ES8311 is disabled the loop paces on the PCM5102A blocking
            write above; hp_out still reaches the FLX4 phones over the link. */
         esp_err_t hp_rc = ESP_ERR_NOT_SUPPORTED;
-        if (s_codec) {
+        if (!s_usb_main_sink && s_codec) {
             ae_wdt_trace(AUDIO_WDT_PHASE_CODEC, 0u);
             hp_rc = esp_codec_dev_write(s_codec, hp_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
         }
@@ -4124,8 +4143,8 @@ static void ae_output_task(void *arg)
             ae_phase_note(AE_PH_CODEC, now - phase_mark);
             phase_mark = now;
         }
-        bool main_ok = !s_main_i2s_tx || main_rc == ESP_OK;
-        bool headphone_ok = !s_codec || hp_rc == ESP_OK;
+        bool main_ok = s_usb_main_sink ? main_rc == ESP_OK : (!s_main_i2s_tx || main_rc == ESP_OK);
+        bool headphone_ok = s_usb_main_sink || !s_codec || hp_rc == ESP_OK;
         if (main_ok && headphone_ok) {
             ae_wdt_trace(AUDIO_WDT_PHASE_BOOK_LOCK, 0u);
             audio_output_note_bookkeeping(output_position_epochs, consumed);
@@ -4152,8 +4171,8 @@ static void ae_output_task(void *arg)
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
                                     late_warning_us > 0u ? late_warning_us : block_period_us);
-        /* No software pacing delay: the i2s_channel_write above blocks on DMA and
-         * is what actually paces this loop. The retired
+        /* No software audio pacing delay: PCM mode's i2s_channel_write blocks
+         * on DMA; USB mode waits on actual UAC ring consumption. The retired
          * audio_output_remaining_delay_ms() helper always returned zero, and the
          * build used to collapse it with a preprocessor macro in a wrapper
          * translation unit. The loop keeps its explicit periodic one-tick yield
@@ -4255,6 +4274,88 @@ static esp_err_t audio_output_service_stop(void)
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API
  * ═════════════════════════════════════════════════════════════════════════ */
+
+esp_err_t audio_engine_start_recording(void)
+{
+#if AE_FW && CONFIG_AUDIO_RECORDER_ENABLED
+    if (xSemaphoreTake(s_lifecycle_admission_mutex, 0) != pdTRUE)
+        return ESP_ERR_INVALID_STATE;
+    esp_err_t rc = audio_recorder_start(s_output_sample_rate);
+    lifecycle_admission_unlock();
+    return rc;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+/* Serialized with LOAD and PLAY. Stop the producer before resetting ring pacing;
+ * callbacks keep their USB ownership. No sink changes during playback/recording. */
+esp_err_t audio_engine_set_main_sink(audio_main_sink_t sink)
+{
+    if (sink != AUDIO_MAIN_SINK_PCM5102A && sink != AUDIO_MAIN_SINK_USB)
+        return ESP_ERR_INVALID_ARG;
+    /* Never queue a service request behind a slow LOAD or another lifecycle
+     * operation. The operator can retry after that operation finishes. */
+#if AE_PC
+    if (pthread_mutex_trylock(&s_lifecycle_admission_mutex) != 0)
+        return ESP_ERR_INVALID_STATE;
+    uint8_t locked = 0u;
+    for (; locked < AUDIO_ENGINE_DECK_COUNT; ++locked) {
+        if (pthread_mutex_trylock(&s_lifecycle_mutex[locked]) != 0) break;
+    }
+#elif AE_FW
+    if (xSemaphoreTake(s_lifecycle_admission_mutex, 0) != pdTRUE)
+        return ESP_ERR_INVALID_STATE;
+    uint8_t locked = 0u;
+    for (; locked < AUDIO_ENGINE_DECK_COUNT; ++locked) {
+        if (xSemaphoreTake(s_lifecycle_mutex[locked], 0) != pdTRUE) break;
+    }
+#else
+    uint8_t locked = AUDIO_ENGINE_DECK_COUNT;
+#endif
+    if (locked != AUDIO_ENGINE_DECK_COUNT) {
+        while (locked > 0u) lifecycle_deck_unlock(--locked);
+        lifecycle_admission_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t rc = ESP_OK;
+    for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; ++d) {
+        if (atomic_load_bool(&s_engines[d].playing) || s_engines[d].loading ||
+            atomic_load_bool(&s_scratch_playing[d])) rc = ESP_ERR_INVALID_STATE;
+    }
+#if AE_FW && CONFIG_AUDIO_RECORDER_ENABLED
+    if (audio_recorder_get_state() != AUDIO_RECORDER_STOPPED) rc = ESP_ERR_INVALID_STATE;
+#endif
+#if AE_FW
+    const bool usb = sink == AUDIO_MAIN_SINK_USB;
+    if (!usb && !s_main_i2s_tx) rc = ESP_ERR_NOT_SUPPORTED;
+    if (usb) {
+        controller_usb_audio_stream_stats_t stats;
+        controller_usb_audio_stream_get_stats(&stats);
+        if (!stats.streaming) rc = ESP_ERR_INVALID_STATE;
+    }
+    if (rc == ESP_OK && usb != s_usb_main_sink) {
+        const bool restart = s_output_task != NULL;
+        const uint32_t rate = s_output_sample_rate ? s_output_sample_rate : 44100u;
+        rc = audio_output_service_stop();
+        if (rc == ESP_OK) {
+            rc = controller_usb_audio_stream_set_pacing(usb);
+            if (rc == ESP_OK) __atomic_store_n(&s_usb_main_sink, usb, __ATOMIC_RELEASE);
+            if (restart) {
+                esp_err_t open_rc = audio_output_service_open_codec(rate);
+                if (open_rc == ESP_OK) open_rc = audio_output_service_ensure_started();
+                if (rc == ESP_OK) rc = open_rc;
+            }
+        }
+    }
+#else
+    if (rc == ESP_OK && sink == AUDIO_MAIN_SINK_USB) rc = ESP_ERR_NOT_SUPPORTED;
+#endif
+    lifecycle_deck_unlock(1u);
+    lifecycle_deck_unlock(0u);
+    lifecycle_admission_unlock();
+    return rc;
+}
 
 /* Tear down all vinyl-scratch playback state for a deck: cancel the read head,
  * disarm any release-handoff, and route the deck back to the resampler. Called
@@ -4390,7 +4491,9 @@ esp_err_t audio_engine_init(void)
      * The I2S clock is configured per-track in audio_engine_load via codec_open. */
     s_codec = bsp_audio_get_codec_dev();
     s_main_i2s_tx = bsp_audio_get_main_i2s_tx();
-    if (!s_codec && !s_main_i2s_tx) {
+    __atomic_store_n(&s_usb_main_sink, !board_capabilities_get()->pcm5102a, __ATOMIC_RELEASE);
+    (void)controller_usb_audio_stream_set_pacing(s_usb_main_sink);
+    if (!s_usb_main_sink && !s_codec && !s_main_i2s_tx) {
         ESP_LOGE(TAG, "audio_engine_init: no audio output ready (call bsp_audio_init first)");
         return ESP_ERR_INVALID_STATE;
     }
@@ -5207,7 +5310,10 @@ esp_err_t audio_engine_deck_play(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    return audio_engine_play_for_deck(deck);
+    lifecycle_deck_lock(deck);
+    esp_err_t rc = audio_engine_play_for_deck(deck);
+    lifecycle_deck_unlock(deck);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_pause(uint8_t deck)
@@ -5382,7 +5488,7 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held)
     atomic_store_bool(&s_deck_hold[deck], held);
 }
 
-bool audio_engine_deck_scratch_begin(uint8_t deck)
+static bool audio_engine_deck_scratch_begin_locked(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return false;
 #if AE_FW
@@ -5512,6 +5618,15 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
     scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB);
     atomic_store_bool(&s_scratch_playing[deck], true);
     return true;
+}
+
+bool audio_engine_deck_scratch_begin(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return false;
+    lifecycle_deck_lock(deck);
+    bool started = audio_engine_deck_scratch_begin_locked(deck);
+    lifecycle_deck_unlock(deck);
+    return started;
 }
 
 void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta)

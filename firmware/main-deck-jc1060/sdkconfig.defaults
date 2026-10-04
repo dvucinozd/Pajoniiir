@@ -2,6 +2,6 @@
 CONFIG_PAJONIIIR_BOARD_JC1060=y
 # GPIO50/51/52 belong to Ethernet, never enable PCM5102A here.
 # CONFIG_BSP_PCM5102A_MAIN_OUT is not set
-# Onboard codec is a bring-up monitor only; DDJ400 MAIN routing belongs to F.
-CONFIG_BSP_ES8311_MONITOR=y
+# USB-only MAIN and cue are paced by controller consumption, not the codec.
+# CONFIG_BSP_ES8311_MONITOR is not set
 CONFIG_ETH_USE_ESP32_EMAC=y

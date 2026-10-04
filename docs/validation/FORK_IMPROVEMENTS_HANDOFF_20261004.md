@@ -2,6 +2,11 @@
 
 ## Repository state
 
+This is the historical B5 checkpoint. Subsequent packages A-F and current
+software evidence are tracked in [the live integration log](../FORK_IMPROVEMENTS.md)
+and [F closure](FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md).
+All physical gates remain NOT RUN; the hardware is still unavailable.
+
 - Integration branch: `codex/fork-improvements`.
 - Worktree: `C:\Users\Daniel\.codex\worktrees\fork-improvements\DDJ-FFL4`.
 - Current pushed HEAD at this checkpoint: `83805190ed1d7cb7279481ffe564145389563efc`.

@@ -33,7 +33,19 @@ typedef struct {
     bool configuring;
     bool streaming;
     bool faulted;
+    uint32_t sample_rate;
+    uint8_t bits_per_sample;
+    bool consumer_paced;
 } controller_usb_audio_stream_stats_t;
+
+/* Owner task only; only while quiesced. FLX4 preserves its qualified format/gain. */
+esp_err_t controller_usb_audio_stream_set_policy(bool qualified_flx4, bool consumer_paced);
+esp_err_t controller_usb_audio_stream_set_pacing(bool consumer_paced);
+bool controller_usb_audio_stream_consumer_paced(void);
+bool controller_usb_audio_stream_needs_recovery(void);
+/* Producer waits for actual ring free space, bounded and cancellation-aware. */
+esp_err_t controller_usb_audio_stream_wait_room(uint32_t source_frames,
+                                               uint32_t source_rate, uint32_t timeout_ms);
 
 esp_err_t controller_usb_audio_stream_start(
     usb_host_client_handle_t client,

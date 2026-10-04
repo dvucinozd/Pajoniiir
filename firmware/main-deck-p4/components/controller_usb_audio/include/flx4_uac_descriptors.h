@@ -18,6 +18,12 @@ typedef struct {
     uint8_t bytes_per_sample;
     uint32_t sample_rates[8];
     uint8_t sample_rate_count;
+    uint8_t interval;
+    uint8_t sync_type;
+    bool requires_feedback;
+    bool pcm;
+    bool pcm_explicit;
+    bool frequency_control;
 } flx4_uac_playback_format_t;
 
 typedef struct {
@@ -31,6 +37,10 @@ bool flx4_uac_parse_playback_formats(const uint8_t *config_desc,
 
 bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result,
                                       flx4_uac_playback_format_t *out);
+
+/* Full-speed UAC1 PCM, one packet/ms. Feedback and high-bandwidth are unsupported. */
+bool flx4_uac_format_supports_rate(const flx4_uac_playback_format_t *format,
+                                  uint32_t rate);
 
 #ifdef __cplusplus
 }

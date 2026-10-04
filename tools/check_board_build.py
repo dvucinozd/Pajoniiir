@@ -20,6 +20,7 @@ def verify(build: Path, project: str) -> None:
     assert ("#define CONFIG_PAJONIIIR_BOARD_JC1060 1" in config) == jc1060
     if jc1060:
         assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" not in config, "Ethernet pin conflict"
+        assert "#define CONFIG_BSP_ES8311_MONITOR 1" not in config, "USB-only sink must not use codec pacing"
     # CI builds inside /project in Docker, then checks from the runner host.
     # The recorded container path is not a filesystem path on that host.
     project_path = build.resolve().parent

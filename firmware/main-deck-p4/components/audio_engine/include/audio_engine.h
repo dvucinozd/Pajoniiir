@@ -25,6 +25,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+typedef enum {
+    AUDIO_MAIN_SINK_PCM5102A = 0,
+    AUDIO_MAIN_SINK_USB = 1,
+} audio_main_sink_t;
 #include "audio_delay_fx.h"
 #include "audio_eq.h"
 #include "audio_filter.h"
@@ -49,12 +53,18 @@
 #define AUDIO_PVBR_LEN  400u   /* entries in Rekordbox PVBR seek table */
 #define AUDIO_ENGINE_DECK_COUNT 2u
 
+/* Service/control task only: serialize recorder start with sink selection. */
+esp_err_t audio_engine_start_recording(void);
+
 /*
  * Initialise the audio engine.
  * Sets up I2S buffers (firmware).
  * Must be called before any other function.
  */
 esp_err_t audio_engine_init(void);
+audio_main_sink_t audio_engine_get_main_sink(void);
+/* Non-real-time service API. Both decks stopped; recorder stopped. */
+esp_err_t audio_engine_set_main_sink(audio_main_sink_t sink);
 
 /*
  * Set playback pitch/rate.

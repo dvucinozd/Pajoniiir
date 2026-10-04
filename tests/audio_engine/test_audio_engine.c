@@ -404,6 +404,10 @@ static void test_stop_waits_for_inflight_load_transaction(void)
     }
     pthread_mutex_unlock(&s_lifecycle_test_mutex);
 
+    EXPECT(audio_engine_set_main_sink(AUDIO_MAIN_SINK_USB) == ESP_ERR_INVALID_STATE,
+           "sink request never waits behind an admitted LOAD");
+    EXPECT(audio_engine_get_main_sink() == AUDIO_MAIN_SINK_PCM5102A,
+           "busy LOAD rejection preserves selected sink");
     EXPECT(pthread_create(&stop_thread, NULL, lifecycle_stop_thread, NULL) == 0,
            "concurrent STOP thread starts");
     struct timespec pause = { .tv_sec = 0, .tv_nsec = 20 * 1000 * 1000 };
@@ -1061,6 +1065,10 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(audio_engine_deck_load(1, path, NULL, 10000) == ESP_OK,
            "deck 1 dummy diagnostics load returns ESP_OK");
     EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 diagnostics play returns ESP_OK");
+    EXPECT(audio_engine_set_main_sink(AUDIO_MAIN_SINK_USB) == ESP_ERR_INVALID_STATE,
+           "main sink change is rejected while deck 0 plays");
+    EXPECT(audio_engine_get_main_sink() == AUDIO_MAIN_SINK_PCM5102A,
+           "rejected sink change preserves current sink");
     audio_engine_get_diagnostics_snapshot(&diag);
     EXPECT(diag.playback_session_epoch == 1u,
            "first all-idle to active transition advances playback session epoch");

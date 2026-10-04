@@ -20,12 +20,18 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] [Package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md):
   JC1060 bring-up is NOT RUN. Verify panel/revision, flash/PSRAM, USB roles,
   touch/render, SD and Ethernet. Do not enable PCM5102A: pins overlap Ethernet.
-  ES8311 is a bring-up monitor, not DDJ-400 MAIN qualification.
+  ES8311 is disabled in the USB-only configuration.
+
+- [ ] [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md):
+  all physical gates NOT RUN. Capture DDJ-400 descriptors; verify MAIN channels
+  1/2 and cue 3/4 independently, full-scale packing, reconnect and UAC restart.
+  Repeat FLX4/PCM5102A listening, strict counters and 180-minute dual-deck soak.
+  Verify stopped-only sink changes and rejection during LOAD/PLAY/scratch/recording.
 
 - [ ] [Package D](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md):
   confirm DDJ-400 initial SysEx, MIDI/LED behavior, CH1/CH2/MASTER selector,
   filter travel and reconnect on the exact candidate. NOT RUN. MASTER uses
-  both-deck FX; UAC acceptance awaits F. V4 requires development firmware;
+  both-deck FX; physical UAC acceptance remains NOT RUN. V4 requires development firmware;
   M2.4 rejects it. Recompile JSON for rollback; never patch version bytes.
 
 - [ ] For the [fork improvements branch](FORK_IMPROVEMENTS.md), verify titles

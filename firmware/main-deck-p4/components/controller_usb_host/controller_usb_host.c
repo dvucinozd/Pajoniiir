@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "controller_usb_audio_stream.h"
+#include "board_capabilities.h"
 #include "controller_usb_recovery_gate.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -45,6 +46,7 @@ typedef struct {
     bool device_gone;
     bool out_generation_closed;
     bool midi_flush_attempted;
+    bool uac_recovery_requested;
     controller_usb_recovery_gate_t recovery_gate;
 } controller_state_t;
 
@@ -99,7 +101,7 @@ static void begin_controller_fault_recovery(controller_state_t *state,
             &state->recovery_gate)) {
         return;
     }
-    ESP_LOGW(TAG, "%s fault (%s); closing USB1 before one recovery request",
+    ESP_LOGW(TAG, "%s fault (%s); closing controller before one recovery request",
              operation ? operation : "controller USB", esp_err_to_name(error));
     __atomic_store_n(&s_accepting_out, false, __ATOMIC_RELEASE);
     state->closing = true;
@@ -115,12 +117,12 @@ static void submit_deferred_controller_recovery(controller_state_t *state)
         return;
     }
     const esp_err_t rc = usb_host_manager_request_recovery(
-        1u, USB_HOST_RECOVERY_REASON_TRANSFER);
+        board_capabilities_get()->controller_root, USB_HOST_RECOVERY_REASON_TRANSFER);
     if (rc == ESP_OK) {
         count_inc(&s_recovery_requests);
         controller_usb_recovery_gate_complete(&state->recovery_gate);
     } else if (rc != ESP_ERR_TIMEOUT) {
-        ESP_LOGW(TAG, "deferred USB1 recovery request: %s",
+        ESP_LOGW(TAG, "deferred controller recovery request: %s",
                  esp_err_to_name(rc));
     }
 }
@@ -311,7 +313,15 @@ static void close_step(controller_state_t *state)
         state->out_generation_closed = true;
     }
     controller_usb_audio_stream_request_stop(state->device_gone);
-    if (!controller_usb_audio_stream_poll_cleanup()) {
+    const bool audio_quiesced = controller_usb_audio_stream_poll_cleanup();
+    if (controller_usb_audio_stream_needs_recovery() && !state->uac_recovery_requested) {
+        /* Async EP0 has no driver timeout. Retain transfers until root detach
+         * cancels them; never free or block waiting for the missing callback. */
+        if (usb_host_manager_request_recovery(board_capabilities_get()->controller_root,
+                USB_HOST_RECOVERY_REASON_CLASS_TEARDOWN) == ESP_OK)
+            state->uac_recovery_requested = true;
+    }
+    if (!audio_quiesced) {
         return;
     }
     if (state->out_queue) {
@@ -388,6 +398,7 @@ static void close_step(controller_state_t *state)
     state->device_gone = false;
     state->out_generation_closed = false;
     state->midi_flush_attempted = false;
+    state->uac_recovery_requested = false;
     if (was_connected) {
         count_inc(&s_midi_disconnects);
         if (state->config.connection_cb) {
@@ -529,16 +540,17 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
         return rc;
     }
 
-    if (state->identity.vid == FLX4_USB_VID &&
-        state->identity.pid == FLX4_USB_PID &&
-        state->identity.direct_root_child &&
-        state->identity.parent_port == 1u) {
+    const bool qualified_flx4 = state->identity.vid == FLX4_USB_VID &&
+                               state->identity.pid == FLX4_USB_PID;
+    if (state->identity.direct_root_child && info.speed == USB_SPEED_FULL) {
+        (void)controller_usb_audio_stream_set_policy(qualified_flx4,
+                    controller_usb_audio_stream_consumer_paced());
         const esp_err_t audio_rc = controller_usb_audio_stream_start(
             state->client, state->device, (const uint8_t *)config_desc,
             config_desc->wTotalLength, xTaskGetCurrentTaskHandle(),
             CONTROLLER_USB_ACTIVE_PRIORITY, state->config.task_priority);
         if (audio_rc != ESP_OK) {
-            ESP_LOGW(TAG, "FLX4 UAC unavailable; MIDI remains active: %s",
+            ESP_LOGW(TAG, "UAC unavailable; MIDI remains active: %s",
                      esp_err_to_name(audio_rc));
         } else {
             state->identity.usb_audio_active = true;
@@ -631,7 +643,7 @@ static void controller_task(void *arg)
         controller_usb_audio_stream_get_stats(&audio_stats);
         if (s_state.opened && s_state.identity.usb_audio_active &&
             audio_stats.faulted) {
-            begin_controller_fault_recovery(&s_state, "FLX4 UAC stream",
+            begin_controller_fault_recovery(&s_state, "UAC stream",
                                              ESP_FAIL);
             close_step(&s_state);
             continue;

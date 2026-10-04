@@ -47,7 +47,11 @@ set(_pajoniiir_fifo_patched [=[
         // HS controller: reserve RX and non-periodic TX space for 512-byte
         // mass-storage bulk packets.
         port->fifo_config.nptx_fifo_lines = 256;
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+        port->fifo_config.ptx_fifo_lines = 160; /* packed 24-bit four-channel UAC */
+#else
         port->fifo_config.ptx_fifo_lines = 128;
+#endif
         port->fifo_config.rx_fifo_lines = fifo_size_lines
                                           - port->fifo_config.ptx_fifo_lines
                                           - port->fifo_config.nptx_fifo_lines;
@@ -55,7 +59,11 @@ set(_pajoniiir_fifo_patched [=[
         // FS controller: MIDI uses 64-byte bulk packets and FLX4 UAC1 uses
         // periodic OUT packets up to 384 bytes.
         port->fifo_config.nptx_fifo_lines = 20;
+#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+        port->fifo_config.ptx_fifo_lines = 160;
+#else
         port->fifo_config.ptx_fifo_lines = 100;
+#endif
         port->fifo_config.rx_fifo_lines = fifo_size_lines
                                           - port->fifo_config.ptx_fifo_lines
                                           - port->fifo_config.nptx_fifo_lines;

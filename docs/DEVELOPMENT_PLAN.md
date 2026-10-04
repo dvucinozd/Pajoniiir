@@ -17,7 +17,11 @@ remain NOT RUN. [Package D software closure](validation/FORK_IMPROVEMENTS_PACKAG
 covers v4 parser/validators/runtime/compiler, DDJ-400 MIDI and coordinated Web
 export. [Board package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 adds JC1060 BSP/entrypoint, shared peripherals, separate lock and CI build.
-Physical bring-up remains NOT RUN; DDJ-400 UAC belongs to F and layouts to H.
+Physical bring-up remains NOT RUN; layouts belong to H.
+[Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
+descriptor-selected four-channel UAC1 and consumer-paced USB MAIN/cue, preserving
+the default JC4880 PCM5102A path. DDJ-400 audio and FLX4 regression acceptance
+remain NOT RUN. Next software work is G; production remains unchanged.
 
 - Production tag: `M2.4`
 - Frozen source: `9d0c954fc502ae237fabedb764368cd9b10f10dc`

@@ -18,7 +18,7 @@ an enumeration-order heuristic or a claim that JC1060 hardware passed.
 JC4880 IDF 6.0.2 build passes at 2,541,200 bytes; lock unchanged.
 [E2 adds the JC1060 target](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md),
 shared peripherals, native geometry, Ethernet startup and separate lock/CI.
-Physical bring-up is NOT RUN; DDJ-400 MAIN and new layouts remain F/H.
+Physical bring-up is NOT RUN; new layouts remain H.
 
 One P4 core must serve JC4880/FLX4 and JC1060/DDJ-400. Ethernet Link belongs
 only to JC1060; recording remains an opt-in experiment. APTA integration is
@@ -31,7 +31,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Software verified; DDJ-400 hardware acceptance NOT RUN; UAC belongs to F |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
-| F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
+| F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; physical audio/reconnect acceptance NOT RUN; see F closure |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Pending |
 | H | Shared dj_ui presentation at 800x480 and 1024x600 | Pending |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Pending |
@@ -47,6 +47,17 @@ supersede them. UI redesign/presentation belongs to H and S3CP v4 to D.
 JC1060, DDJ-400 and real CDJ peer acceptance remain **NOT RUN** until the
 hardware is available. No deployment, production channel change or hardware
 acceptance follows from a successful host test or build.
+
+## Package F
+
+[F software closure](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md)
+records descriptor bounds, actual 16/24-bit ISO packing, consumer-paced USB
+MAIN/cue, stopped-only service routing, EP0 timeout ownership and reconnect
+regressions. JC4880 keeps its PCM5102A default and qualified FLX4 mirror path;
+JC1060 uses USB output with ES8311 disabled. Both IDF builds and host/simulator
+checks pass; every physical audio/reconnect/latency gate remains NOT RUN.
+Recording stays experimental/disabled and next work is G. No image was installed
+or released by this package.
 
 ## Package A
 

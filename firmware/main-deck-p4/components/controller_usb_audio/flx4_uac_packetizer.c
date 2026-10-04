@@ -1,5 +1,20 @@
 #include "flx4_uac_packetizer.h"
 
+bool controller_uac_pack_pcm(uint8_t *dst, size_t bytes, const int16_t *src,
+                             size_t frames, uint8_t sample_bytes)
+{
+    if (!dst || !src || (sample_bytes != 2u && sample_bytes != 3u) ||
+        frames > SIZE_MAX / (4u * sample_bytes) || bytes < frames * 4u * sample_bytes)
+        return false;
+    for (size_t i = 0; i < frames * 4u; ++i) {
+        uint32_t sample = (uint32_t)((int32_t)src[i] * (sample_bytes == 3u ? 256 : 1));
+        for (uint8_t b = 0; b < sample_bytes; ++b) {
+            *dst++ = (uint8_t)(sample >> (8u * b));
+        }
+    }
+    return true;
+}
+
 void flx4_uac_packetizer_init(flx4_uac_packetizer_t *p,
                               uint32_t sample_rate,
                               uint8_t channels,

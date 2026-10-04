@@ -17,6 +17,10 @@ in current code/file formats. They do not imply an active S3 processor.
 The isolated development branch also has a separate JC1060 target sharing
 the P4 core with its own identity, BSP, lock and CI build. [Package E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 does not qualify or release this board. All JC1060 physical gates are NOT RUN.
+[Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
+UAC1 packed 16/24-bit formats and USB MAIN/cue pacing. The service API selects
+an available sink only with both decks stopped and recorder inactive. Host/build
+evidence does not qualify DDJ-400 sound or FLX4 hardware regression.
 
 ## Production release
 

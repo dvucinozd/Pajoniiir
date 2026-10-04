@@ -29,8 +29,13 @@ Development package E adds a JC1060 target and separate build/lock/CI, sharing
 the P4 core. [E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 is software evidence only. Panel/touch/PSRAM, USB root topology, SD/Hosted
 constructor interaction and RMII PHY/DHCP are unqualified. PCM5102A must remain
-disabled because its pins overlap Ethernet; ES8311 bring-up monitoring does not
-qualify DDJ-400 MAIN/cue. New-board hardware gates remain NOT RUN. No JC1060
+disabled because its pins overlap Ethernet; ES8311 is disabled for USB pacing.
+[F software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md)
+does not qualify DDJ-400 MAIN/cue. Four-channel full-speed UAC1 adaptive/synchronous
+16-bit or packed 24-bit formats are bounded; feedback, UAC2/high-speed and 24-in-32
+are unsupported. JC1060's larger periodic FIFO and physical EP0 detach/reconnect
+must be measured on hardware. Sink latency, CPU deadline, internal/DMA heap and
+stack reserves remain unmeasured. New-board hardware gates remain NOT RUN. No JC1060
 image/channel may be represented as accepted or released on build evidence.
 
 M2.4 is released with exact-image automated, hardware telemetry and acoustic

@@ -2381,6 +2381,23 @@ $tests = @(
         )
     },
     @{
+        Name = "controller_usb_audio_stream"
+        Dir = "tests/controller_usb_audio"
+        Target = "test_controller_usb_audio_stream.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11", "-O2",
+            "-Istubs",
+            "-I../../firmware/main-deck-p4/components/controller_usb_audio",
+            "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
+            "-o", "test_controller_usb_audio_stream.exe",
+            "test_controller_usb_audio_stream.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_ring.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_resampler.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/flx4_uac_packetizer.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/flx4_uac_descriptors.c"
+        )
+    },
+    @{
         Name = "controller_audio_resampler"
         Dir = "tests/controller_audio_resampler"
         Target = "test_controller_audio_resampler.exe"

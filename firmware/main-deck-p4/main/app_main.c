@@ -281,7 +281,7 @@ static bool on_recording_toggle(bool enable)
             ESP_LOGW(TAG, "recorder: no output rate yet (load and play a track first)");
             return false;
         }
-        return audio_recorder_start(rate) == ESP_OK;
+        return audio_engine_start_recording() == ESP_OK;
     }
     return audio_recorder_stop() == ESP_OK;
 }

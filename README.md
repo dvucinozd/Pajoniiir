@@ -20,11 +20,15 @@ actions. Its physical acceptance remains NOT RUN. JC1060,
 DDJ-400 and Pro DJ Link are planned;
 their hardware acceptance has not run. [Package D software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md)
 adds compatible S3CP v4 and a normalized DDJ-400 MIDI profile. Its hardware
-acceptance remains NOT RUN; UAC generalization belongs to package F.
+acceptance remains NOT RUN.
 [Package E](docs/validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 adds JC1060 with shared core, native display BSP and Ethernet startup.
 Both clean builds and host/simulator CI pass. Hardware acceptance is NOT RUN;
 new layouts and Link await H/I.
+[Package F](docs/validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md)
+adds bounded UAC1 16/24-bit formats and USB-paced MAIN/cue routing. JC1060
+uses USB output; JC4880 retains PCM5102A by default. Hardware audio/reconnect
+acceptance remains NOT RUN.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

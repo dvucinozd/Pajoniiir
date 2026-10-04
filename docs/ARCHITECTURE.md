@@ -25,6 +25,19 @@ The core is not copied. Both signed-manifest and application descriptor checks
 use the running project identity. See [E software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md);
 new-board physical acceptance remains NOT RUN.
 
+Package F separates the authoritative MAIN sink from USB cue mirroring.
+JC4880 defaults to blocking PCM5102A I2S pacing; its FLX4 format, attenuation
+and ring clock corrections remain unchanged. JC1060 defaults to USB MAIN 1/2
+and cue 3/4, with ES8311 disabled. The single producer waits on actual UAC ring
+space with a bounded, epoch-aware wait; USB pacing has no duplicate/trim or
+second codec clock. Accepted USB blocks drive timeline bookkeeping. A failed
+active write takes the existing fail-closed transport path.
+Sink selection uses lifecycle admission and both deck locks, stops the output
+producer before changing ring policy, and rejects PLAY/LOAD/scratch/recording.
+UAC callback ownership remains with the USB owner; timed-out EP0 transfers are
+retained until cancellation/detach and trigger root recovery. See
+[F bounds and unrun physical gates](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md).
+
 ```text
 Pioneer DDJ-FLX4
     |

@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "esp_app_desc.h"
 #include "audio_engine.h"
+#include "controller_usb_audio_stream.h"
 #include "audio_uac_health.h"
 #include "media_catalog.h"
 #include "ui.h"
@@ -1060,7 +1061,7 @@ static esp_err_t api_recording_start_handler(httpd_req_t *req)
     /* Start the output-block phase maxima from zero so the numbers describe
      * this recording window rather than whatever happened since boot. */
     audio_engine_reset_output_phase_stats();
-    esp_err_t rc = audio_recorder_start(rate);
+    esp_err_t rc = audio_engine_start_recording();
     if (rc != ESP_OK) {
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict"
                                                                : "500 Internal Server Error");
@@ -1613,10 +1614,14 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         diagnostics.usb_headphone_active_data_loss_flags;
     const bool uac_data_loss = uac_data_loss_flags != 0u;
 
+    controller_usb_audio_stream_stats_t uac_format;
+    controller_usb_audio_stream_get_stats(&uac_format);
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
         "{"
+        "\"main_sink\":\"%s\","
+        "\"uac_format\":{\"sample_rate\":%u,\"bits\":%u,\"consumer_paced\":%s,\"queued_us\":%u},"
         "\"deck1\":{"
         "\"title\":\"%s\","
         "\"artist\":\"%s\","
@@ -1732,6 +1737,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"psram_free\":%u"
         "}"
         "}",
+        audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
+        (unsigned)uac_format.sample_rate, (unsigned)uac_format.bits_per_sample,
+        uac_format.consumer_paced ? "true" : "false",
+        uac_format.sample_rate ? (unsigned)((uint64_t)uac_format.ring_queued_frames * 1000000u / uac_format.sample_rate) : 0u,
         title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state1.sync_enabled ? "true" : "false", state1.sync_master ? "true" : "false", state_text1,
         title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state2.sync_enabled ? "true" : "false", state2.sync_master ? "true" : "false", state_text2,
         mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
@@ -1980,6 +1989,18 @@ static esp_err_t api_control_handler(httpd_req_t *req)
                                             sizeof(value_str)) == ESP_OK;
 
     uint8_t deck = CTRL_DECK_NONE;
+    if (strcmp(action, "main_sink") == 0) {
+        if (!has_value || (strcmp(value_str, "usb") != 0 && strcmp(value_str, "pcm5102a") != 0))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Sink must be usb or pcm5102a");
+        esp_err_t rc = audio_engine_set_main_sink(strcmp(value_str, "usb") == 0 ?
+                            AUDIO_MAIN_SINK_USB : AUDIO_MAIN_SINK_PCM5102A);
+        if (rc != ESP_OK) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Sink unavailable or transport/recorder busy", HTTPD_RESP_USE_STRLEN);
+        }
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    }
     bool deck_required = strcmp(action, "crossfader") != 0;
     if ((deck_required && !has_deck) ||
         (has_deck && !api_parse_deck(deck_str, &deck))) {
