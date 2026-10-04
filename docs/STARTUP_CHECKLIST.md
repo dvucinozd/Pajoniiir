@@ -23,7 +23,8 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   render, MAIN/cue and strict timing gates remain NOT RUN. Network OTA installation
   is authorized when reachable. H3 failed Wi-Fi/USB acceptance; verified previous
   firmware was restored on explicitly authorized COM15 with matching flash
-  read-back. AP/API and USB0 mount recovered; confirm FLX4 reconnection separately.
+  read-back. AP/API, USB0 mount and FLX4 MIDI/UAC presence recovered; the operator
+  confirmed working FLX4 controls. MAIN/cue listening remains a separate gate.
   The one-time wired recovery is complete; ignore unrelated devices. Verify project/image and idle
   decks before an install, then collect exact-image/operator acceptance separately.
 

@@ -67,9 +67,12 @@ The operator then reported normal recovery. Read-only HTTP checks confirm
 `M2.4-7-gb8d9cb7`, ota_1, OTA service idle/empty error, working AP/API,
 USB host ready and USB0 storage mounted (mount result ESP_OK). A later idle
 snapshot has 106,175 internal bytes free; this is a recovery snapshot, not a
-qualified minimum under playback load. FLX4 was absent
-in the first post-recovery snapshot; its physical reconnection and control/UAC
-acceptance remain pending. No listening or long-soak claim follows from recovery.
+qualified minimum under playback load. FLX4 was absent in the first snapshot;
+after reconnection the operator confirmed working controls. A subsequent API
+snapshot confirms FLX4 VID/PID 2B73/0045, MIDI IN/OUT and USB audio present,
+`pioneer_ddj_flx4` profile active and USB0 still mounted with ESP_OK.
+Recovery of the previous UI, network, storage and FLX4 controls is confirmed.
+No MAIN/cue listening or long-soak claim follows from USB audio presence.
 Public production, tags and channels are unchanged.
 
 ## H3 Hot Cues integration (software checkpoint)
