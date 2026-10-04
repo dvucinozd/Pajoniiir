@@ -419,7 +419,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     ddj_ota_manifest_t manifest;
     ddj_ota_manifest_result_t mrc = ddj_ota_manifest_parse(
         header, sizeof(header), DDJ_OTA_TARGET_P4, P4_OTA_ESP32P4_CHIP_ID,
-        "main-deck-p4", P4_OTA_MAX_IMAGE_SIZE, &manifest);
+        esp_app_get_description()->project_name, P4_OTA_MAX_IMAGE_SIZE, &manifest);
     if (mrc != DDJ_OTA_MANIFEST_OK) {
         ESP_LOGE(TAG, "manifest rejected: %s", ddj_ota_manifest_result_name(mrc));
         rc = ESP_ERR_INVALID_RESPONSE;

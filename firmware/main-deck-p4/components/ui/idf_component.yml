@@ -4,6 +4,6 @@
 
 dependencies:
   lvgl/lvgl:
-    version: ">=9.0.0"
+    version: "==9.5.0"
   idf:
     version: "==6.0.2"

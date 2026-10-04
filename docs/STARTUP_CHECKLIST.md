@@ -17,6 +17,11 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] [Package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md):
+  JC1060 bring-up is NOT RUN. Verify panel/revision, flash/PSRAM, USB roles,
+  touch/render, SD and Ethernet. Do not enable PCM5102A: pins overlap Ethernet.
+  ES8311 is a bring-up monitor, not DDJ-400 MAIN qualification.
+
 - [ ] [Package D](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md):
   confirm DDJ-400 initial SysEx, MIDI/LED behavior, CH1/CH2/MASTER selector,
   filter travel and reconnect on the exact candidate. NOT RUN. MASTER uses

@@ -355,6 +355,13 @@ static void ui_lvgl_display_event_cb(lv_event_t *e)
     }
 }
 
+static bool ui_board_map(ui_overlay_rect_t logical, int width, int height, ui_overlay_rect_t *physical)
+{
+    if (board_capabilities_get()->panel_rotation == 270)
+        return ui_overlay_map_ppa270(logical, width, height, physical);
+    return ui_overlay_map_native(logical, width, height, physical);
+}
+
 static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect_t *logical,
                                                            const ui_overlay_rect_t *physical,
                                                            const uint16_t *src,
@@ -413,7 +420,8 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
         .out.block_offset_y = (uint32_t)physical->y,
         .out.srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
 
-        .rotation_angle     = PPA_SRM_ROTATION_ANGLE_270,
+        .rotation_angle     = board_capabilities_get()->panel_rotation == 270 ?
+                              PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_0,
         .scale_x            = 1.0,
         .scale_y            = 1.0,
         .rgb_swap           = 0,
@@ -462,7 +470,7 @@ static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
         .h = area_h,
     };
     ui_overlay_rect_t physical;
-    if (!ui_overlay_map_ppa270(logical, s_hor_res, s_ver_res, &physical)) {
+    if (!ui_board_map(logical, s_hor_res, s_ver_res, &physical)) {
         ESP_LOGW(TAG,
                  "LVGL flush area outside canvas: x=%d y=%d w=%d h=%d",
                  logical.x, logical.y, logical.w, logical.h);
@@ -790,7 +798,7 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *log
     }
 
     ui_overlay_rect_t physical;
-    if (!ui_overlay_map_ppa270(*logical, s_hor_res, s_ver_res, &physical)) {
+    if (!ui_board_map(*logical, s_hor_res, s_ver_res, &physical)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -819,7 +827,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
     }
 
     ui_overlay_rect_t physical;
-    if (!ui_overlay_map_ppa270(*logical, s_hor_res, s_ver_res, &physical)) {
+    if (!ui_board_map(*logical, s_hor_res, s_ver_res, &physical)) {
         return ESP_ERR_INVALID_ARG;
     }
 

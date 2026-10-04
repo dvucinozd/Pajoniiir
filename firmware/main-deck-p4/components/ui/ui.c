@@ -36,6 +36,7 @@ void deck_core_test_apply_event(const ctrl_event_t *event);
 #ifndef WIN32
 // ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
 #include "audio_engine.h"
+#include "board_capabilities.h"
 #include "control_link.h"
 #include "media_catalog.h"
 #include "esp_heap_caps.h"
@@ -49,8 +50,8 @@ void deck_core_test_apply_event(const ctrl_event_t *event);
 // uses the ESP32-P4 PPA (Pixel Processing Accelerator) to rotate each rectangle
 // into the panel's MIPI-DSI frame buffer. LVGL's own software rotation is
 // unusable here, so we rotate in hardware.
-#define UI_HOR_RES   800   // logical landscape width  (LVGL canvas)
-#define UI_VER_RES   480   // logical landscape height
+#define UI_HOR_RES   (board_capabilities_get()->display_width)
+#define UI_VER_RES   (board_capabilities_get()->display_height)
 #define UI_TOPBAR_H   46
 #define UI_CONTENT_Y  UI_TOPBAR_H
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
@@ -975,7 +976,7 @@ esp_err_t ui_init(void) {
     s_root_container = lv_obj_create(s_main_screen);
     lv_obj_remove_style_all(s_root_container);
     lv_obj_add_style(s_root_container, &s_style_root, LV_PART_MAIN);
-    lv_obj_set_size(s_root_container, 800, 480);
+    lv_obj_set_size(s_root_container, UI_HOR_RES, UI_VER_RES);
 
     // Initialize mock database system (if simulator)
 #ifdef WIN32

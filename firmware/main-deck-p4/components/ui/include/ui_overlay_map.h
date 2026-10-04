@@ -20,6 +20,9 @@ bool ui_overlay_map_ppa270(ui_overlay_rect_t logical,
                            int logical_h,
                            ui_overlay_rect_t *physical);
 
+bool ui_overlay_map_native(ui_overlay_rect_t logical, int logical_w,
+                           int logical_h, ui_overlay_rect_t *physical);
+
 void ui_overlay_i8_to_rgb565(const uint8_t *src,
                              int src_stride_px,
                              uint16_t *dst,

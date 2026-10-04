@@ -1,0 +1,13 @@
+/* JC1060 entrypoint: common P4 startup/core, board-local Ethernet bring-up. */
+#define app_main pajoniiir_common_app_main
+#include "../../main-deck-p4/main/app_main.c"
+#undef app_main
+#include "board_ethernet.h"
+void app_main(void)
+{
+    /* PA must be low before network/NVS work, as on JC4880. */
+    ESP_ERROR_CHECK(bsp_audio_force_safe_boot_state());
+    esp_err_t rc = board_ethernet_start();
+    if (rc != ESP_OK) ESP_LOGE("jc1060", "Ethernet unavailable: %s", esp_err_to_name(rc));
+    pajoniiir_common_app_main();
+}

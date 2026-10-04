@@ -17,6 +17,14 @@ with physical acceptance pending; the production baseline above is unchanged.
 
 ## High-Level Flow
 
+Development package E adds `main-deck-jc1060` with an explicit shared-component
+list and a thin wrapper around common P4 startup. `board_adapter` owns immutable
+capabilities and shared touch/codec/SD peripherals; display BSP and Ethernet
+startup remain board-specific. The JC4880 BSP is absent from the JC1060 build.
+The core is not copied. Both signed-manifest and application descriptor checks
+use the running project identity. See [E software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md);
+new-board physical acceptance remains NOT RUN.
+
 ```text
 Pioneer DDJ-FLX4
     |

@@ -104,6 +104,15 @@ int main(void)
     assert(strcmp(ddj_ota_manifest_result_name(DDJ_OTA_MANIFEST_BAD_SIGNATURE),
                   "invalid manifest signature") == 0);
 
+    /* Both products share silicon/signing keys, but never a signed project. */
+    make_header(header, DDJ_OTA_TARGET_P4, 0x0012u, "main-deck-jc1060");
+    assert(parse_p4(header, sizeof(header), &manifest) == DDJ_OTA_MANIFEST_WRONG_PROJECT);
+    assert(ddj_ota_manifest_parse(header, sizeof(header), DDJ_OTA_TARGET_P4,
+           0x0012u, "main-deck-jc1060", 0x380000u, &manifest) == DDJ_OTA_MANIFEST_OK);
+    make_header(header, DDJ_OTA_TARGET_P4, 0x0012u, "main-deck-p4");
+    assert(ddj_ota_manifest_parse(header, sizeof(header), DDJ_OTA_TARGET_P4,
+           0x0012u, "main-deck-jc1060", 0x380000u, &manifest) == DDJ_OTA_MANIFEST_WRONG_PROJECT);
+
     puts("ota_manifest tests passed");
     return 0;
 }

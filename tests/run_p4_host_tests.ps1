@@ -2609,6 +2609,17 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_overlay_map"
+        Dir = "tests/ui_overlay_map"
+        Target = "test_ui_overlay_map.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_overlay_map.exe", "test_ui_overlay_map.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overlay_map.c"
+        )
+    },
+    @{
         Name = "ui_settings"
         Dir = "tests/ui_settings"
         Target = "test_ui_settings.exe"
@@ -3282,7 +3293,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 microSD shares the IDF6 SDMMC controller already owned by ESP-Hosted" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/board_adapter/board_peripherals.c") `
     -LiteralPatterns @(
         "CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE",
         "bsp_sdmmc_host_already_initialized",
@@ -3367,7 +3378,7 @@ Assert-FilePatternsOrdered `
 
 Assert-FileContains `
     -Name "p4 retired speaker route is compile-time rejected and keeps PA low" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/board_adapter/board_peripherals.c") `
     -LiteralPatterns @("BSP_SPEAKER_ROUTE_RETIRED", "gpio_set_level(BSP_AUDIO_PA_GPIO, 0)", "ESP_ERR_NOT_SUPPORTED")
 
 Assert-FileContains `

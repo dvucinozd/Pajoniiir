@@ -1,0 +1,4 @@
+dependencies:
+  idf: "==6.0.2"
+  espressif/esp_lcd_touch_gt911: "==1.2.0~3"
+  espressif/esp_codec_dev: "==1.6.2"

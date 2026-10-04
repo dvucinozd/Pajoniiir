@@ -15,7 +15,9 @@ includes the bounded MP3 frame index and jog profile producers. Packages B and C
 are software verified on JC4880; physical playback, artwork and touch acceptance
 remain NOT RUN. [Package D software closure](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md)
 covers v4 parser/validators/runtime/compiler, DDJ-400 MIDI and coordinated Web
-export. Next is board package E; DDJ-400 UAC belongs to F.
+export. [Board package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
+adds JC1060 BSP/entrypoint, shared peripherals, separate lock and CI build.
+Physical bring-up remains NOT RUN; DDJ-400 UAC belongs to F and layouts to H.
 
 - Production tag: `M2.4`
 - Frozen source: `9d0c954fc502ae237fabedb764368cd9b10f10dc`

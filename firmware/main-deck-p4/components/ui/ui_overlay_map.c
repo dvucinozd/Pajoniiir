@@ -8,8 +8,8 @@ bool ui_overlay_map_ppa270(ui_overlay_rect_t logical,
     if (!physical || logical_w <= 0 || logical_h <= 0 ||
         logical.w <= 0 || logical.h <= 0 ||
         logical.x < 0 || logical.y < 0 ||
-        logical.x + logical.w > logical_w ||
-        logical.y + logical.h > logical_h) {
+        logical.x > logical_w - logical.w ||
+        logical.y > logical_h - logical.h) {
         return false;
     }
 
@@ -17,6 +17,17 @@ bool ui_overlay_map_ppa270(ui_overlay_rect_t logical,
     physical->y = logical.x;
     physical->w = logical.h;
     physical->h = logical.w;
+    return true;
+}
+
+bool ui_overlay_map_native(ui_overlay_rect_t logical, int logical_w,
+                           int logical_h, ui_overlay_rect_t *physical)
+{
+    if (!physical || logical_w <= 0 || logical_h <= 0 ||
+        logical.x < 0 || logical.y < 0 || logical.w <= 0 || logical.h <= 0 ||
+        logical.x > logical_w - logical.w || logical.y > logical_h - logical.h)
+        return false;
+    *physical = logical;
     return true;
 }
 

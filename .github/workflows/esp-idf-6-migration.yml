@@ -25,6 +25,7 @@ on:
     paths:
       - "firmware/**"
       - "tests/**"
+      - "tools/check_board_build.py"
       - ".github/workflows/esp-idf-6-migration.yml"
   workflow_dispatch:
 
@@ -271,3 +272,140 @@ jobs:
             firmware/main-deck-p4/build/BUILD_PROVENANCE.txt
             firmware/main-deck-p4/build/SHA256SUMS.txt
             firmware/main-deck-p4/dependencies.lock
+
+  build-jc1060:
+    name: ESP32-P4 JC1060 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Build main deck and verify silicon target
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          set +e
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-jc1060 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              # The pinned esp-usb git components were resolved with CRLF
+              # worktree files. Component Manager hashes the checked-out
+              # bytes, so make its Linux clone reproduce the committed lock
+              # instead of rejecting the untouched dependency as corrupted.
+              git config --global core.autocrlf true
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              test -f build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              echo "Verified ESP32-P4 production silicon gate: pre-v3 selector enabled, minimum revision 1.0."
+              idf.py build
+            ' > jc1060-idf-build.log 2>&1
+          code=$?
+          # The IDF container runs as root and creates build/ through the bind
+          # mount. Return ownership before runner-native verification and
+          # provenance generation.
+          if [ -d firmware/main-deck-jc1060/build ]; then
+            sudo chown -R "$(id -u):$(id -g)" firmware/main-deck-jc1060/build
+          fi
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped|CONFIG_ESP32P4)' jc1060-idf-build.log | tail -n 90 || true
+            tail -n 25 jc1060-idf-build.log
+          else
+            tail -n 30 jc1060-idf-build.log
+          fi
+          exit $code
+
+      - name: Verify board isolation and embedded identity
+        run: python3 tools/check_board_build.py --build firmware/main-deck-jc1060/build --project main-deck-jc1060
+
+      - name: Verify board isolation and embedded identity
+        run: python3 tools/check_board_build.py --build firmware/main-deck-p4/build --project main-deck-p4
+
+      - name: Verify committed dependency lock is unchanged
+        run: |
+          if ! git diff --exit-code -- firmware/main-deck-jc1060/dependencies.lock; then
+            echo "::error::dependencies.lock changed during the build; commit the new resolution or pin the drifting component"
+            exit 1
+          fi
+
+      - name: Verify the P4 resampler object has no double helpers
+        run: |
+          docker run --rm -e HOME=/tmp -v "$PWD:/project" -w /project/firmware/main-deck-jc1060 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              object=build/esp-idf/audio_engine/CMakeFiles/__idf_audio_engine.dir/audio_resampler.c.obj
+              test -f "$object"
+              undefined="$(riscv32-esp-elf-nm -u "$object")"
+              if printf "%s\n" "$undefined" | grep -Eq "__[[:alnum:]_]*df[[:alnum:]_]*$"; then
+                echo "::error::audio_resampler.c.obj references double-precision runtime helpers"
+                printf "%s\n" "$undefined" | grep -E "__[[:alnum:]_]*df[[:alnum:]_]*$"
+                exit 1
+              fi
+              echo "P4 resampler object is free of double-precision runtime helpers."
+            '
+
+      # A --wrap that fails to bind is worse than no wrapper: the build succeeds,
+      # the CMake text still says the shim is there, and the panic comes back on
+      # hardware. Check the linked image rather than the build files - the
+      # wrapper must be present and the unwrapped original must be gone.
+      - name: Verify the USB DWC decoder wrap bound in the linked image
+        run: |
+          docker run --rm -e HOME=/tmp -v "$PWD:/project" -w /project/firmware/main-deck-jc1060 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              elf=build/main-deck-jc1060.elf
+              test -f "$elf"
+              if ! riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"; then
+                echo "::error::__wrap_usb_dwc_hal_chan_decode_intr is not in the image; the --wrap did not bind"
+                exit 1
+              fi
+              if riscv32-esp-elf-nm "$elf" | grep -q " T usb_dwc_hal_chan_decode_intr$"; then
+                echo "::error::the unwrapped DWC decoder is still linked; the BNA assert is reachable"
+                exit 1
+              fi
+              echo "USB DWC decoder wrap verified in the linked image."
+            '
+
+      - name: Generate P4 build provenance
+        run: |
+          build_dir=firmware/main-deck-jc1060/build
+          lock=firmware/main-deck-jc1060/dependencies.lock
+          find "$build_dir" -maxdepth 1 -type f \
+            \( -name '*.bin' -o -name '*.elf' -o -name '*.map' \) \
+            -print0 | sort -z | xargs -0 sha256sum > "$build_dir/SHA256SUMS.txt"
+          {
+            echo "git_commit=$GITHUB_SHA"
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "idf_version=ESP-IDF v6.0.2"
+            echo "idf_image=$IDF_IMAGE"
+            echo "dependencies_lock_sha256=$(sha256sum "$lock" | awk '{print $1}')"
+            echo "firmware_sha256_manifest=SHA256SUMS.txt"
+          } > "$build_dir/BUILD_PROVENANCE.txt"
+
+      - name: Upload P4 build log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jc1060-build-log
+          path: jc1060-idf-build.log
+
+      - name: Upload P4 binaries
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: main-deck-jc1060-idf-6.0.2
+          path: |
+            firmware/main-deck-jc1060/build/*.bin
+            firmware/main-deck-jc1060/build/*.elf
+            firmware/main-deck-jc1060/build/*.map
+            firmware/main-deck-jc1060/build/BUILD_PROVENANCE.txt
+            firmware/main-deck-jc1060/build/SHA256SUMS.txt
+            firmware/main-deck-jc1060/dependencies.lock

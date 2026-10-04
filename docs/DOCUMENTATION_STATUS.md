@@ -14,6 +14,10 @@ active product.
 Compatibility names such as `control_link`, `S3CP` and `profile.s3bin` remain
 in current code/file formats. They do not imply an active S3 processor.
 
+The isolated development branch also has a separate JC1060 target sharing
+the P4 core with its own identity, BSP, lock and CI build. [Package E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
+does not qualify or release this board. All JC1060 physical gates are NOT RUN.
+
 ## Production release
 
 The isolated fork-improvements branch has software-verified packages A, B and

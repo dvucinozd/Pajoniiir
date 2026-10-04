@@ -66,6 +66,15 @@ static void test_converts_i8_canvas_to_rgb565_with_stride(void)
 
 int main(void)
 {
+    ui_overlay_rect_t native;
+    assert(ui_overlay_map_native((ui_overlay_rect_t){0, 0, 1024, 600}, 1024, 600, &native));
+    assert(native.x == 0 && native.y == 0 && native.w == 1024 && native.h == 600);
+    assert(ui_overlay_map_native((ui_overlay_rect_t){1000, 580, 24, 20}, 1024, 600, &native));
+    assert(native.x == 1000 && native.y == 580);
+    assert(!ui_overlay_map_native((ui_overlay_rect_t){1001, 580, 24, 20}, 1024, 600, &native));
+    assert(!ui_overlay_map_native((ui_overlay_rect_t){0, 0, 1, 1}, 0, 600, &native));
+    assert(!ui_overlay_map_native((ui_overlay_rect_t){0, 0, 1, 1}, 1024, 600, NULL));
+    assert(!ui_overlay_map_ppa270((ui_overlay_rect_t){2147483647, 0, 1, 1}, 800, 480, &native));
     test_full_landscape_frame_maps_to_full_portrait_panel();
     test_waveform_rect_rotates_into_panel_coordinates();
     test_rejects_rect_outside_logical_canvas();

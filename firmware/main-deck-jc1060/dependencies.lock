@@ -34,7 +34,7 @@ dependencies:
       type: service
     version: 1.6.2
   espressif/esp_hosted:
-    component_hash: 8ca10092db3e8c8122540d907ab705805a269377d31192f087ba1def2f5f4f91
+    component_hash: f970ce453bcd6e779e067de04488aa6212295f4a607f041d038844c8cf8edea3
     dependencies:
     - name: idf
       require: private
@@ -42,9 +42,9 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.12.12
-  espressif/esp_lcd_st7701:
-    component_hash: 3fb061112bfe5402dcf5e09ff7e7f5b09a96b9a3fdd81c59d69996626b4dbc2f
+    version: 2.12.11
+  espressif/esp_lcd_jd9165:
+    component_hash: 1eaeedd3fef31f7a48e932b17833216efe0b87238212cd7468c2e60f7236598c
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -52,12 +52,11 @@ dependencies:
       version: 0.*
     - name: idf
       require: private
-      version: '>=5.4'
+      version: '>=5.3'
     source:
       registry_url: https://components.espressif.com/
       type: service
     targets:
-    - esp32s3
     - esp32p4
     version: 2.0.2
   espressif/esp_lcd_touch:
@@ -194,7 +193,7 @@ dependencies:
 direct_dependencies:
 - espressif/esp_codec_dev
 - espressif/esp_hosted
-- espressif/esp_lcd_st7701
+- espressif/esp_lcd_jd9165
 - espressif/esp_lcd_touch_gt911
 - espressif/esp_wifi_remote
 - espressif/mdns
@@ -202,6 +201,6 @@ direct_dependencies:
 - idf
 - lvgl/lvgl
 - usb
-manifest_hash: dc256e6408d2a41e49fd25f194aeb4ff1d09726f11124157510dcfcbf01314c2
+manifest_hash: ee15bdcf455af7bd30679f6f011fc7a1478add501ae7a1012ef5a649fe5f4626
 target: esp32p4
 version: 3.0.0

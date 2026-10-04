@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "audio_engine.h"
 #include "audio_uac_health.h"
 #include "media_catalog.h"
@@ -700,7 +701,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     ddj_ota_manifest_t manifest;
     ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
         manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_P4,
-        P4_OTA_ESP32P4_CHIP_ID, "main-deck-p4", P4_OTA_MAX_IMAGE_SIZE,
+        P4_OTA_ESP32P4_CHIP_ID, esp_app_get_description()->project_name, P4_OTA_MAX_IMAGE_SIZE,
         &manifest);
     if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
         free(buffer);

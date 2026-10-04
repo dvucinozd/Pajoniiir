@@ -24,7 +24,7 @@ static bool s_image_sha_active;
 static uint8_t s_expected_sha256[DDJ_OTA_SHA256_SIZE];
 static char s_expected_version[DDJ_OTA_VERSION_SIZE];
 
-#define P4_OTA_PROJECT_NAME "main-deck-p4"
+#define P4_OTA_PROJECT_NAME (esp_app_get_description()->project_name)
 
 static void copy_text(char *dst, size_t dst_size, const char *src)
 {

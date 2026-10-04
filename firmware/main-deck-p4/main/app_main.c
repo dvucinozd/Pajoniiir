@@ -397,7 +397,7 @@ void app_main(void)
     // the AP + web server come up asynchronously when the saved setting is on
     // (or when the user flips the Settings switch), so boot is never blocked on
     // the SDIO/C6 bring-up.
-    esp_err_t wifi_rc = wifi_link_init();
+    esp_err_t wifi_rc = board_capabilities_get()->wifi ? wifi_link_init() : ESP_OK;
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init: %s", esp_err_to_name(wifi_rc));
     }
@@ -471,11 +471,11 @@ void app_main(void)
     web_server_set_probe_hooks(app_probe_start, app_probe_status);
 
     deck_core_set_activity_cb(ui_activity_notice);
-    ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
+    ui_settings_set_wifi_toggle_cb(board_capabilities_get()->wifi ? wifi_link_request_enable : NULL);
 #if CONFIG_AUDIO_RECORDER_ENABLED
     ui_settings_set_recording_toggle_cb(on_recording_toggle);
 #endif
-    if (app_settings_get().wifi_remote) {
+    if (board_capabilities_get()->wifi && app_settings_get().wifi_remote) {
         ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
         wifi_link_request_enable(true);
     }
