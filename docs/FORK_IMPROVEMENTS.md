@@ -17,7 +17,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | --- | --- | --- |
 | A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B6 software verified; cue/transport and remaining duration work pending |
-| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C3 parser, catalog and JC4880 playlist UI software verified; JPEG worker and color rendering pending |
+| C | Hierarchical playlists, bounded artwork, PWV4 | C1-C4 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Pending |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | Pending |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
@@ -319,6 +319,36 @@ passed. Application size was 2,517,632 bytes, 1,152,384 below the `0x380000`
 budget; the dependency lock did not change. The changed Library screenshots
 were visually reviewed before replacing their baselines. Real USB browse,
 touch and playback: **NOT RUN**.
+
+## C4: Bounded artwork worker and PWV4 presentation
+
+The Library now shows 40x40 RGB565 covers for the visible rows. A low-priority
+core-1 worker resolves an artwork path only for the current track key and
+catalog generation, reads at most 64 KiB in 4 KiB media-gated chunks, probes
+the JPEG header and decodes into a fixed 24-slot PSRAM thumbnail cache. An
+epoch cancels old page requests. The LVGL task alone copies a completed cover
+to its own row image buffer; a missing, oversized, corrupt or unsupported JPEG
+does not block audio loading. The worker pauses while a track load is active.
+Bounded queue/cache/read/decode statistics are available from the artwork API.
+
+The existing Overview mini waveform now renders optional PWV4 heights with
+band-based colors in its ten-color palette. PWAV/PWV3 remains the fallback
+when PWV4 is absent, invalid or silent. Existing high-resolution waveform
+and playback paths are unchanged. The JPEG probe, thumbnail decoder, worker
+and fixture generator are adapted from donor `428b97dd` under the repository's
+MIT license; the current P4 catalog identity and media gate replace donor
+board/network dependencies.
+
+The host runner covers malformed JPEG headers and PWV4 resampling. The 800x480
+simulator decodes baseline, grayscale, progressive and truncated synthetic
+JPEGs; it displays covers on Library rows and captures the PWV4 overview.
+The changed screenshots were visually reviewed before updating the eleven-capture
+baseline manifest. Full host runner, simulator, ESP-IDF 6.0.2 P4 build,
+dependency-lock check and binary budget pass. Real USB artwork, removal during
+decode, touch fluidity and dual-deck playback on JC4880: **NOT RUN**.
+
+Package C is **software verified for the current JC4880 target**. JC1060 UI
+and physical acceptance belong to later packages and remain **NOT RUN**.
 
 ## Provenance and rollback
 

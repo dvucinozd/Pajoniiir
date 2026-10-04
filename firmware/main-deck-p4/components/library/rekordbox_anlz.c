@@ -694,6 +694,45 @@ esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta)
     return ESP_OK;
 }
 
+bool anlz_color_preview_column(const uint8_t *preview, uint32_t len,
+                               uint32_t col, uint32_t cols,
+                               anlz_color_column_t *out)
+{
+    const uint32_t n = len / ANLZ_COLOR_PREVIEW_ENTRY;
+    if (!out || !preview || n == 0u || cols == 0u || col >= cols) return false;
+    uint32_t from = (uint32_t)((uint64_t)col * n / cols);
+    uint32_t to = (uint32_t)((uint64_t)(col + 1u) * n / cols);
+    if (to <= from) to = from + 1u;
+    uint8_t height = 0u;
+    uint32_t sum[3] = {0u, 0u, 0u};
+    for (uint32_t i = from; i < to; ++i) {
+        const uint8_t *entry = &preview[i * ANLZ_COLOR_PREVIEW_ENTRY];
+        if (entry[0] > height) height = entry[0];
+        sum[0] += entry[3];
+        sum[1] += entry[4];
+        sum[2] += entry[5];
+    }
+    uint32_t top = sum[0] > sum[1] ? sum[0] : sum[1];
+    if (sum[2] > top) top = sum[2];
+    *out = (anlz_color_column_t){
+        .height = height,
+        .r = top ? (uint8_t)(sum[0] * 255u / top) : 0u,
+        .g = top ? (uint8_t)(sum[1] * 255u / top) : 0u,
+        .b = top ? (uint8_t)(sum[2] * 255u / top) : 0u,
+    };
+    return true;
+}
+
+uint8_t anlz_color_preview_peak(const uint8_t *preview, uint32_t len)
+{
+    uint8_t peak = 0u;
+    for (uint32_t i = 0; preview && i + ANLZ_COLOR_PREVIEW_ENTRY <= len;
+         i += ANLZ_COLOR_PREVIEW_ENTRY) {
+        if (preview[i] > peak) peak = preview[i];
+    }
+    return peak;
+}
+
 esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out)
 {
     if (!src || !out || src == out) {

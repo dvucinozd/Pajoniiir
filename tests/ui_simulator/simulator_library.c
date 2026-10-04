@@ -314,6 +314,20 @@ esp_err_t library_load_anlz(library_track_t *track)
     s_current_meta.has_waveform_low = true;
     memcpy(track->waveform_low, s_current_meta.waveform_low, ANLZ_WAVEFORM_LOW_LEN);
 
+    if (track->track_id == 1003u) {
+        s_current_meta.color_preview_len = 400u * ANLZ_COLOR_PREVIEW_ENTRY;
+        s_current_meta.color_preview = malloc(s_current_meta.color_preview_len);
+        if (!s_current_meta.color_preview) return ESP_ERR_NO_MEM;
+        for (uint32_t col = 0; col < 400u; ++col) {
+            uint8_t *entry = &s_current_meta.color_preview[col * ANLZ_COLOR_PREVIEW_ENTRY];
+            entry[0] = (uint8_t)(20u + (col % 24u));
+            entry[1] = entry[2] = 0u;
+            entry[3] = col < 130u ? 40u : 2u;
+            entry[4] = col >= 130u && col < 270u ? 40u : 2u;
+            entry[5] = col >= 270u ? 40u : 2u;
+        }
+    }
+
     s_current_meta.cue_count = 2;
     s_current_meta.cues[0] = (anlz_cue_t){
         .type = ANLZ_CUE_SINGLE, .index = 0, .start_ms = beat_ms * 8u,

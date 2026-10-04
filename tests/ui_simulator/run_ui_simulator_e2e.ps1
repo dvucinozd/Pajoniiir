@@ -118,6 +118,7 @@ $Captures = @(
     'library_playlist_root',
     'library_playlist_folder',
     'library_playlist_tracks',
+    'overview_color_pwv4',
     'hot_cues',
     'settings',
     'screensaver',

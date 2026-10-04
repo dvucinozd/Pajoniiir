@@ -29,6 +29,11 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] Confirm the expected Rekordbox library count before relying on the media.
 - [ ] For a reconnect test, record which root was removed and avoid accidental
   movement of the other cable.
+- [ ] For package C on the fork-improvements branch, compare playlist order and
+  nested navigation with the real export. Browse quickly during dual-deck
+  playback; verify artwork matches each track after page changes and USB
+  removal, PWV4 falls back on missing/corrupt EXT, and MAIN/cue remain clean.
+  These physical checks are **NOT RUN**.
 - [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
   playing destination deck rejects touch, FLX4 and Web Remote LOAD without
   changing its track; pause/stop that deck before loading another track.

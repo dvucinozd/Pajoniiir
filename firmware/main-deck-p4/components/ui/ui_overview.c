@@ -1740,6 +1740,43 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     panel->last_wave_window_ms = window_ms;
 }
 
+/* PWV4 is drawn into the existing ten-colour I8 mini palette. The hue follows
+ * the dominant Rekordbox frequency bands; PWAV/PWV3 remains the fallback. */
+static bool ui_overview_draw_color_mini(uint8_t *pixels, int stride,
+                                        int width, int height,
+                                        const anlz_metadata_t *meta)
+{
+    if (!pixels || !meta || !meta->color_preview || width <= 0 ||
+        height <= 0 || stride < width) return false;
+    uint8_t peak = anlz_color_preview_peak(meta->color_preview,
+                                           meta->color_preview_len);
+    if (!peak) return false;
+    memset(pixels, 0, (size_t)stride * height);
+    for (int x = 0; x < width; x += 2) {
+        anlz_color_column_t col;
+        if (!anlz_color_preview_column(meta->color_preview,
+                                       meta->color_preview_len,
+                                       (uint32_t)x, (uint32_t)width, &col))
+            continue;
+        int bar_height = (int)col.height * (height - 2) / peak;
+        if (col.height && bar_height == 0) bar_height = 1;
+        uint8_t color = 4; /* white if no band data */
+        if (col.r || col.g || col.b) {
+            if (col.r >= col.g && col.r >= col.b)
+                color = col.g * 2u >= col.r ? 6 :
+                        (col.b * 2u >= col.r ? 7 : 1);
+            else if (col.g >= col.b)
+                color = col.b * 2u >= col.g ? 3 : 5;
+            else
+                color = col.r * 2u >= col.b ? 7 :
+                        (col.g * 2u >= col.b ? 3 : 2);
+        }
+        for (int y = height - bar_height; y < height; ++y)
+            pixels[y * stride + x] = color;
+    }
+    return true;
+}
+
 /* Render the overview waveform to the canvas once at track load. */
 void ui_overview_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
@@ -1782,9 +1819,10 @@ void ui_overview_load_waveform_data(uint8_t deck,
         const int MW = OVERVIEW_MINI_CV_W;
         const int MH = OVERVIEW_MINI_CV_H;
         const int MS = panel->mini_wave_stride_px;
-        ui_overview_renderer_draw_mini(mini_buf, MS, MW, MH,
-                                       wave_valid ? &wave_source : NULL,
-                                       duration_ms);
+        if (!ui_overview_draw_color_mini(mini_buf, MS, MW, MH, meta))
+            ui_overview_renderer_draw_mini(mini_buf, MS, MW, MH,
+                                           wave_valid ? &wave_source : NULL,
+                                           duration_ms);
 
         ui_overview_invalidate_mini_wave_range(panel, 0, OVERVIEW_MINI_CV_W);
     }

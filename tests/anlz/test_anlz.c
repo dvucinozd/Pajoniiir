@@ -666,6 +666,27 @@ static void test_optional_pwv4_color_preview(void)
     remove(COLOR_EXT);
 }
 
+static void test_pwv4_color_columns(void)
+{
+    TEST("PWV4 columns resample heights and band colors");
+    const uint8_t preview[12] = {
+        20, 0, 0, 10, 0, 0,
+        40, 0, 0, 0, 20, 0,
+    };
+    anlz_color_column_t col = {0};
+    CHECK(anlz_color_preview_peak(preview, sizeof(preview)) == 40,
+          "PWV4 peak incorrect");
+    CHECK(anlz_color_preview_column(preview, sizeof(preview), 0, 2, &col) &&
+          col.height == 20 && col.r == 255 && col.g == 0,
+          "PWV4 red column incorrect");
+    CHECK(anlz_color_preview_column(preview, sizeof(preview), 1, 2, &col) &&
+          col.height == 40 && col.g == 255 && col.r == 0,
+          "PWV4 green column incorrect");
+    CHECK(!anlz_color_preview_column(preview, 5, 0, 2, &col) &&
+          !anlz_color_preview_column(preview, sizeof(preview), 2, 2, &col),
+          "invalid PWV4 column accepted");
+}
+
 int main(int argc, char *argv[])
 {
     printf("Pajoniiir ANLZ Parser Test\n");
@@ -681,6 +702,7 @@ int main(int argc, char *argv[])
     /* Synthetic unit test mode */
     run_unit_tests();
     test_optional_pwv4_color_preview();
+    test_pwv4_color_columns();
 
     printf("\n=== Strict truncation corpus ===\n");
     TEST("DAT header/section/payload truncations rejected transactionally");

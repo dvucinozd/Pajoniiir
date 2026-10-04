@@ -7,6 +7,8 @@
 #include "lvgl.h"
 #include "ui.h"
 #include "ui_library.h"
+#include "ui_artwork_thumb.h"
+#include "artwork_fixture.h"
 #include "splash_screen.h"
 
 extern void ui_simulator_deck_set_playing(bool playing);
@@ -18,6 +20,29 @@ extern void ui_simulator_deck_set_playing(bool playing);
 static uint32_t s_framebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 static lv_display_t *s_display;
 static int s_failures;
+static void fail(const char *message);
+static ui_artwork_thumb_work_t s_art_work;
+static ui_artwork_thumb_t s_art_result;
+
+static void check_artwork_decoder(void)
+{
+    if (!ui_artwork_thumb_decode(ART_FIXTURE_QUAD, sizeof ART_FIXTURE_QUAD,
+                                 &s_art_work, &s_art_result)) {
+        fail("baseline artwork JPEG did not decode");
+        return;
+    }
+    const int n = UI_ARTWORK_ROW_PX;
+    uint16_t red = s_art_result.row[(n / 4) * n + n / 4];
+    uint16_t blue = s_art_result.row[(3 * n / 4) * n + n / 4];
+    if ((red & 0xf800u) < 0xd000u || (blue & 0x001fu) < 26u)
+        fail("artwork JPEG colors were not preserved");
+    if (ui_artwork_thumb_decode(ART_FIXTURE_PROGRESSIVE,
+                                sizeof ART_FIXTURE_PROGRESSIVE,
+                                &s_art_work, &s_art_result) ||
+        ui_artwork_thumb_decode(ART_FIXTURE_QUAD, 200,
+                                &s_art_work, &s_art_result))
+        fail("unsupported or truncated artwork JPEG was accepted");
+}
 
 static void flush_cb(lv_display_t *display, const lv_area_t *area,
                      uint8_t *pixels)
@@ -152,6 +177,8 @@ int main(int argc, char **argv)
     lv_display_set_flush_cb(s_display, flush_cb);
     lv_display_set_default(s_display);
 
+    check_artwork_decoder();
+
     if (ui_init() != ESP_OK) {
         fail("ui_init failed");
         return 1;
@@ -194,6 +221,10 @@ int main(int argc, char **argv)
     if (!deck_core_get_loaded_track(CTRL_DECK_1, &playlist_track) ||
         playlist_track.track_key != 1003u)
         fail("playlist order did not select export's first track");
+    if (!click_label("OVERVIEW")) fail("could not inspect PWV4 overview");
+    pump(64);
+    save_ppm(argv[1], "overview_color_pwv4");
+    if (!click_label("LIBRARY")) fail("could not return to playlist");
     if (!click_label("BACK") || !click_label("BACK") ||
         !click_label("BACK")) fail("playlist hierarchy did not return to all tracks");
 

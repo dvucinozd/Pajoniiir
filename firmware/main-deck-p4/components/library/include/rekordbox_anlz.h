@@ -173,6 +173,18 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out);
  */
 esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta);
 
+/* Resample the six-byte PWV4 columns to a display width. Height uses the
+ * loudest entry; RGB represents the normalized bass/mid/treble mix. */
+typedef struct {
+    uint8_t height;
+    uint8_t r, g, b;
+} anlz_color_column_t;
+
+bool anlz_color_preview_column(const uint8_t *preview, uint32_t len,
+                               uint32_t col, uint32_t cols,
+                               anlz_color_column_t *out);
+uint8_t anlz_color_preview_peak(const uint8_t *preview, uint32_t len);
+
 /** Deep-copy metadata, including heap-owned beats and high-resolution
  * waveform data. `out` must not already own allocations. */
 esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out);

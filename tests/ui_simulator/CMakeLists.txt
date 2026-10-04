@@ -33,6 +33,8 @@ add_executable(ui_simulator_e2e
     "${UI_DIR}/Musieer_80.c"
     "${UI_DIR}/Musieer_48.c"
     "${UI_DIR}/ui_library.c"
+    "${UI_DIR}/ui_artwork_thumb.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/simulator_artwork.c"
     "${UI_DIR}/ui_load_gate.c"
     "${UI_DIR}/ui_overview.c"
     "${UI_DIR}/ui_active_deck_leds.c"

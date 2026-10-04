@@ -2796,6 +2796,18 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_artwork_jpeg"
+        Dir = "tests/ui_artwork_jpeg"
+        Target = "test_ui_artwork_jpeg.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_artwork_jpeg.exe",
+            "test_ui_artwork_jpeg.c",
+            "../../firmware/main-deck-p4/components/ui/ui_artwork_jpeg.c"
+        )
+    },
+    @{
         Name = "ui_overview_wave_cache"
         Dir = "tests/ui_overview_wave_cache"
         Target = "test_ui_overview_wave_cache.exe"

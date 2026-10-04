@@ -2,6 +2,13 @@
 #include "ui_diagnostics.h"
 #include "ui_event_counter.h"
 #include "ui_load_gate.h"
+#ifndef UI_LIBRARY_HOST_TEST
+#include "ui_artwork.h"
+#include "ui_artwork_thumb.h"
+#ifndef WIN32
+#include "esp_heap_caps.h"
+#endif
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -198,6 +205,36 @@ static uint32_t *s_browse_track_keys;
 static size_t s_browse_track_count;
 static uint32_t s_browse_generation;
 static uint32_t s_page_track_keys[UI_LIBRARY_PAGE_ROWS];
+static bool ui_library_track_load_busy(void);
+static lv_obj_t *s_row_art[UI_LIBRARY_PAGE_ROWS];
+static lv_image_dsc_t s_row_art_dsc[UI_LIBRARY_PAGE_ROWS];
+static uint16_t *s_row_art_pixels;
+static uint32_t s_row_art_key[UI_LIBRARY_PAGE_ROWS];
+
+static void ui_library_update_artwork(void)
+{
+    ui_artwork_set_paused(ui_library_track_load_busy());
+    (void)ui_artwork_poll();
+    if (s_active_tab != 1 || !s_row_art_pixels) return;
+    for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row) {
+        uint32_t key = s_page_track_keys[row];
+        if (!key) {
+            lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
+            s_row_art_key[row] = 0;
+            continue;
+        }
+        const uint16_t *pixels = ui_artwork_get(key, UI_ARTWORK_ROW);
+        if (!pixels) continue;
+        if (s_row_art_key[row] != key) {
+            memcpy(s_row_art_pixels + row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
+                   pixels, UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX * sizeof(uint16_t));
+            s_row_art_key[row] = key;
+            lv_image_set_src(s_row_art[row], &s_row_art_dsc[row]);
+            lv_obj_invalidate(s_row_art[row]);
+        }
+        lv_obj_remove_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
+    }
+}
 static int s_all_selected_idx;
 static ui_event_counter_t s_library_refresh_events;
 static uint32_t s_library_refresh_applied;
@@ -700,7 +737,13 @@ static void ui_library_fill_visible_row(int visible_row, int track_index)
 
     ui_library_row_text_t text;
     ui_library_format_row_text(&text, title, artist, key, bpm, duration_ms);
+#ifndef UI_LIBRARY_HOST_TEST
+    /* Leave the first 40 pixels for the cover overlay. */
+    lv_table_set_cell_value_fmt(s_library_table, visible_row, 0,
+                                "        %s", text.title);
+#else
     lv_table_set_cell_value(s_library_table, visible_row, 0, text.title);
+#endif
     lv_table_set_cell_value(s_library_table, visible_row, 1, text.artist);
     lv_table_set_cell_value(s_library_table, visible_row, 2, text.key);
     lv_table_set_cell_value(s_library_table, visible_row, 3, text.bpm);
@@ -723,6 +766,10 @@ static void ui_library_populate_rows(void)
     }
 
     ui_library_page_t page = ui_library_refresh_page_cache();
+    ui_artwork_begin_page();
+    memset(s_row_art_key, 0, sizeof(s_row_art_key));
+    for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row)
+        if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
     memset(s_page_track_keys, 0, sizeof(s_page_track_keys));
     lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
     for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
@@ -1622,6 +1669,40 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_column_width(s_library_table, 4, 65);
     lv_table_set_column_count(s_library_table, 5);
 
+#ifndef UI_LIBRARY_HOST_TEST
+    /* Stable image buffers: the worker's LRU slot can be replaced as soon
+     * as the next request is published, so LVGL must own a copy per visible row. */
+    if (!s_row_art_pixels) {
+#ifndef WIN32
+        s_row_art_pixels = heap_caps_calloc(UI_LIBRARY_PAGE_ROWS *
+                                            UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
+                                            sizeof(uint16_t),
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+        s_row_art_pixels = calloc(UI_LIBRARY_PAGE_ROWS *
+                                  UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
+                                  sizeof(uint16_t));
+#endif
+    }
+    if (s_row_art_pixels) {
+        for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row) {
+            lv_image_dsc_t *dsc = &s_row_art_dsc[row];
+            dsc->header.magic = LV_IMAGE_HEADER_MAGIC;
+            dsc->header.cf = LV_COLOR_FORMAT_RGB565;
+            dsc->header.w = dsc->header.h = UI_ARTWORK_ROW_PX;
+            dsc->header.stride = UI_ARTWORK_ROW_PX * sizeof(uint16_t);
+            dsc->data = (const uint8_t *)(s_row_art_pixels +
+                        row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX);
+            dsc->data_size = UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX * sizeof(uint16_t);
+            s_row_art[row] = lv_image_create(s_library_screen);
+            lv_obj_set_pos(s_row_art[row], 12, 46 + row * 40);
+            lv_obj_set_size(s_row_art[row], UI_ARTWORK_ROW_PX, UI_ARTWORK_ROW_PX);
+            lv_obj_remove_flag(s_row_art[row], LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+#endif
+
     s_btn_library_page_prev = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(s_btn_library_page_prev);
     lv_obj_add_style(s_btn_library_page_prev, &s_style_btn_secondary, LV_PART_MAIN);
@@ -1990,6 +2071,9 @@ void ui_library_update(const ui_frame_context_t *ctx)
 {
     int active_tab = ctx ? ctx->active_tab : 0;
     s_active_tab = active_tab;
+#ifndef UI_LIBRARY_HOST_TEST
+    ui_library_update_artwork();
+#endif
     if (s_browse_mode != UI_BROWSE_ALL &&
         library_generation() != s_browse_generation) {
         ui_library_browse_reset();

@@ -9,6 +9,9 @@ JC1060/DDJ-400/Link port and current package status. It starts from M2.5
 `05296b8` and does not merge the separate APTA branch or change M2.4 production.
 The [2026-10-04 software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 records pushed steps A and B1–B5 and the hardware gates left unrun.
+The live [integration log](FORK_IMPROVEMENTS.md) records newer B6 and C1-C4
+steps. Package C is software verified on the JC4880 target; its physical
+artwork, playback and touch acceptance remains open.
 
 - Production tag: `M2.4`
 - Frozen source: `9d0c954fc502ae237fabedb764368cd9b10f10dc`

@@ -4,6 +4,9 @@ idf_component_register(
          "Musieer_80.c"
          "Musieer_48.c"
          "ui_library.c"
+         "ui_artwork.c"
+         "ui_artwork_jpeg.c"
+         "ui_artwork_thumb.c"
          "ui_load_gate.c"
          "ui_overview.c"
          "ui_lvgl_backend.c"
@@ -30,5 +33,5 @@ idf_component_register(
          "ui_status.c"
          "ui_idle.c"
     INCLUDE_DIRS "include"
-    REQUIRES log deck_core library bsp_jc4880 audio_engine audio_recorder service_log app_settings control_link firmware_health media_catalog hot_cue_store fatfs esp_lcd esp_lcd_touch esp_timer esp_driver_gpio esp_driver_ppa esp_mm idf::lvgl__lvgl
+    REQUIRES log deck_core library bsp_jc4880 audio_engine audio_recorder service_log app_settings control_link firmware_health media_catalog media_io_gate hot_cue_store fatfs esp_lcd esp_lcd_touch esp_timer esp_driver_gpio esp_driver_ppa esp_mm idf::lvgl__lvgl
 )

@@ -33,6 +33,7 @@
 #define LV_USE_BUTTON 1
 #define LV_USE_CANVAS 1
 #define LV_USE_IMAGE 1
+#define LV_USE_TJPGD 1
 #define LV_USE_LABEL 1
 #define LV_USE_SLIDER 1
 #define LV_USE_SWITCH 1
