@@ -23,7 +23,8 @@ adds compatible S3CP v4 and a normalized DDJ-400 MIDI profile. Its hardware
 acceptance remains NOT RUN; UAC generalization belongs to package F.
 [Package E](docs/validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
 adds JC1060 with shared core, native display BSP and Ethernet startup.
-Hardware acceptance is NOT RUN; new layouts and Link await H/I.
+Both clean builds and host/simulator CI pass. Hardware acceptance is NOT RUN;
+new layouts and Link await H/I.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 record the current package checkpoint.
 

@@ -1,6 +1,8 @@
 # Package E: shared P4 core and JC1060 build
 
 Development branch: `codex/fork-improvements`; production M2.4 unchanged.
+Firmware implementation: `ad0be38254222bfcd967e9a4ef43db52e44b0b53`.
+CI checker fixes: `0e6f36c` and `ecca351` (firmware sources unchanged).
 Donor wiring/JD9165 table: kayrozen/Pajoniiir
 `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (MIT notices preserved).
 
@@ -47,8 +49,25 @@ Local checkpoint results (2026-10-04):
 | BSP/board identity, LVGL pin and binary budget | PASS on both images |
 | Lock stability during repeated configure/build | PASS, both locks unchanged |
 | Documentation integrity and diff whitespace | PASS |
-| Hosted CI for E2 | PENDING until the pushed revision runs |
+| Hosted CI for E2 | PASS on `ecca351`, all three jobs |
 | Hardware, installed image, signing/publication | NOT RUN |
+
+Both exact local images report `M2.4-39-gad0be38`; embedded project checks pass.
+Local SHA-256 (these are not signed/distribution artifacts):
+
+- JC4880: `67ae4fb49c5ef6ef8655ad79d5c49c0c544bb64e05aa6221546812a212c0d5e3`.
+- JC1060: `5e8abdfa4f4dcafdfaaeaebc9233f17f38958f5026142fd879b367f991753324`.
+
+The initial CI run compiled the new firmware but failed because the verifier
+opened the container-only `/project` lock path on the runner host. The checker
+now uses the host build directory, and each board check is in its own CI job.
+The intermediate CI run was superseded/cancelled by that job-isolation fix.
+
+[Hosted run 37192059236](https://github.com/dvucinozd/Pajoniiir/actions/runs/37192059236)
+is green for `ecca351a170ce73e942ff8a4748dbe6df73217b9`: JC4880, JC1060 and
+host/simulator jobs. Both fresh container builds preserve their committed locks
+and pass board/project, LVGL, budget, resampler and USB wrap checks. Package E
+is **software verified**; hardware acceptance and release remain NOT RUN.
 
 Local builds, fresh build-directory repetitions, full host regression and the
 800x480 simulator are recorded at this checkpoint. Fresh build directories

@@ -30,7 +30,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B19 software verified on JC4880; physical acceptance NOT RUN |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Software verified; DDJ-400 hardware acceptance NOT RUN; UAC belongs to F |
-| E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 implemented; local results and hosted CI tracked separately; hardware NOT RUN |
+| E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
 | F | Qualified UAC formats, MAIN routing, consumer-paced USB audio | Pending |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Pending |
 | H | Shared dj_ui presentation at 800x480 and 1024x600 | Pending |

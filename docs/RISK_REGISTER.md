@@ -25,6 +25,14 @@ Status: **active P4-only register, reconciled 2026-09-29**.
 
 ## Release rule
 
+Development package E adds a JC1060 target and separate build/lock/CI, sharing
+the P4 core. [E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
+is software evidence only. Panel/touch/PSRAM, USB root topology, SD/Hosted
+constructor interaction and RMII PHY/DHCP are unqualified. PCM5102A must remain
+disabled because its pins overlap Ethernet; ES8311 bring-up monitoring does not
+qualify DDJ-400 MAIN/cue. New-board hardware gates remain NOT RUN. No JC1060
+image/channel may be represented as accepted or released on build evidence.
+
 M2.4 is released with exact-image automated, hardware telemetry and acoustic
 acceptance complete, subject to the listed post-OTA recovery limitation, and encrypted
 primary/backup signing-key custody operator-confirmed. Untested backup recovery
