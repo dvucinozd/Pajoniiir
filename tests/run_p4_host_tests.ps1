@@ -2713,6 +2713,29 @@ $tests = @(
         )
     },
     @{
+        Name = "p4_startup_gate"
+        Dir = "tests/p4_startup_gate"
+        Target = "test_p4_startup_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c11",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_p4_startup_gate.exe", "test_p4_startup_gate.c",
+            "../../firmware/common/firmware_health/p4_startup_gate.c"
+        )
+    },
+    @{
+        Name = "firmware_health"
+        Dir = "tests/p4_startup_gate"
+        Target = "test_firmware_health.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c11",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_firmware_health.exe", "test_firmware_health.c",
+            "../../firmware/common/firmware_health/firmware_health.c"
+        )
+    },
+    @{
         Name = "ui_psram_allocator"
         Dir = "tests/ui_psram_allocator"
         Target = "test_ui_psram_allocator.exe"

@@ -13,7 +13,10 @@ adds S3CP v3 while retaining v2 profiles. Development OTA, reboot and FLX4
 MAIN/cue smoke passed; physical non-FLX4 qualification remains open.
 
 [Fork improvements integration](docs/FORK_IMPROVEMENTS.md) is in progress in
-an isolated development branch. Packages A and C are software verified on the
+an isolated development branch. The previous UI design remains the product
+basis. Pending OTA images now require saved-enabled AP/HTTP readiness within
+60 seconds before confirmation; the physical rollback gate remains NOT RUN.
+Packages A and C are software verified on the
 current P4 target. [Package B is software verified](docs/validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
 through B19: seek/duration/loop/cue behavior, load lock and VINYL/CDJ touch/profile
 actions. Its physical acceptance remains NOT RUN. JC1060,

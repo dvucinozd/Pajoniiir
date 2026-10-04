@@ -8,6 +8,13 @@ Superseded multi-target OTA procedures remain available in Git history only.
 
 ## Safety rules
 
+Development startup confirmation: a pending image is confirmed only after
+critical core initialization and, if Wi-Fi remote was enabled in saved boot
+settings, the AP/HTTP service becoming active within 60 seconds of P4 app
+entry. Deadline expiry requests IDF rollback. Accepted/factory images keep
+their ordinary startup behaviour. USB devices and connected AP clients are
+not required. This new guard still requires physical rollback acceptance.
+
 - Update P4 only and wait for a clean reboot.
 - Upload only `main-deck-p4.ddjota`. Raw `.bin` files are for
   wired recovery and the one-time transition described below.

@@ -96,3 +96,10 @@ esp_err_t firmware_health_mark_ready(void)
     }
     return rc;
 }
+
+esp_err_t firmware_health_reject_pending(void)
+{
+    if (!s_initialized || !s_pending_verify) return ESP_ERR_INVALID_STATE;
+    ESP_LOGE(TAG, "startup health deadline expired; rejecting pending OTA image");
+    return esp_ota_mark_app_invalid_rollback_and_reboot();
+}

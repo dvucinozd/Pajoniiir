@@ -6,7 +6,39 @@ Donor: `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 MIT provenance is retained in `components/ui/DJ_UI_NOTICE.md`.
 Production M2.4 and the separate APTA branch are unchanged.
 
-## Current checkpoint: H3 hardware regression and recovery
+## Current work: previous design and guarded OTA startup
+
+The accepted implementation plan retains the previous product design on both
+native resolutions. H1-H3 below describe historical preview work, not the
+remaining product direction. The Settings stash is preserved for selective
+review; it is not applied as a completed implementation. Recovery is complete;
+H, exact-image audio acceptance and memory qualification remain open.
+
+Pending OTA images now wait for completed critical core initialization and,
+when Wi-Fi remote was enabled in saved boot settings, the active AP/HTTP
+service. The deadline is 60 seconds from common P4 app entry. The check runs
+in the existing main task and does not block LVGL/audio/USB tasks or allocate
+another task stack. Expiry rejects the pending image through IDF rollback.
+Accepted/factory images retain ordinary startup. USB media, a controller and
+associated AP clients are not prerequisites. A later Settings toggle cannot
+relax the captured boot requirement. JC1060 without Wi-Fi has no AP condition.
+
+The pure host gate covers core/network ordering, disabled remote, deadline
+boundaries, invalid/backward timestamps and a clock beyond 32 bits. On-device
+rollback and actual startup memory reserves remain NOT RUN. No image is
+installed or production channel changed by this checkpoint.
+
+Startup-guard verification PASS: complete P4 host runner (including the pure
+deadline suite and actual firmware-health implementation against host IDF
+stubs), documentation integrity and diff whitespace checks. Both ESP-IDF
+6.0.2 ordinary builds pass with preview/recorder/storage experiments disabled:
+JC4880 2,547,888 bytes, JC1060 2,545,360 bytes. Board/BSP isolation, LVGL 9.5.0,
+embedded project names and the 0x380000 budget pass; both locks are unchanged.
+Preview builds also pass. Initial simultaneous dependency resolution collided
+on the Component Manager Git-cache index lock; serial builds resolved it
+without changing dependencies or deleting another process's lock.
+
+## Historical checkpoint: H3 hardware regression and recovery
 
 H3 was pushed as `cf282906ff5ffe2bc045659c59e5d6618e46a094`.
 All eight clean CI jobs passed in
@@ -207,27 +239,33 @@ than inferred from an unused component compiling.
 
 ## Remaining H work
 
-1. Bind Library rows, playlists, selection, source/artwork epochs, actual
-   load progress and admission errors to the new presentation.
-2. Complete Hot Cues edit/delete/restore and jog-mode controls, key metadata,
-   memory-cue/truncation indicators and controller/touch semantic parity.
-3. Bind real Settings, sink/controller/storage diagnostics, brightness, Wi-Fi
-   and experimental recorder behavior; defer unsupported Link controls to I.
-4. Polish compact FX/secondary navigation and wide touch sizes; remove duplicate
-   legacy presentation allocations only after all four screens pass parity.
-5. Exercise complete actual runtime at both resolutions, rapid source changes,
-   unload/reload, artwork cancellation, errors, screensaver/wake and load progress;
-   visually review replacements before changing their baselines.
-6. Enable the new default presentation only after functional parity and both
-   clean-build/compatibility gates. H is not software-closed at H1.
+1. Separate Library model/actions from widget creation; each build initializes
+   only its selected presentation. Preserve the Settings stash for selective
+   reuse and keep the preview default-off.
+2. Add artwork, accepted key metadata, memory cues, load-lock and explicit
+   load/error state to the previous design. Reuse A-G owner/admission paths.
+3. Complete paired touch/controller semantics and real Settings owner actions;
+   expose recorder only in experimental builds and Link only on JC1060.
+4. Provide native 800x480 and 1024x600 layouts of the previous design, preserve
+   navigation/screensaver state and eliminate duplicate buffers/widget trees.
+5. Add startup/runtime heap, largest-block, allocation and critical-stack gates;
+   compare identical scenarios with recovery baseline, investigate any >10%
+   internal-free/largest-block regression and fail critical allocation errors.
+6. Run both actual layouts, host regressions and both regular builds. Visually
+   inspect captures before changing baselines. Qualify an A-G regular candidate
+   first, then final A-H exact-image audio/reconnect/OTA and 180-minute soak.
 
-## Installation and physical gates
+## Historical H1 installation observations
 
 The user authorized OTA when needed on 2026-10-04. Initial read-only probes could
 not resolve `pajoniiir.local`; `192.168.4.1/api/status` timed out. No device image
 was changed. COM-connected hardware is ignored. A future OTA must use a fresh
 build from a pushed source SHA and a verified signed bundle, after checking
 actual board/project and idle decks. No production channel is changed.
+
+These observations preceded the H3 OTA and wired recovery documented above.
+The running recovery image is now M2.4-7-gb8d9cb7. Further installations must
+follow the accepted guarded-startup plan and preserve that recovery bundle.
 
 JC4880 touch/render fluidity under dual playback, audio listening/deadlines,
 memory/stack reserves, reconnect, exact-image 180-minute soak and signed OTA

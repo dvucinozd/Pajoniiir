@@ -31,6 +31,7 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "firmware_health.h"
+#include "p4_startup_gate.h"
 #include "p4_ota.h"
 
 static const char *TAG = "main";
@@ -337,6 +338,7 @@ static void on_usb_storage_event(bool mounted)
 
 void app_main(void)
 {
+    const uint64_t boot_started_us = (uint64_t)esp_timer_get_time();
     p4_tcm_heap_guard_keep();
     ESP_ERROR_CHECK(bsp_audio_force_safe_boot_state());
     ESP_ERROR_CHECK(firmware_health_init());
@@ -351,6 +353,8 @@ void app_main(void)
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────
     app_settings_init();   // also initialises NVS; falls back to defaults
+    const bool boot_network_required =
+        board_capabilities_get()->wifi && app_settings_get().wifi_remote;
     ESP_ERROR_CHECK(media_io_gate_init());
 
     // ── Board support (stubs until hardware arrives) ─────────────────────────
@@ -475,7 +479,7 @@ void app_main(void)
 #if CONFIG_AUDIO_RECORDER_ENABLED
     ui_settings_set_recording_toggle_cb(on_recording_toggle);
 #endif
-    if (board_capabilities_get()->wifi && app_settings_get().wifi_remote) {
+    if (boot_network_required) {
         ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
         wifi_link_request_enable(true);
     }
@@ -486,6 +490,33 @@ void app_main(void)
     ESP_ERROR_CHECK(usb_storage_init(on_usb_storage_event));
     ESP_ERROR_CHECK(p4_local_controller_start());
 
+    /* The AP/HTTP worker is asynchronous. A pending image must not become
+     * permanent until the requested service actually runs. This uses the main
+     * task; LVGL/audio/USB continue independently and no extra stack is needed.
+     * Already accepted and factory images keep their normal boot behaviour. */
+    firmware_health_info_t boot_health;
+    ESP_ERROR_CHECK(firmware_health_get_info(&boot_health));
+    if (boot_health.rollback_pending) {
+        const p4_startup_gate_t gate = {
+            .boot_started_us = boot_started_us,
+            .network_required = boot_network_required,
+        };
+        p4_startup_result_t result;
+        do {
+            result = p4_startup_gate_poll(&gate,
+                (uint64_t)esp_timer_get_time(), true,
+                boot_network_required && wifi_link_is_active());
+            if (result == P4_STARTUP_WAIT) vTaskDelay(pdMS_TO_TICKS(250));
+        } while (result == P4_STARTUP_WAIT);
+        if (result != P4_STARTUP_READY) {
+            ESP_LOGE(TAG, "pending startup failed: requested AP/HTTP ready=%d",
+                     boot_network_required && wifi_link_is_active());
+            ESP_ERROR_CHECK(firmware_health_reject_pending());
+            /* The rollback API normally never returns on success. */
+            esp_restart();
+            return;
+        }
+    }
     ESP_LOGI(TAG, "all subsystems ready — P4-only deck waiting for direct controller events");
     ESP_ERROR_CHECK(firmware_health_mark_ready());
 }

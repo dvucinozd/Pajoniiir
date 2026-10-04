@@ -1,0 +1,2 @@
+#pragma once
+#define CONFIG_DDJ_OTA_FORCE_ROLLBACK_TEST 0

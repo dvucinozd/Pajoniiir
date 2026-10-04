@@ -15,7 +15,11 @@ Settings binding, complete touch parity, layout polish and removal
 of duplicate legacy presentation allocations remain open. The operator prefers
 the previous design; retain it as the product basis and keep dj_ui optional.
 H3 installation failed Wi-Fi/USB acceptance due to internal heap pressure;
-recovery and exact-image validation take priority over further presentation work.
+Recovery is complete. Pending OTA startup now waits for saved-enabled AP/HTTP
+readiness within 60 seconds before confirmation; failure requests rollback.
+The next product work removes duplicate presentation allocations and adds new
+features to the previous design. Runtime memory and exact-image acceptance
+remain open; no production channel change follows from software verification.
 
 The separate [fork improvements program](FORK_IMPROVEMENTS.md) tracks the
 JC1060/DDJ-400/Link port and current package status. It starts from M2.5

@@ -4,6 +4,11 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Normal startup
 
+- [ ] For a new pending OTA image, confirm the saved-enabled AP/HTTP service
+  starts before the 60-second startup deadline and image confirmation. Failure
+  must request rollback; absent media/controllers/AP clients do not fail boot.
+  This gate's physical rollback acceptance remains NOT RUN.
+
 - [ ] Use the accepted regulated 5 V supply and unchanged protected USB0/USB1
   VBUS wiring.
 - [ ] Connect PCM5102A MAIN RCA and, if needed, FLX4 headphones before raising

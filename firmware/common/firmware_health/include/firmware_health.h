@@ -22,6 +22,8 @@ typedef struct {
 
 esp_err_t firmware_health_init(void);
 esp_err_t firmware_health_mark_ready(void);
+/* Reject only a pending OTA image. Never invalidate an accepted/factory image. */
+esp_err_t firmware_health_reject_pending(void);
 esp_err_t firmware_health_get_info(firmware_health_info_t *out_info);
 
 #ifdef __cplusplus
