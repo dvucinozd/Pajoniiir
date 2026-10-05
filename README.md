@@ -88,7 +88,7 @@ for module provenance and the detailed implementation history.
   <tr>
     <td align="center">
       <sub>Guition JC4880P443C_I_W touchscreen board</sub><br>
-      <a href="https://s.click.aliexpress.com/e/_c3V7wC9T"><sub>[AliExpress]</sub></a>
+      <a href="https://s.click.aliexpress.com/e/_c31cHQKD"><sub>[AliExpress]</sub></a>
     </td>
     <td align="center">
       <sub>PCM5102A stereo RCA DAC</sub><br>
