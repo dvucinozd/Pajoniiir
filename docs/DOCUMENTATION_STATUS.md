@@ -140,6 +140,13 @@ and the heartbeat is paused. The requested segmented accounting target is
 complete at 10,801.3664176 seconds, while uninterrupted 180-minute release
 qualification and other unrun hardware gates remain open. Public M2.4 is
 unchanged; the original incomplete evidence is retained.
+The final combined VINYL scratch/Master Tempo check passed 92.171 seconds on
+both decks, with operator confirmation and zero strict faults/failed allocations.
+The [v91 candidate review](validation/JC4880_V91_RELEASE_REVIEW_20261005.md)
+freezes the tested binary, eight successful exact-source CI jobs, locally
+reverified signed candidate/recovery artifacts and a draft changelog. It
+explicitly retains physically unrun negative startup rollback and other
+qualification boundaries. No replacement image or public release was made.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
