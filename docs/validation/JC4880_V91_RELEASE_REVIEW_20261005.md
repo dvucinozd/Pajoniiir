@@ -55,14 +55,18 @@ operator listening. It is not an uninterrupted 180-minute run.
 | Focused JC4880/FLX4 functional and listening scenarios above | PASS |
 | Operator-approved segmented soak accounting | PASS |
 | Uninterrupted 180-minute qualification | NOT RUN |
-| Negative startup automatic rollback on hardware | NOT RUN |
+| Unconfirmed-image automatic bootloader rollback on hardware | PASS |
+| 60-second startup deadline rejection on hardware | NOT RUN |
 | Source-cue tombstone reimport/cross-media physical isolation | NOT RUN |
 | Remaining deck/format, shifted/touch load-lock, active removal and cancellation variants | NOT RUN |
 | JC1060/DDJ-400/real Link peers | NOT RUN |
 | Public release/tag/channel change | NOT AUTHORIZED / NOT PERFORMED |
 
-The existing host startup gate covers timeout and readiness decisions; this
-does not substitute for physically booting a failed pending image and
-observing automatic rollback. The candidate is reviewable with these explicit
+The isolated forced-rollback image booted in `ota_0` (boot 612), restarted
+before confirmation and automatically returned to the frozen v91 in `ota_1`
+(boot 613). No manual recovery or additional reboot was used. This proves
+unconfirmed-image bootloader rollback; it does not exercise the 60-second
+startup deadline rejection branch. The existing host startup gate covers
+timeout and readiness decisions. The candidate is reviewable with these explicit
 boundaries. Public production promotion still requires a decision on the
 unrun release gates; this document does not silently waive them.

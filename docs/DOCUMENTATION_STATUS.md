@@ -145,8 +145,10 @@ both decks, with operator confirmation and zero strict faults/failed allocations
 The [v91 candidate review](validation/JC4880_V91_RELEASE_REVIEW_20261005.md)
 freezes the tested binary, eight successful exact-source CI jobs, locally
 reverified signed candidate/recovery artifacts and a draft changelog. It
-explicitly retains physically unrun negative startup rollback and other
-qualification boundaries. No replacement image or public release was made.
+records successful physical unconfirmed-image bootloader rollback: test image
+in `ota_0`, automatic return to frozen v91 in `ota_1`, network and both USB
+paths restored. The 60-second startup deadline rejection and other unrun
+qualification boundaries remain open. No public release was made.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
