@@ -101,6 +101,14 @@ Use local signed upload when an intentional rollback is required.
 
 ## Production pull channel
 
+Current JC4880/FLX4 public release is the original hardware-tested
+`M2.4-91-g75136aef` image. Its immutable signed bundle and live channel were
+independently downloaded and verified; physical unconfirmed-image rollback
+and 60-second startup rejection passed with diagnostic-only images. The
+[release record](validation/JC4880_V91_RELEASE_20261005.md) retains the explicit
+operator-accepted segmented-soak exception and unrun hardware variants.
+JC1060/DDJ-400/real Link peers are not qualified by this publication.
+
 The canonical public channel root is:
 
 ```text
@@ -170,7 +178,8 @@ wired flash whenever either changes.
 
 The application version comes from `git describe`. The historical lines use
 `RC<tag>` and the beta line begins at the annotated `M2` tag. The selected
-production version is `M2.4`. A tagged build reports the bare tag; later commits
+production version is `M2.4-91-g75136aef`; immutable M2.4 remains available.
+A tagged build reports the bare tag; later commits
 report `<tag>-<distance>-g<hash>`.
 
 Pull OTA orders the milestone family (`M`) after the historical release-

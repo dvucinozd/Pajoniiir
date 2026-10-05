@@ -1,6 +1,15 @@
 # P4 Risk Register
 
-Status: **active P4-only register, reconciled 2026-09-29**.
+Status: **active P4-only register, reconciled 2026-10-05**.
+
+Current release is frozen JC4880/FLX4 `M2.4-91-g75136aef`. Focused accepted
+checks, OTA rollback and startup deadline rejection are documented in the
+[release record](validation/JC4880_V91_RELEASE_20261005.md). Its recorded
+180m01.37s in two segments is an operator-accepted release exception; an
+uninterrupted 180-minute test remains NOT RUN. JC1060/DDJ-400/real Link peers
+remain outside accepted hardware scope. Earlier correction checkpoints and
+monitor failures below remain historical evidence rather than current release
+claims; retained unrun variants and security/provisioning risks remain explicit.
 
 | Priority | Risk | Current evidence | Required disposition |
 | --- | --- | --- | --- |

@@ -1,8 +1,17 @@
 # Documentation status
 
-Status: **current P4-only source of truth, reconciled 2026-09-29**.
+Status: **current P4-only source of truth, reconciled 2026-10-05**.
 
 ## Product boundary
+
+Current public JC4880/FLX4 release is frozen `M2.4-91-g75136aef` from source
+`75136aef749a1f03d9089c8b6ff6452b3dba0839`. GitHub latest, immutable HTTPS
+bundle and public OTA channel were verified independently. The
+[release record](validation/JC4880_V91_RELEASE_20261005.md) retains the
+operator-accepted segmented-soak exception and unrun variants. JC1060,
+DDJ-400 and real Link peers remain outside this hardware release. Historical
+checkpoints below preserve the failed/corrective sequence; the release record
+is authoritative for current acceptance and publication status.
 
 [L software/candidate handoff](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
 closes A-L software integration on the isolated branch. Board-specific signed
@@ -150,8 +159,8 @@ in `ota_0`, automatic return to frozen v91 in `ota_1`, network and both USB
 paths restored. The subsequent diagnostic boot 614 rejected at 60.253 seconds
 and restored v91 in boot 615, physically verifying startup deadline/rejection.
 The [v91 release record](validation/JC4880_V91_RELEASE_20261005.md) records
-operator authorization to close the JC4880/FLX4 scope with an explicit
-segmented-soak exception and publish the frozen original image. Unrun variants
+closure of the JC4880/FLX4 scope with an explicit segmented-soak exception and
+verified publication of the frozen original image. Unrun variants
 and JC1060/DDJ-400/Link physical qualification remain open.
 
 The active product has one firmware and release target:

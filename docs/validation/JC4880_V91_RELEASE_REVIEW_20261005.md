@@ -1,7 +1,7 @@
 # JC4880 / FLX4 v91 release-candidate review
 
-Status: **acceptance closed for JC4880/FLX4 with documented soak exception;
-publication authorized and in progress** (2026-10-05).
+Status: **accepted and published for JC4880/FLX4 with documented soak exception**
+(2026-10-05). See the [release record](JC4880_V91_RELEASE_20261005.md).
 
 ## Frozen identity and retained artifacts
 
@@ -61,7 +61,7 @@ operator listening. It is not an uninterrupted 180-minute run.
 | Source-cue tombstone reimport/cross-media physical isolation | NOT RUN |
 | Remaining deck/format, shifted/touch load-lock, active removal and cancellation variants | NOT RUN |
 | JC1060/DDJ-400/real Link peers | NOT RUN |
-| Public release/tag/channel change | AUTHORIZED / publication in progress |
+| Public release/tag/channel identity and artifact verification | PASS / PUBLISHED |
 
 The isolated forced-rollback image booted in `ota_0` (boot 612), restarted
 before confirmation and automatically returned to the frozen v91 in `ota_1`

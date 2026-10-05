@@ -6,13 +6,14 @@
   </picture>
 </p>
 
-# Pajoniiir M2.4
+# Pajoniiir M2.4-91-g75136aef
 
 Current JC4880/FLX4 acceptance is the frozen `M2.4-91-g75136aef` image.
 Focused real audio/transport/USB checks and both physical OTA rejection paths
 passed. The operator accepted the recorded two-segment soak as an explicit
-exception to the uninterrupted 180-minute gate. Publication is authorized and
-in progress; see the [release record](docs/validation/JC4880_V91_RELEASE_20261005.md)
+exception to the uninterrupted 180-minute gate. The exact image is published on
+[GitHub](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef)
+and the public OTA channel; see the [release record](docs/validation/JC4880_V91_RELEASE_20261005.md)
 for artifact identity, publication status and retained hardware limitations.
 The historical checkpoints below are not the current acceptance status.
 
