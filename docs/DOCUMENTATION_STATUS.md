@@ -124,6 +124,12 @@ after reload. Normal FLX4 D1 LOAD while playing preserved `Extatique` in all
 strict deltas/failed allocations. This closes those focused scenarios only;
 source-cue tombstone reimport/cross-media isolation and other physical load-lock
 variants remain open.
+The subsequent v91 180-minute attempt is INCOMPLETE: detached launch was
+rejected by automatic policy review, and the fallback tool-session monitor
+disappeared after 16m56s of saved samples. At the first checkpoint audit both
+decks still played with zero new strict faults; they were stopped, evidence
+preserved and heartbeat paused. No new run or credit was applied. Final-image
+soak remains open and requires a monitor independent of tool-session lifetime.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
