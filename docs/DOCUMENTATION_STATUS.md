@@ -102,8 +102,15 @@ operator-PLAY-gated D2 WAV and D1 MP3 IN/OUT/half/double/EXIT checks passed
 62.097/61.706 seconds with zero new strict faults, zero failed allocations and
 operator-confirmed clean MAIN/respective cue sound. The prior combined attempt
 included no operator loop actions and qualifies only plain playback telemetry.
-Remaining opposite-deck format parity, combined scratch+MT, cancellation, cue store/load lock
-and final-image lifecycle/soak gates remain open. The older image's soak does
+Web Remote load lock returned HTTP 409 during D1 playback without replacing
+the track or adding strict faults. D1 hot-cue slot 1 at 30,842 ms survived
+reload and one stopped soft reboot, with operator/API recall confirmation.
+AP/API, mounted storage and FLX4 MIDI/audio returned on the same image; startup
+and final resources reported zero failed allocations. PC Wi-Fi reconnection
+was required, so no exact startup duration is claimed. Remaining opposite-deck
+format parity, combined scratch+MT, cancellation, cue deletion/isolation,
+physical load lock, USB hotplug, post-reboot audio, repeated lifecycle and
+final-image soak gates remain open. The older image's soak does
 not qualify this image.
 
 The active product has one firmware and release target:
