@@ -6,116 +6,14 @@
   </picture>
 </p>
 
-# Pajoniiir M2.4-91-g75136aef
+# Pajoniiir
 
-Current JC4880/FLX4 acceptance is the frozen `M2.4-91-g75136aef` image.
-Focused real audio/transport/USB checks and both physical OTA rejection paths
-passed. The operator accepted the recorded two-segment soak as an explicit
-exception to the uninterrupted 180-minute gate. The exact image is published on
-[GitHub](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef)
-and the public OTA channel; see the [release record](docs/validation/JC4880_V91_RELEASE_20261005.md)
-for artifact identity, publication status and retained hardware limitations.
-The historical checkpoints below are not the current acceptance status.
-
-M2.5 development: [7-bit controller scaling](docs/validation/P4_M2_5_CC7_SCALING_20261002.md)
-adds S3CP v3 while retaining v2 profiles. Development OTA, reboot and FLX4
-MAIN/cue smoke passed; physical non-FLX4 qualification remains open.
-
-[Fork improvements integration](docs/FORK_IMPROVEMENTS.md) is in progress in
-an isolated development branch. The previous UI design remains the product
-basis. Pending OTA images now require saved-enabled AP/HTTP readiness within
-60 seconds before confirmation; the physical rollback gate remains NOT RUN.
-Packages A and C are software verified on the
-current P4 target. [Package B is software verified](docs/validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
-through B19: seek/duration/loop/cue behavior, load lock and VINYL/CDJ touch/profile
-actions. Its physical acceptance remains NOT RUN. JC1060,
-DDJ-400 and Pro DJ Link are planned;
-their hardware acceptance has not run. [Package D software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md)
-adds compatible S3CP v4 and a normalized DDJ-400 MIDI profile. Its hardware
-acceptance remains NOT RUN.
-[Package E](docs/validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
-adds JC1060 with shared core, native display BSP and Ethernet startup.
-Both clean builds and host/simulator CI pass. Hardware acceptance is NOT RUN;
-new layouts and Link await H/I.
-[Package F](docs/validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md)
-adds bounded UAC1 16/24-bit formats and USB-paced MAIN/cue routing. JC1060
-uses USB output; JC4880 retains PCM5102A by default. Hardware audio/reconnect
-acceptance remains NOT RUN.
-[Package G](docs/validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
-adds isolated SDMMC A/B builds, SD/gate diagnostics and a fail-closed experimental
-recorder. Recorder and SD workaround remain disabled in ordinary builds;
-physical card latency, power-loss and audio acceptance are NOT RUN.
-[Package H software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
-retains the previous product design at native 800x480 and 1024x600, with artwork,
-key, effective hot cues, memory cues, load lock and loading/error state. Each
-build creates only its selected presentation; both use the shared Settings.
-The alternative dj_ui preview remains default-off. Allocation/stack diagnostics
-and an executable runtime resource gate support the separate physical acceptance.
-[The first ordinary H candidate](docs/validation/JC4880_H_CANDIDATE_20261004.md)
-was installed by signed OTA; network, USB0 and FLX4 returned and the operator
-confirmed the previous design and controls. Its resource gate failed on waveform
-internal-allocation probes and HTTP stack reserve; acceptance remains open.
-Those probes/stack failures were corrected. A subsequent two-track reserve
-failure requires PSRAM-only LVGL allocation in ordinary builds too; the previous
-presentation remains unchanged. Exact-image resource/audio acceptance stays open.
-The H checkpoint `M2.4-61-gc4912d5b` passed focused empty/two-paused-track
-memory and stack floors. After I-L integration, hardware tests reproduced real
-USB packet losses and audio deadlines. The current corrective JC4880 image is
-`M2.4-77-g08996790`, retaining the previous design. Removing periodic PSRAM
-heap walks and aligning PCM5102A DMA with the 256-frame mixer block passed
-focused listening, resource comparison and 30 minutes of dense-status dual-loop
-playback with zero new strict faults. See the
-[current hardware record](docs/validation/JC4880_L_CANDIDATE_20261005.md).
-Full resource baseline, functional/lifecycle qualification and the final
-180-minute exact-image soak remain open; these focused results are not a release.
-The operator-approved segmented soak target subsequently completed: a detached
-151-minute segment has 39,144 requests and zero new strict faults, plus 29
-credited minutes from the interrupted attempt. This does not prove uninterrupted
-180-minute monitoring. Final listening is operator-confirmed PASS; remaining qualification stays open;
-both decks are stopped and no public channel changed.
-[Package I progress](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md)
-adds bounded Link discovery, two distinct player claims and an Ethernet-only
-JC1060 worker. Link is default-off with a persistent Settings switch. Codec,
-claim and real UDP/TCP sanitizer tests pass. The serialized DBServer worker and
-owned 2,000-row Library cache support track/folder/playlist browsing and visible
-metadata with epoch cancellation and truncation/progress. Actual CDJ/Rekordbox
-interoperability remains NOT RUN. See the
-[I software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
-[Package J software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
-adds cancellable Ethernet NFS downloads to an SD cache with full identities,
-read-back SHA-256 verification and completion manifests. Touch/controller and
-incoming loads share the existing admission/worker path; incomplete downloads
-preserve the old deck. Verified SD playback survives network loss and local USB
-removal. Unidentified NFS volumes use session-local identities and require a
-fresh download; local cue edits cannot migrate between those sessions. Real
-SD/peer timing, fault injection, MAIN/cue listening and final soak remain NOT RUN.
-[Package K software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
-adds epoch-bound network sync, explicit PLAY/SYNC alignment, master handoff and
-outgoing status/beats using the accepted audio timeline. Loss holds the last
-tempo; scratch and ordinary drift never trigger automatic seeks. Sink latency
-is configuration-specific and remains UNMEASURED until a real calibration.
-Real output phase, listening and peer handoff remain NOT RUN.
-[Package L](docs/validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
-completes ordinary per-board candidate packaging, signed identity/budget guards
-and a support/acceptance matrix. A-L software integration is complete; physical
-qualification and release remain open. JC4880 installation and focused fault
-correction are recorded in the current hardware report; JC1060 remains uninstalled.
-The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
-recovery and allocator verification are tracked in the H progress record.
-[Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
-record the current package checkpoint.
+**A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
+single ESP32-P4 board.**
 
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
 [![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/dvucinozd/Pajoniiir?utm_source=oss&utm_medium=github&utm_campaign=dvucinozd%2FPajoniiir&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
-
-[![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
-
-
-
-**A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
-single ESP32-P4 board.**
 
 ![Pajoniiir running the dual-deck Overview screen](docs/images/Pajoniiir1.jpg)
 
@@ -131,8 +29,43 @@ runs the two playback decks and mixer, and sends MAIN and headphone-cue audio.
 - Headphone cue is returned through the DDJ-FLX4.
 - Signed local and remote OTA updates are supported.
 
-The current production release is
-[`M2.4`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4).
+## Release and support
+
+The current release for **JC4880 + DDJ-FLX4** is
+[`M2.4-91-g75136aef`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef),
+also available through the [public OTA channel](https://ota.pajoniiir.eu/latest.json).
+It retains the previous UI design and includes the integrated library and
+transport improvements.
+
+JC1060, DDJ-400 and Ethernet Pro DJ Link are implemented as development
+configurations. Their physical qualification is still pending. Recording and
+SD storage experiments remain disabled in regular builds.
+
+The [release record](docs/validation/JC4880_V91_RELEASE_20261005.md) documents
+the tested configuration, accepted segmented-soak exception and remaining
+qualification limits.
+
+## Improvements and collaboration
+
+Thanks to collaborator **[kayrozen](https://github.com/kayrozen)** for his
+work on the [Pajoniiir fork](https://github.com/kayrozen/Pajoniiir). Modules,
+fixes and ideas from his work were adapted to this project's shared P4 core:
+
+- **Track metadata and browsing:** Rekordbox title/downbeat corrections,
+  hierarchical playlists, artwork and color waveform previews.
+- **Deck transport:** cue preroll, more accurate seek/duration handling,
+  loop resizing, memory cues and load-lock behavior.
+- **Controller and board development:** the DDJ-400 profile and JC1060
+  display/touch/Ethernet configuration.
+- **Pro DJ Link development:** protocol codec, discovery, peer browsing,
+  metadata access and network-sync logic.
+- **Optional experiments:** the `dj_ui` presentation and SDMMC write workaround;
+  the production UI retains the previous design.
+
+These contributions were integrated with the existing persistent track
+identity, audio timeline, worker ownership and signed OTA paths.
+See the [integration notes and source attribution](docs/FORK_IMPROVEMENTS.md)
+for module provenance and the detailed implementation history.
 
 ## Hardware
 
@@ -319,17 +252,11 @@ at `firmware/main-deck-p4/dependencies.lock` is committed.
 
 ## Project status and documentation
 
-`M2.4` is the immutable production release based on commit `9d0c954`. It keeps
-the qualified playback, controller, UI and audio behavior while restoring pull
-OTA compatibility with the current valid cross-signed public TLS chain. Its
-exact ESP-IDF v6.0.2 build, signed installation, live production-channel probe,
-cold-boot hardware/API smoke, clean operator-confirmed MAIN/cue and published assets passed. See the
-[M2.4 production release report](docs/validation/M2_4_PRODUCTION_RELEASE_20260929.md)
-and the inherited
-[M2.1 production baseline](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
-
-M2.5 development targets automatic USB recovery after OTA restart and physically
-qualified additional DJ controllers. These are planned capabilities; see the
+The JC4880/FLX4 release is published and merged into `master`.
+JC1060/DDJ-400/Pro DJ Link hardware acceptance and broader controller
+qualification remain development work. Current status and acceptance limits
+are maintained in the [release record](docs/validation/JC4880_V91_RELEASE_20261005.md),
+[documentation status](docs/DOCUMENTATION_STATUS.md) and
 [development plan](docs/DEVELOPMENT_PLAN.md).
 
 - [Project overview](docs/PROJECT_OVERVIEW.md)
@@ -342,9 +269,10 @@ qualified additional DJ controllers. These are planned capabilities; see the
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Risk register](docs/RISK_REGISTER.md)
 
-The active product contains one P4 firmware target:
-`firmware/main-deck-p4`. Historical S3 and dual-processor material is available
-through Git history and is not part of the current tree or build.
+The production JC4880 entrypoint is `firmware/main-deck-p4`; the
+development JC1060 entrypoint is `firmware/main-deck-jc1060`. Both use a shared
+P4 core. Historical S3 and dual-processor material remains in Git history and
+is not part of the active product.
 
 ## License
 
