@@ -3458,6 +3458,8 @@ static void ae_decode_task(void *arg)
                 eng->seek_reason == AE_SEEK_REASON_LOOP &&
                 eng->seek_target_ms == prefix.start_ms) {
                 eng->seek_target_ms = prefix_plan.seek_ms;
+                if (prefix_plan.seek_ms != prefix.start_ms)
+                    eng->seek_reason = AE_SEEK_REASON_LOOP_CONTINUE;
                 scratch_newest_ms = prefix.start_ms + (uint32_t)(
                     (uint64_t)(prefix_plan.period_frames - 1u) * 1000u / prefix.sample_rate);
                 if (s_loop_prefix_records[ctx->deck]++ < 4u)

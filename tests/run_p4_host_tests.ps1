@@ -1775,6 +1775,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_loop_prefix.exe", "test_audio_loop_prefix.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_loop_prefix.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_loop_resize.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
         )
     },

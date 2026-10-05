@@ -1,4 +1,5 @@
 #include "audio_loop_prefix.h"
+#include "audio_loop_resize.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -72,11 +73,28 @@ static void test_manual_out_slow_seek_runway(void)
     assert(plan.seek_ms == 3000); /* seek resumes after copied source, no skip */
 }
 
+static void test_resize_after_prefix_continuation(void)
+{
+    audio_loop_prefix_t p=captured(44100);
+    audio_loop_prefix_plan_t prefix=audio_loop_prefix_plan(&p,42,2000,5000);
+    assert(prefix.seek_ms==3000); /* mid-loop continuation, not wrap to IN */
+    audio_loop_resize_in_t in={.old_start_ms=2000,.old_end_ms=5000,
+        .new_start_ms=2000,.new_end_ms=3400,.seek_base_ms=prefix.seek_ms,
+        .frames_since_seek=22050,.ring_frames=66150,.sample_rate=44100,
+        .since_wrap=false};
+    audio_loop_resize_plan_t plan=audio_loop_resize_plan(&in);
+    assert(plan.cut && plan.drop_frames==4410 && plan.seek_ms==2000);
+    /* The wrong wrap label misinterprets the copied prefix as complete laps. */
+    in.since_wrap=true;
+    assert(!audio_loop_resize_plan(&in).cut);
+}
+
 int main(void)
 {
     test_resume_and_short_laps();
     test_stale_and_missing_history();
     test_manual_out_slow_seek_runway();
+    test_resize_after_prefix_continuation();
     puts("PASS loop prefix: slow seek runway, source continuity, short laps, stale/missing capture");
     return 0;
 }
