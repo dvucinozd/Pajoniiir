@@ -7,7 +7,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 - [ ] For a new pending OTA image, confirm the saved-enabled AP/HTTP service
   starts before the 60-second startup deadline and image confirmation. Failure
   must request rollback; absent media/controllers/AP clients do not fail boot.
-  This gate's physical rollback acceptance remains NOT RUN.
+  Physical fault-injection tests passed unconfirmed-image rollback and startup
+  readiness rejection at 60.253 seconds, followed by automatic return to v91.
+  See the [release record](validation/JC4880_V91_RELEASE_20261005.md) for the
+  accepted JC4880/FLX4 scope and segmented-soak exception.
 
 - [ ] Use the accepted regulated 5 V supply and unchanged protected USB0/USB1
   VBUS wiring.

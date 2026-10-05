@@ -4,6 +4,14 @@ Status: **M2.4 released; M2.5 USB recovery and additional-controller work**.
 
 ## Current baseline
 
+The frozen JC4880/FLX4 v91 acceptance is closed with an explicit operator-
+accepted segmented-soak exception. Physical unconfirmed-image rollback and
+the 60-second startup readiness rejection passed. Publication is authorized
+and in progress; the [release record](validation/JC4880_V91_RELEASE_20261005.md)
+is authoritative for current status and remaining unrun variants. The original
+tested image is retained; diagnostic-only source changes are not that release.
+Historical package checkpoints below do not reopen completed focused gates.
+
 [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md)
 provides isolated SD idle/DMA A/B experiments, bounded diagnostics and recorder
 fault/ownership tests. Regular builds keep recorder and SD wait experiments off.

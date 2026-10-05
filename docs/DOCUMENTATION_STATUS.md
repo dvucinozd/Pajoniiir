@@ -147,8 +147,12 @@ freezes the tested binary, eight successful exact-source CI jobs, locally
 reverified signed candidate/recovery artifacts and a draft changelog. It
 records successful physical unconfirmed-image bootloader rollback: test image
 in `ota_0`, automatic return to frozen v91 in `ota_1`, network and both USB
-paths restored. The 60-second startup deadline rejection and other unrun
-qualification boundaries remain open. No public release was made.
+paths restored. The subsequent diagnostic boot 614 rejected at 60.253 seconds
+and restored v91 in boot 615, physically verifying startup deadline/rejection.
+The [v91 release record](validation/JC4880_V91_RELEASE_20261005.md) records
+operator authorization to close the JC4880/FLX4 scope with an explicit
+segmented-soak exception and publish the frozen original image. Unrun variants
+and JC1060/DDJ-400/Link physical qualification remain open.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1

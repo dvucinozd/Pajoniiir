@@ -8,6 +8,14 @@
 
 # Pajoniiir M2.4
 
+Current JC4880/FLX4 acceptance is the frozen `M2.4-91-g75136aef` image.
+Focused real audio/transport/USB checks and both physical OTA rejection paths
+passed. The operator accepted the recorded two-segment soak as an explicit
+exception to the uninterrupted 180-minute gate. Publication is authorized and
+in progress; see the [release record](docs/validation/JC4880_V91_RELEASE_20261005.md)
+for artifact identity, publication status and retained hardware limitations.
+The historical checkpoints below are not the current acceptance status.
+
 M2.5 development: [7-bit controller scaling](docs/validation/P4_M2_5_CC7_SCALING_20261002.md)
 adds S3CP v3 while retaining v2 profiles. Development OTA, reboot and FLX4
 MAIN/cue smoke passed; physical non-FLX4 qualification remains open.

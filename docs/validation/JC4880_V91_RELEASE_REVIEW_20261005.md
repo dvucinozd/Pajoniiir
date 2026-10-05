@@ -1,6 +1,7 @@
 # JC4880 / FLX4 v91 release-candidate review
 
-Status: **prepared for review; not publicly released** (2026-10-05).
+Status: **acceptance closed for JC4880/FLX4 with documented soak exception;
+publication authorized and in progress** (2026-10-05).
 
 ## Frozen identity and retained artifacts
 
@@ -15,8 +16,8 @@ Status: **prepared for review; not publicly released** (2026-10-05).
   hashes and exact-source CI evidence. No image was rebuilt or re-versioned.
 - Exact-source [CI run](https://github.com/dvucinozd/Pajoniiir/actions/runs/37331118116):
   all eight jobs successful, including both regular targets and host regressions.
-- Changes after the firmware source commit are validation/status documentation
-  only. Evidence commits do not change the frozen source/image identity.
+- The frozen source/image identity remains unchanged. Later documentation and
+  isolated diagnostic fault-injection tooling are not part of this image.
 
 Both original candidate and recovery bundle signatures, signed projects,
 image sizes/hashes and separate manifest signatures were reverified locally.
@@ -54,19 +55,24 @@ operator listening. It is not an uninterrupted 180-minute run.
 | Exact-source CI / local firmware builds / signed artifact identity | PASS |
 | Focused JC4880/FLX4 functional and listening scenarios above | PASS |
 | Operator-approved segmented soak accounting | PASS |
-| Uninterrupted 180-minute qualification | NOT RUN |
+| Uninterrupted 180-minute qualification | NOT RUN / accepted segmented-soak exception |
 | Unconfirmed-image automatic bootloader rollback on hardware | PASS |
-| 60-second startup deadline rejection on hardware | NOT RUN |
+| 60-second startup deadline rejection using isolated diagnostic image | PASS (60.253 s) |
 | Source-cue tombstone reimport/cross-media physical isolation | NOT RUN |
 | Remaining deck/format, shifted/touch load-lock, active removal and cancellation variants | NOT RUN |
 | JC1060/DDJ-400/real Link peers | NOT RUN |
-| Public release/tag/channel change | NOT AUTHORIZED / NOT PERFORMED |
+| Public release/tag/channel change | AUTHORIZED / publication in progress |
 
 The isolated forced-rollback image booted in `ota_0` (boot 612), restarted
 before confirmation and automatically returned to the frozen v91 in `ota_1`
 (boot 613). No manual recovery or additional reboot was used. This proves
-unconfirmed-image bootloader rollback; it does not exercise the 60-second
-startup deadline rejection branch. The existing host startup gate covers
-timeout and readiness decisions. The candidate is reviewable with these explicit
-boundaries. Public production promotion still requires a decision on the
-unrun release gates; this document does not silently waive them.
+unconfirmed-image bootloader rollback. The subsequent diagnostic image
+`M2.4-103-g8eabc1fd` held only gate readiness false, remained observable through
+the real API, and rejected at 60.253 seconds (boot 614), returning automatically
+to v91 in `ota_1` (boot 615). This physically exercised the startup timeout and
+rejection path; actual Wi-Fi failure was not induced.
+
+The operator authorized all three closing steps: timeout verification,
+acceptance with the segmented-soak exception and publication of the frozen
+JC4880/FLX4 image. The [release record](JC4880_V91_RELEASE_20261005.md)
+retains the interruption and unrun variants as explicit qualification limits.
