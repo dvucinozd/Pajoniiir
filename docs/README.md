@@ -34,6 +34,7 @@ software-verified development configurations. No S3 firmware is active.
 | [JC1060 build guide](../firmware/main-deck-jc1060/README.md) | Separate entrypoint/lock, native layout, Ethernet and unrun bring-up |
 | [Simulator guide](../tests/ui_simulator/README.md) | Actual product/preview/Link presentation regression modes |
 | [M2.5 artwork fallback](validation/M2_5_DEFAULT_ARTWORK_20261006.md) | User-supplied logo, read-only thumbnails, software checks and pending physical acceptance |
+| [JC4880 library smoke](validation/JC4880_LIBRARY_SMOKE_20261006.md) | Focused v91 catalog/load, artwork/memory-cue visibility and playlist navigation checks |
 | [LIBAPTA plan](LIBAPTA_P4_INTEGRATION_PLAN.md) | Deferred separate integration; not current firmware capability |
 
 ## Current release evidence

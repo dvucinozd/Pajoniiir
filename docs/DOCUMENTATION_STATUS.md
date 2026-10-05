@@ -66,6 +66,13 @@ and [release review](validation/JC4880_V91_RELEASE_REVIEW_20261005.md).
 Automatic recovery passed in the accepted configuration. The earlier bare
 M2.4 power-cycle observation is historical, not a universal v91 requirement.
 
+A [focused library smoke](validation/JC4880_LIBRARY_SMOKE_20261006.md) on
+installed v91 additionally confirmed artwork and memory-cue visibility,
+navigation of `untitled playlist`, catalog consistency, local load and rejection
+of stale catalog requests. Exported order, cue positions, downbeat/PWV4 source
+comparison and artwork isolation remain open; the development logo was not
+installed during these checks.
+
 ## Maintained architecture and software scope
 
 Development `master` additionally includes the user-supplied default Pajoniiir
