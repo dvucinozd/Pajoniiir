@@ -1,7 +1,12 @@
 # Pajoniiir P4 FatFs Override Notes
 
-Documentation status: active local integration note, reviewed 2026-07-13.
+Documentation status: active local integration note, reviewed 2026-10-06.
 FAT32/exFAT on superfloppy, MBR and GPT media is hardware-validated.
+
+The copied-source path below records original provenance, not the required
+build environment. Both current board entrypoints require ESP-IDF 6.0.2;
+their committed locks and existing USB fixes remain authoritative. Historical
+media acceptance does not qualify new JC1060 SD/DMA or recorder experiments.
 
 This component was copied from:
 

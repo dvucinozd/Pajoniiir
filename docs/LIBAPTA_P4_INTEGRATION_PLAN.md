@@ -2,7 +2,7 @@
 
 - Status: **deferred implementation plan**
 - Recorded: **2026-08-22**
-- Revalidated: **2026-09-20**; not part of M2.1
+- Scope reviewed: **2026-10-06**; outside published v91 and A-L integration
 - Target: `firmware/main-deck-p4` on ESP-IDF **v6.0.2**
 
 This document is the implementation plan for making libapta-audio 1.1 the
@@ -16,6 +16,11 @@ This is not a statement that APTA support exists in current firmware. Current
 moving development branch or be advertised until the gates in this document
 pass. Revalidate the cited upstream revision and release state before starting;
 the commit below records the planning baseline, not a current upstream claim.
+
+The separate `codex/p4-apta-library` work was not merged by the fork integration.
+This review does not revalidate upstream algorithms, versions or corpus gates.
+The numbered plan below remains the deferred design rather than delivered
+product support.
 
 ## 1. Entry gate and upstream pin
 

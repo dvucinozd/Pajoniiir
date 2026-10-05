@@ -1,9 +1,12 @@
 # ESP32-P4 Pinout Inventory for JC4880P443C_I_W
 
-Documentation status: active M2.1 P4 pin inventory, reconciled 2026-09-20. Keep
+Documentation status: active JC4880 P4 pin inventory, reconciled 2026-10-06. Keep
 it in sync with `docs/HARDWARE_WIRING.md` after any wiring or enclosure change.
 
-This file is the source of truth for P4-side peripheral wiring.
+This file describes the JC4880 wiring retained by frozen v91. Historical M2.1
+acceptance labels below preserve original measurement provenance. Do not apply
+GPIO50/51/52 PCM5102A wiring to JC1060: those pins belong to Ethernet on that
+board and PCM5102A is disabled. See [JC1060](../main-deck-jc1060/README.md).
 
 ## Occupied P4 pins in current firmware
 

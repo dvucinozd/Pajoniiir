@@ -1,9 +1,13 @@
 # Rekordbox File Format Analysis
 
-Document status: **active format reference, reconciled 2026-09-20**. Runtime parser
+Document status: **active format reference, reconciled 2026-10-06**. Runtime parser
 and host tests remain the authority when this exploratory analysis differs.
 
-Validated on real USB drive (308 tracks, 2026-05-20).
+Historical format observations: 308-track USB export, 2026-05-20. Current
+A-C parser/metadata integration is software verified; exhaustive real-export
+comparison on v91 is NOT RUN. Fixes and ideas from collaborator
+[kayrozen](https://github.com/kayrozen) were adapted from donor `428b97dd`;
+see [provenance](FORK_IMPROVEMENTS.md).
 
 ## Context
 
@@ -120,8 +124,8 @@ String indices in the offset table:
 | Index | Content |
 |--------|---------|
 | 14 | **anlz_path** — `/PIONEER/USBANLZ/.../ANLZ0000.DAT` |
-| 17 | comment |
-| 18 | title |
+| 17 | **title** (filename fallback when empty) |
+| 18 | Not the title; intentionally distinct in regression fixtures |
 | 19 | filename |
 | 20 | file_path — `/Contents/...` |
 
@@ -220,12 +224,15 @@ uint32_t end_ms;      // 0x24: loop end (only if type=2)
 
 The parser validates every declared PCPT record even for memory-cue lists, walks
 all PCOB sections, and rejects duplicate supported hot-cue slots or invalid loop
-bounds. Memory cues are not mapped to the eight performance-pad slots.
+bounds. Up to 16 memory points/loops retain export order in a separate bounded list;
+excess entries set truncation status. Memory cues are not mapped to the eight
+performance-pad slots. Effective hot cues merge source values with local
+persistent overrides/tombstones keyed by full 32-byte media identity.
 
 ### PQTZ — Beat Grid Entry (8 bytes, big-endian)
 
 ```c
-uint16_t beat_phase;  // position within the bar (0 = downbeat)
+uint16_t beat_phase;  // PQTZ beat number 1..4; 1 = downbeat, 0 = unknown
 uint16_t bpm_x100;    // BPM × 100 (e.g., 13611 = 136.11 BPM)
 uint32_t time_ms;     // absolute time from track start (ms)
 ```
@@ -243,7 +250,7 @@ uint32_t time_ms;     // absolute time from track start (ms)
 | `PCO2` | 20 | Newer cue format — not parsed |
 | `PQT2` | 56 | Newer beat grid — not parsed |
 | `PWV5` | 24 | Alternative waveform format — not parsed |
-| `PWV4` | 24 | Alternative waveform format — not parsed |
+| `PWV4` | 24 | Color preview: 6-byte entries, up to 7,200 retained bytes; malformed/missing tag falls back to PWAV/PWV3 |
 
 ## Sections in ANLZ0000.2EX (Newer Format)
 
@@ -261,29 +268,12 @@ uint32_t time_ms;     // absolute time from track start (ms)
 - `firmware/main-deck-p4/components/library/include/rekordbox_anlz.h`
 - `firmware/main-deck-p4/components/library/rekordbox_anlz.c`
 
-**Struct to be populated:**
-
-```c
-typedef struct {
-    char audio_path[512];           // from PPTH (UTF-16 BE → ASCII)
-
-    anlz_beat_t *beats;             // heap: PQTZ beat grid
-    uint16_t     beat_count;
-    uint16_t     bpm;               // rounded from bpm_x100
-
-    anlz_cue_t cues[8];             // from PCOB
-    uint8_t    cue_count;
-
-    uint32_t vbr[400];              // from PVBR (VBR seek table)
-    bool     has_vbr;
-
-    uint8_t  waveform_low[400];     // from PWAV
-    bool     has_waveform_low;
-
-    uint8_t  *waveform_high;        // heap: from PWV3 in .EXT (up to ~62 KB)
-    uint32_t  waveform_high_len;
-} anlz_metadata_t;
-```
+The public metadata structure is defined in
+[`rekordbox_anlz.h`](../firmware/main-deck-p4/components/library/include/rekordbox_anlz.h).
+It includes owned beats/PWV3/PWV4, eight hot-cue slots, up to 16 separate memory
+cues, validated waveform span and explicit truncation flags. Use `anlz_free()`
+to release owned buffers; do not copy borrowed pointers into UI/cache state.
+The current header, rather than an older sample struct, is the ABI authority.
 
 **Known Bugs Found via Testing (All Fixed in Code):**
 
@@ -304,13 +294,16 @@ typedef struct {
 | `deck_core/` | Hot cue start/end positions | ANLZ PCOB/PCPT |
 | LVGL UI | Waveform display 400px low-res | ANLZ PWAV |
 | LVGL UI | Waveform high-res for zoom | ANLZ PWV3 |
+| LVGL UI | Optional color preview | ANLZ PWV4 |
+| Library | Ordered folder/playlist navigation and artwork references | PDB PlaylistTree/PlaylistEntries/Artwork |
+| Deck/UI | Separate memory cue points/loops | PCOB list type 0 |
 
 ---
 
 ## Limitations of the Current Parser
 
 - `exportLibrary.db` — SQLCipher encrypted database (Rekordbox 6), not used; we use `export.pdb` instead.
-- `PCO2`, `PQT2`, `PWV5`, `PWV4`, `PWV7`, `PWV6`, `PWVC` — newer tags are not parsed.
+- `PCO2`, `PQT2`, `PWV5`, `PWV7`, `PWV6`, `PWVC` are not parsed; PWV4 is supported.
 - SPIRAM required for in-memory PDB index (~281 KB for 308 tracks) — `CONFIG_SPIRAM=y` in `sdkconfig.defaults`.
 
 ---
@@ -330,7 +323,18 @@ mingw32-make test
 .\test_pdb.exe F:\PIONEER\rekordbox\export.pdb
 ```
 
-Requires GCC 16.1.0 (WinLibs MinGW UCRT, `winget install BrechtSanders.WinLibs.POSIX.UCRT`).
+The examples above preserve the historical standalone harness invocation.
+Current Windows regressions use MSYS2 UCRT GCC (`C:/msys64/ucrt64/bin`, appended
+to PATH) and `tests/run_p4_host_tests.ps1`. Use `-ListSuites` to select actual
+suite names; run the complete runner for the CI-equivalent functional gate.
+
+Current PDB limits are 1,024 tracks, 512 names per name table, 256 playlist
+nodes, 8,192 playlist entries and 1,024 artwork references. Optional tables
+report truncation/rejected references; cyclic/invalid folders cannot recurse
+forever. JPEG reading/decoding runs in a worker, with a 24-slot cache and a
+64 KiB input cap. Playlist order is independent of global sorting.
+Missing artwork/waveform must not block a valid audio load. PVBR offsets are
+validated before seek; analysis span is not authority for actual file EOF.
 
 **Results on a Real USB Drive (308 tracks, 2026-05-20):**
 

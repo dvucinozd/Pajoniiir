@@ -1,10 +1,17 @@
 # DDJ-FLX4 MIDI Map
 
-Status: **current mapping and acceptance ledger, reconciled 2026-09-20**. `Implemented`
+Status: **current mapping with dated acceptance ledger, reconciled 2026-10-06**. `Implemented`
 means a firmware path exists; hardware acceptance is stated separately per row
 or section. XML supplies addresses, never standalone runtime behavior. Rows
 that name `feat/p4-dual-usb-host` preserve their implementation provenance;
 that completed branch was merged into `master` at `d3099f9` on 2026-09-20.
+
+The published v91 [release record](validation/JC4880_V91_RELEASE_20261005.md)
+adds focused scratch, CUE/PLAY/MT, loop OUT/half/double/exit, local cue
+persistence/deletion, normal D1 LOAD lock and stopped reconnect acceptance.
+Older row labels retain their original scenarios; they do not imply exact-v91
+repetition or new acceptance of advanced shifted/touch/held-control variants.
+LOAD admission now respects default-on load lock before replacing a playing deck.
 
 Source file:
 [docs/reference/Pioneer-DDJ-FLX4.midi.xml](reference/Pioneer-DDJ-FLX4.midi.xml)

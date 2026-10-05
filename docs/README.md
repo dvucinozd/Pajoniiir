@@ -1,91 +1,101 @@
 # Pajoniiir documentation
 
-Status: **current P4-only documentation index, reconciled 2026-09-29**.
+Status: **reconciled 2026-10-06; v91 published; A-L merged into master**.
 
-Pajoniiir M2.4 is a released standalone dual-deck system. The ESP32-P4 owns
-USB media, DDJ-FLX4 control/audio, playback, mixer/DSP, display, network
-services and signed OTA. There is no active S3 firmware or inter-board link.
+Start with the [user manual](index.html) for operation and
+[DOCUMENTATION_STATUS.md](DOCUMENTATION_STATUS.md) for current support.
+The published configuration is JC4880 / DDJ-FLX4 / PCM5102A MAIN / FLX4 cue,
+frozen at `M2.4-91-g75136aef`. JC1060/DDJ-400/real Link peers remain
+software-verified development configurations. No S3 firmware is active.
 
-## User documentation
+## Operation and maintenance
 
-- [`index.html`](index.html) — published M2.4 user manual.
-- [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) — concise product and release
-  overview.
-- [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — power, USB and PCM5102A wiring.
-- [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — operation, maintenance and
-  release checklist.
-- [`OTA-UPDATE.md`](OTA-UPDATE.md) — signed local/pull OTA and wired recovery.
+| Document | Purpose |
+| --- | --- |
+| [User manual](index.html) | Current JC4880/FLX4 controls, media, network and maintenance |
+| [Project overview](PROJECT_OVERVIEW.md) | Capabilities, topology, published vs development scope |
+| [Startup checklist](STARTUP_CHECKLIST.md) | Normal operation, new-image gates and explicit NOT RUN variants |
+| [Hardware wiring](HARDWARE_WIRING.md) / [JC4880 pinout](../firmware/main-deck-p4/PINOUT_P4.md) | Accepted topology; requalify after wiring/supply changes |
+| [OTA procedure](OTA-UPDATE.md) | Signed push/pull, startup confirmation, board identity and recovery |
+| [Security policy](SECURITY_PROVISIONING_POLICY.md) | Signing-key custody, service exposure and deferred hardware provisioning |
+| [Risk register](RISK_REGISTER.md) | Current accepted limits, exceptions and future qualification |
 
-## Developer documentation
+## Development
 
-- [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) — current production
-  identity, accepted limitations and source-of-truth order.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — P4 runtime architecture and ownership.
-- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — post-M2.4 maintenance roadmap.
-- [`RISK_REGISTER.md`](RISK_REGISTER.md) — active and accepted product risks.
-- [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md) — M2.4
-  network, signing-key and irreversible-provisioning decisions.
-- [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — FLX4 mapping and per-control
-  acceptance status.
-- [`CONTROLLER_PROFILE_SCHEMA.md`](CONTROLLER_PROFILE_SCHEMA.md) and
-  [`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md) — P4-local
-  controller profile format and update procedure.
-- [`HERCULES_INPULSE_500_MIDI_MAP.md`](HERCULES_INPULSE_500_MIDI_MAP.md) —
-  host-qualified, not hardware-qualified non-FLX4 profile.
-- [`rekordbox-format-analysis.md`](rekordbox-format-analysis.md) — Rekordbox
-  media/metadata reference.
-- [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) — deferred
-  optional integration, not current firmware capability.
-- [`../firmware/main-deck-p4/PINOUT_P4.md`](../firmware/main-deck-p4/PINOUT_P4.md)
-  — active P4/PCM5102A pin inventory.
+| Document | Purpose |
+| --- | --- |
+| [Architecture](ARCHITECTURE.md) | Shared P4 core, ownership, workers, USB/audio/UI/network boundaries |
+| [Development plan](DEVELOPMENT_PLAN.md) | Change-driven maintenance and remaining hardware work |
+| [Integration/provenance](FORK_IMPROVEMENTS.md) | A-L implementation, collaborator [kayrozen](https://github.com/kayrozen), frozen donor SHA and licenses |
+| [Controller schema](CONTROLLER_PROFILE_SCHEMA.md) / [upload procedure](CONTROLLER_PROFILE_UPDATE.md) | JSON v1 and S3CP v2/v3/v4, compatibility and activation |
+| [FLX4 mapping](DDJ_FLX4_MIDI_MAP.md) | Verified MIDI addresses and per-control historical acceptance |
+| [Hercules candidate](HERCULES_INPULSE_500_MIDI_MAP.md) / [DDJ-400 candidate](../controllers/pioneer_ddj_400/README.md) | Software profile evidence; hardware NOT RUN |
+| [Rekordbox format](rekordbox-format-analysis.md) | PDB/ANLZ interpretation, current bounds and historical observations |
+| [JC1060 build guide](../firmware/main-deck-jc1060/README.md) | Separate entrypoint/lock, native layout, Ethernet and unrun bring-up |
+| [Simulator guide](../tests/ui_simulator/README.md) | Actual product/preview/Link presentation regression modes |
+| [LIBAPTA plan](LIBAPTA_P4_INTEGRATION_PLAN.md) | Deferred separate integration; not current firmware capability |
 
-Before committing documentation or media changes, run:
+## Current release evidence
+
+- [Published v91 record](validation/JC4880_V91_RELEASE_20261005.md):
+  frozen source, artifact hashes, signatures, publication and accepted scope.
+- [v91 review](validation/JC4880_V91_RELEASE_REVIEW_20261005.md):
+  focused physical/listening results, rollback and remaining limits.
+- [JC4880 hardware ledger](validation/JC4880_L_CANDIDATE_20261005.md):
+  chronological failures, corrections and exact-image tests.
+- [L software handoff](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md):
+  both target builds, locks, image budgets, CI and packaging.
+- [Documentation audit](validation/DOCUMENTATION_RECONCILIATION_20261006.md):
+  complete tracked-document inventory and this reconciliation.
+
+The accepted v91 soak is **180m01.37s in two segments** with a recorded interruption.
+It is an explicit operator-approved release exception.
+**Uninterrupted 180-minute v91 qualification remains NOT RUN.**
+
+## Historical evidence
+
+Dated validation records apply to the versions/scenarios they name. A prior
+PASS does not qualify changed code, and an older open gate does not reopen a
+later documented focused pass. Their results and hashes remain preserved.
+
+- [M2.1](validation/M2_1_PRODUCTION_RELEASE_20260920.md),
+  [M2.2](validation/M2_2_PRODUCTION_RELEASE_20260923.md),
+  [M2.3 decision](validation/M2_3_RELEASE_DECISION_20260928.md),
+  [M2.4](validation/M2_4_PRODUCTION_RELEASE_20260929.md):
+  immutable earlier release/decision records.
+- [USB lifecycle](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md) and
+  [power/VBUS](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md):
+  per-image lifecycle accounting and unchanged-wiring acceptance.
+- [Media cache](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md),
+  [exFAT/GPT](validation/P4_USB_EXFAT_GPT_SMOKE.md),
+  [duplicate track IDs](validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md):
+  earlier local-media evidence; exact-v91 repetition is not implied.
+- [Master Tempo](validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md),
+  [UAC continuity](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md),
+  [earlier combined soak](validation/P4_FINAL_COMBINED_SOAK_20260920.md),
+  [OTA fault matrix](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md):
+  historical qualification and remediation.
+- [Post-review qualification](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md),
+  [scheduler probe](validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md),
+  [supply investigation](validation/P4_M2_5_USB_REBOOT_INVESTIGATION_20261001.md),
+  [M2.5 handoff](M2_5_HANDOFF_20261002.md):
+  older sessions; their installed versions/channel states are historical.
+- [H candidate](validation/JC4880_H_CANDIDATE_20261004.md):
+  failed resource candidates and corrective sequence, not accepted release images.
+
+Older removed S3/dual-processor documents remain in Git history. The audit
+inventory indexes every retained record, including the package B-K closures.
+
+## Documentation checks
+
+From the repository root:
 
 ```powershell
 .\tools\check_documentation.ps1
 git diff --check
+git status --short
 ```
 
-The `Documentation integrity` workflow repeats those checks for Markdown/HTML
-links, local assets, references to removed documentation and changed-file
-whitespace. Changes to `docs/` also retain the separate Pages deployment gate.
-
-## M2.1 release evidence
-
-- [`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md)
-  — exact tagged build, installation, smoke and publication record.
-- [`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md)
-  and [`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md)
-  — beta qualification and merge/CI provenance inherited by M2.1.
-- [`validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
-  — complete USB lifecycle accounting.
-- [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md)
-  — accepted unchanged power/VBUS wiring.
-- [`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md)
-  and [`validation/P4_USB_EXFAT_GPT_SMOKE.md`](validation/P4_USB_EXFAT_GPT_SMOKE.md)
-  — media, filesystem and partition-layout evidence.
-- [`validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md),
-  [`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
-  and [`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md)
-  — final audio remediation and soak evidence.
-- [`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md)
-  — signed pull/push OTA recovery evidence.
-
-## M2.2 maintenance evidence
-
-- [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
-  records the installed post-review maintenance image soak, real-media latency,
-  catalog reboot/remount and slow-network browser evidence, together with the
-  remaining physical and instrumented release gates.
-
-## M2.4 production release
-
-- [`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md)
-  records the exact build and hashes, M2.3 TLS failure, M2.4 cross-signed-chain
-  remediation, signed installation, production probes, cold-boot product smoke
-  and publication verification.
-
-Superseded S3/dual-processor documents, completed implementation plans and
-intermediate RC validation notes were removed from the working tree during the
-M2.1 documentation reconciliation. They remain available in Git history when
-historical investigation is required.
+Documentation integrity checks Markdown/HTML links, assets and retired paths.
+Changes under `docs/` also have a separate Pages deployment gate; current
+source changes do not establish that the hosted manual has already deployed.

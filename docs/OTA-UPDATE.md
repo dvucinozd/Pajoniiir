@@ -1,18 +1,20 @@
 # Pajoniiir OTA Update Procedure
 
-Status on `master`: P4 is the only active OTA target. Production release
-`M2.4` freezes commit `9d0c954`, was installed on `ota_1` during its accepted
-release session and is published through the canonical HTTPS channel and
-GitHub Releases. This procedure is the current P4 operator authority.
-Superseded multi-target OTA procedures remain available in Git history only.
+Status: **current board-specific P4 procedure, reconciled 2026-10-06**.
+Published JC4880/FLX4 release `M2.4-91-g75136aef` freezes source
+`75136aef749a1f03d9089c8b6ff6452b3dba0839`. The original image, not a rebuild
+of later master, is accepted and published. JC1060 has a separate project and
+development channel configuration; its hardware/channel publication is NOT RUN.
+Both boards run P4; there is no S3 update target.
 
 ## Safety rules
 
-Development [L candidates](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
+Board-specific [L candidates](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
 use `main-deck-p4` for JC4880 and `main-deck-jc1060` for JC1060. Both retain the
 existing P4 signing/schema and same physical slot sizes; the fixed build budget
 is 0x380000. Packager and runtime reject mismatched signed/embedded project or
-version. Ordinary packaging also rejects dirty, preview and storage experiments.
+version. Ordinary packaging also rejects dirty, preview, recorder, storage experiments
+and both OTA startup fault-injection flags.
 Specify `-Project main-deck-jc1060` in both packaging/channel tools for that board.
 JC1060 uses `https://ota.pajoniiir.eu/jc1060` as its separate configured pull
 root; JC4880's existing root/schema is unchanged. Channel generation writes local
@@ -21,12 +23,15 @@ files only and does not publish or alter saved device settings. Each candidate's
 binary/bundle hashes with hardware gates NOT RUN. First JC1060 provisioning
 requires wired partition installation; app-only OTA cannot change partitions.
 
-Development startup confirmation: a pending image is confirmed only after
+Pending-image startup confirmation: a pending image is confirmed only after
 critical core initialization and, if Wi-Fi remote was enabled in saved boot
 settings, the AP/HTTP service becoming active within 60 seconds of P4 app
 entry. Deadline expiry requests IDF rollback. Accepted/factory images keep
 their ordinary startup behaviour. USB devices and connected AP clients are
-not required. This new guard still requires physical rollback acceptance.
+not required. Physical unconfirmed-image restart rollback and 60.253-second
+readiness timeout rejection passed with isolated diagnostics, restoring original
+v91. The timeout test injects false readiness while the actual AP/API stay alive;
+it does not claim an induced Wi-Fi failure.
 
 - Update P4 only and wait for a clean reboot.
 - Upload only `main-deck-p4.ddjota`. Raw `.bin` files are for
@@ -133,9 +138,9 @@ Generate and verify the channel document with:
 The hosting account is a deployment secret supplied out of band. Never commit
 its username or password, embed either in the public HTTPS URL, place them in a
 release artifact or copy them into firmware/NVS. Load credentials only from a
-local secret store or interactive credential prompt during publication. If the
-host offers only plain FTP, restrict it to the private publication control
-plane and migrate to FTPS or SFTP before broadening operator access. The public
+local secret store or interactive credential prompt during publication. Use FTPS or SFTP with host/certificate verification. The v91 publication used
+FTPS with CA/hostname validation against the provider certificate; do not
+resolve a certificate mismatch by disabling verification or exposing secrets. The public
 device-facing channel must remain HTTPS.
 
 Publishing uses the private upload service only to place files. Devices use
@@ -151,8 +156,7 @@ Initialize ESP-IDF and use an isolated release build so stale ignored
 ESP-IDF **6.0.2 is required**, not merely recommended:
 `firmware/main-deck-p4/main/idf_component.yml` pins `idf: "==6.0.2"`, so an older
 environment fails during dependency resolution rather than producing a
-questionable image. The 5.5 environments below are no longer usable for this
-tree.
+questionable image. The older 5.5 environments are no longer usable for this tree.
 
 ```powershell
 . C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
@@ -164,13 +168,13 @@ idf.py -B build_signed fullclean
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 ```
 
-Do not package unless the P4 build exits with code 0 and fits its 4 MiB slot.
+Do not package unless the build exits with code 0 and the application is at most
+`0x380000` bytes. The physical slots remain `0x400000`; that larger size is not
+permission to relax the fixed application budget.
 
-The current exact-image remediation and final three-hour combined-soak evidence
-is recorded in
-[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
-and
-[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
+Current frozen-image evidence and its explicit segmented-soak exception are in
+the [v91 record](validation/JC4880_V91_RELEASE_20261005.md). Earlier M2.1
+idle-continuity/three-hour records retain their own image results.
 Application OTA does not replace the bootloader or partition table; use a full
 wired flash whenever either changes.
 
@@ -231,7 +235,7 @@ python .\tools\ota_signing.py verify-file `
 ## Update P4
 
 1. Enable **Wi-Fi Remote** in P4 Settings.
-2. Connect to `Pajoniiir` using the shared service password `Pajoniiir`. M2.4
+2. Connect to `Pajoniiir` using the configured shared service password. The current build
    advertises WPA2/WPA3 transition mode with PMF capability. Then open
    `http://192.168.4.1`.
 3. Record the running P4 version, slot and state.
@@ -268,12 +272,12 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   slot remains bootable.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
-M2.4 exact-tagged build, signed installation, live TLS probe, public-channel and GitHub asset
-verification are recorded in
-[`validation/M2_4_PRODUCTION_RELEASE_20260929.md`](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
-The M2.4 push-install software reboot did not enumerate USB0/USB1. Complete a
-full power cycle after the update, then confirm storage, FLX4 MIDI/UAC and OTA
-idle state before use.
+Current v91 publication, installed-image and automatic recovery evidence are
+in the [release record](validation/JC4880_V91_RELEASE_20261005.md).
+The [bare M2.4 record](validation/M2_4_PRODUCTION_RELEASE_20260929.md) retains
+its original cold-power-cycle observation; it is not a universal requirement
+for v91. If expected services do not return, record the fault and verify rollback
+before attempting controlled recovery. Do not silently erase failed acceptance.
 The retained pull/push recovery matrix is
 [`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md).
 

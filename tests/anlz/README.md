@@ -1,6 +1,6 @@
 # ANLZ Parser Tests
 
-Documentation status: current host-test fixture guide, reviewed 2026-07-13.
+Documentation status: current host-test fixture guide, reviewed 2026-10-06.
 
 PC test harness for `rekordbox_anlz.c` — runs on the host without any ESP32 hardware.
 
@@ -15,7 +15,7 @@ PC test harness for `rekordbox_anlz.c` — runs on the host without any ESP32 ha
 make test
 ```
 
-Expected output (all PASS):
+Example output from the earlier fixture set (counts are historical):
 
 ```
 Pajoniiir ANLZ Parser Test
@@ -47,6 +47,14 @@ drive (`PIONEER/USBANLZ/<artist>/<track>/`) to your PC, then:
 The parser is part of the `library` component and builds as part of the P4 firmware:
 
 ```powershell
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
+idf.py --version # must report ESP-IDF v6.0.2
 cd firmware/main-deck-p4
 idf.py build
 ```
+
+For CI-equivalent host coverage, run `tests/run_p4_host_tests.ps1` from the
+repository root. `-ListSuites` lists current selectable suites. The current
+parser adds 1-based PQTZ downbeats, separate bounded memory cues, validated PVBR
+and PWV4 color previews; valid/corrupt fixtures do not establish real-media
+hardware acceptance. Shared library changes require both P4 board builds.

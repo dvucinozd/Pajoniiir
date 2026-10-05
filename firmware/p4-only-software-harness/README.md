@@ -16,7 +16,7 @@ It proves at build time that:
 - relative jog deltas accumulate with saturation;
 - durable held-state levels survive queue pressure and generate forced release
   events on controller disconnect;
-- compiled S3CP v2 controller profiles can be parsed and activated locally;
+- compiled S3CP v2/v3/v4 controller profiles can be parsed by the shared runtime;
 - an active profile owns input mapping and reconnect replay completely, while
   the built-in FLX4 map remains the fallback only when no profile is active;
 - dynamic profile LED mappings produce the required four-byte USB-MIDI packets.

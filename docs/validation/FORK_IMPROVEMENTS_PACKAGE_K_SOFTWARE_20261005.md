@@ -1,5 +1,11 @@
 # Package K: network sync and tempo master
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Date: 2026-10-05. Software closure on `codex/fork-improvements`, based on
 `298ee029253183015454535451de218de2781e68` (J, all eight hosted jobs PASS).
 The final package commit and exact hosted run are reported at delivery.

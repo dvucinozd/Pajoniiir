@@ -1,7 +1,7 @@
 # Pajoniiir LVGL UI simulator E2E gate
 
 This gate builds the real P4 LVGL UI against a pinned upstream LVGL commit,
-runs it on a headless 800x480 framebuffer and drives navigation through the
+runs it on native 800x480 or 1024x600 headless framebuffers and drives navigation through the
 actual LVGL button callbacks. No P4, S3, FLX4, SDL window or media device is
 required.
 
@@ -52,7 +52,7 @@ Screenshot approval is a PC rendering regression gate. It does not replace the
 P4 DSI/PPA fluidity, touch-coordinate, visibility-at-distance or panel-timing
 hardware acceptance.
 
-Package H runs seven presentations. `legacy`, `product-compact` and
+The integrated gate runs eight presentation modes. `legacy`, `product-compact` and
 `product-wide` compile the actual previous product presentation, at 800x480 or
 1024x600, with seventeen captures including the bounded memory-cue list and its
 scroll state. `runtime-compact`/`runtime-wide` compile the actual optional
@@ -66,6 +66,16 @@ foreach ($mode in @('legacy','product-compact','product-wide',
     .\tests\ui_simulator\run_ui_simulator_e2e.ps1 -Presentation $mode -KeepArtifacts
 }
 ```
+
+The eighth mode exercises the actual JC1060 Link Library and network status:
+
+```powershell
+.\tests\ui_simulator\run_ui_simulator_e2e.ps1 -Presentation link-wide -KeepArtifacts
+```
+
+Production acceptance uses `product-compact`/`product-wide` and the real common
+presentation. Native donor demos alone do not prove firmware integration.
+The current CI runs all eight; the compact default invocation remains `legacy`.
 
 Runtime assertions also cover one selected widget tree, paired D1/D2 PLAY/CUE
 and pad holds, cancellation on navigation, tombstone precedence in waveform

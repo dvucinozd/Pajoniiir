@@ -1,5 +1,11 @@
 # P4 reduced pull-OTA fault matrix — 2026-09-20
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Status: **reduced M2 beta OTA matrix PASS: public pull, interrupted upload
 recovery and signed opposite-slot rollback**.
 

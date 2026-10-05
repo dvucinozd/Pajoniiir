@@ -1,5 +1,11 @@
 # P4 bounded-media-cache exact-image evidence — 2026-09-19
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Status: **focused cache/load/playback PASS; full Phase 4 functional matrix remains open**.
 
 ## Exact image

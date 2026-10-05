@@ -1,12 +1,14 @@
-# M2.4 security and provisioning policy
+# P4 security and provisioning policy
 
-Status: **applied to released M2.4; irreversible ESP32-P4 provisioning
-intentionally deferred**.
+Status: **applied to published JC4880/FLX4 v91; reconciled 2026-10-06**.
+Irreversible ESP32-P4 provisioning remains intentionally deferred.
 
 ## Release identity
 
-- The production version is `M2.4`, frozen at
-  `9d0c954fc502ae237fabedb764368cd9b10f10dc`.
+- Current production is `M2.4-91-g75136aef`, frozen at
+  `75136aef749a1f03d9089c8b6ff6452b3dba0839`. Its tag/assets are immutable;
+  later diagnostic/docs commits are not the accepted image. See the
+  [release record](validation/JC4880_V91_RELEASE_20261005.md).
 - The existing annotated `M2` tag is immutable and must not be moved.
 - The existing annotated `M2.1` tag remains the immutable prior production
   baseline and must not be moved.
@@ -17,9 +19,10 @@ intentionally deferred**.
 - The annotated `M2.3` and `M2.4` tags are immutable. M2.4 supersedes M2.3
   because the latter could not validate the current valid cross-signed public
   TLS chain.
-- Pull OTA accepts the bare `M2.4` tag and later
-  `M2.4-<distance>-g<hash>` development versions. Local signed push OTA remains
-  the intentional rollback path.
+- Pull OTA orders comparable versions and offers only strictly newer signed
+  images; equal v91 does not offer a duplicate. Local signed push is the
+  intentional rollback path. Project identity prevents cross-board activation;
+  JC1060 hardware and public channel publication remain NOT RUN.
 
 ## Service network
 
@@ -36,7 +39,7 @@ intentionally deferred**.
 
 ## OTA signing key
 
-- `rel-001` remains the trusted release key for M2.4.
+- `rel-001` remains the trusted release key for v91, unchanged from M2.4.
 - Store the private key in encrypted offline primary storage and keep one
   separately located encrypted offline backup. Neither copy may enter Git,
   build logs, release artifacts, firmware/NVS or the hosting account.
@@ -46,15 +49,15 @@ intentionally deferred**.
 - Verify backup recovery by signing a disposable test payload which the
   committed public key accepts. Record only success, key ID and public-key
   fingerprint; never record the private key or its passphrase. This is a future
-  maintenance action and is not claimed as completed M2.4 evidence.
+  maintenance action and is not claimed as completed v91 evidence.
 - Normal rotation is a firmware release signed by `rel-001` that introduces a
   successor trust key before `rel-001` is retired. Emergency recovery after
   loss or compromise uses the confirmed wired service path. Multi-key overlap
-  is future implementation work and is not claimed by M2.4.
+  is future implementation work and is not claimed by v91.
 
 ## Secure Boot, Flash Encryption and eFuses
 
-M2.4 does **not** enable ESP32-P4 Secure Boot, Flash Encryption or security
+The v91 release does **not** enable ESP32-P4 Secure Boot, Flash Encryption or security
 eFuse provisioning. There is only one ESP32-P4 board, and the currently
 confirmed wired recovery path has not been qualified after those irreversible
 changes. Burning security eFuses on the only working unit is outside this
@@ -80,7 +83,7 @@ No release script may burn an eFuse implicitly.
 
 ## SBOM decision
 
-An SBOM is explicitly not required for M2.4. Dependency provenance and the
+The inherited no-SBOM release policy is unchanged for v91. Dependency provenance and the
 committed ESP-IDF component lock remain mandatory, but no SPDX/CycloneDX
 generator is a release gate unless the distribution or compliance scope
 changes.

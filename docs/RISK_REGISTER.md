@@ -1,83 +1,50 @@
-# P4 Risk Register
+# P4 risk register
 
-Status: **active P4-only register, reconciled 2026-10-05**.
+Status: **current v91 scope and development risks, reconciled 2026-10-06**.
 
-Current release is frozen JC4880/FLX4 `M2.4-91-g75136aef`. Focused accepted
-checks, OTA rollback and startup deadline rejection are documented in the
-[release record](validation/JC4880_V91_RELEASE_20261005.md). Its recorded
-180m01.37s in two segments is an operator-accepted release exception; an
-uninterrupted 180-minute test remains NOT RUN. JC1060/DDJ-400/real Link peers
-remain outside accepted hardware scope. Earlier correction checkpoints and
-monitor failures below remain historical evidence rather than current release
-claims; retained unrun variants and security/provisioning risks remain explicit.
+Current release is JC4880/FLX4 `M2.4-91-g75136aef` from `75136aef`.
+The [release record](validation/JC4880_V91_RELEASE_20261005.md) separates exact-image
+physical/listening acceptance, diagnostic rollback and publication from unrun
+variants. Dated records retain every earlier failed candidate and monitor loss.
 
-| Priority | Risk | Current evidence | Required disposition |
-| --- | --- | --- | --- |
-| SEGMENT PASS / full qualification OPEN | Host monitor disappears while the device continues playing | Original attempt lost its monitor after about 29 minutes. Detached monitor survived parent exit/chat/scheduler through 9060.489 seconds, 39144 requests and all checkpoints; 897 active samples have zero new strict faults and stable reserves. Final sound explicitly confirmed clean | Preserve the original INCOMPLETE record and operator-approved 29+151 accounting. Do not claim uninterrupted 180-minute monitoring. Final listening is PASS; remaining functional/lifecycle/recovery-baseline gates stay open. Never infer PASS from stale state |
-| OPEN / final hardware qualification (JC4880) | Software or focused correction is mistaken for qualified hardware or release | Real ISO SKIPPED and output lateness reproduced on earlier L/H images. Corrective 08996790 passes focused startup/resources/listening and 30-minute dense-status dual-loop playback with zero new strict faults | Finish the functional/lifecycle matrix, full resource baseline and 180-minute exact-image soak with zero new strict faults. Keep JC1060/DDJ-400/real peers development-only and public M2.4 unchanged |
-| FOCUSED PASS / final qualification OPEN | Periodic PSRAM heap diagnostics delay realtime service | IDF largest-block queries walk TLSF under an IRQ-masking lock. Boot 603 reproduced SKIPPED during dense polling; measured query wall times include preemption, not exact IRQ latency. Removing the PSRAM walk kept packets clean on boot 604; corrected image 08996790 passes dense playback and 30-minute loops | Preserve live PSRAM free/minimum, null unmeasured largest block and internal/DMA gate measurements. Complete restart/lifecycle and final exact-image qualification; do not claim the wall-time diagnostic measures IRQ latency |
-| FOCUSED PASS / final qualification OPEN | PCM5102A DMA quantum differs from the mixer block | Boot 604 failed at a 12,994-us output block with 240-frame DMA versus 256-frame mixing. Corrected 08996790 shares the 256-frame constant; 30-minute loop run has zero late events and MAIN phase maximum 5,836 us | Preserve descriptor count and strict thresholds. Complete restart/lifecycle and 180-minute exact-image qualification. Requalify sink latency for the changed DMA buffering; retain actual late-block phase diagnostics |
-| OPEN / physical NOT RUN (K) | Network LOCKED could be mistaken for audible phase qualification | Drift/jitter/loss/epoch/hold and handoff models, session-fenced mutations and UI status have automated coverage; no sink latency or real peer phase measurement exists | Keep Link default OFF. Measure each sink/rate and exact image, apply only that calibration (RAM-only), verify real CDJ/rekordbox handoff and listening. WAIT retains tempo; large errors never cause periodic seek. LOCKED alone is not acceptance |
-| OPEN / physical NOT RUN (I/J) | JC1060 Link peer interoperability and worker/storage timing are unqualified | Ethernet-only discovery/browse/NFS, full-identity cache, interruption/integrity/A-B swap and gated SD loader regressions pass software tests; real localhost socket suites run ASan/UBSan | Keep Link default OFF; record real JC1060/CDJ/rekordbox/card models and versions. Verify SD removal/power-loss/full-card, concurrent decode/output/USB deadlines and active PSRAM/stack reserves. Metadata-only or incomplete remote LOAD cannot replace a deck. No physical support claim follows from software closure |
-| OPEN / conservative policy (J) | NFS attributes, PDB digest or same locator cannot prove a volume identity | J requires full audio/PDB proof plus a new random mount/session nonce; no cross-session hit occurs, including reboot/reconnect. A/B with identical attributes has automated isolation | Keep session-local reuse only while volume identity is unknown. Local cue edits cannot migrate across these sessions. Add durable reuse only with trustworthy export/media identity and revalidation; never substitute IP/player/track or size/mtime as identity |
-| OPEN / physical NOT RUN | H runtime reserves and stack-sampling cost are unqualified | Single selected tree, bounded artwork/render ownership and allocation/stack diagnostics pass host/build/simulator tests; no candidate runtime measurements | Run matching network/USB idle and dual-playback resource gate; measure output deadlines including throttled self-stack scan, verify zero critical allocation failures and repeat exact-image listening/reconnect/180-minute soak. Recovery API lacks largest-block evidence: collect a real comparable baseline, never substitute zero or synthetic values |
-| OPEN / hardware FAIL (H3 preview) | Optional dj_ui consumes internal heap needed by USB and HTTP task stacks | Installed `M2.4-49-gcf28290` shows the new UI but loses USB0/FLX4 and AP. SD boots 578-585 report `0xB008` HTTP task failure, about 15 KiB free internal heap and only a 5 KiB largest block after Wi-Fi startup attempts; power cycle does not restore it | Verified previous image restored on authorized COM15 with matching flash read-back; AP/API, USB0 mount and FLX4 MIDI/UAC presence recovered, controls confirmed by operator. Custom PSRAM-only LVGL allocator passes software/CI, physical effect NOT RUN. Retain the previous product design; do not enable preview by default |
-| CLOSED (bench) | Common 5 V or downstream VBUS is unsafe, undersized or backfed | On 2026-09-11 the operator reported that all requested continuity, backfeed, voltage, drop and current measurements were ideal or inside their allowed limits, with no brownout/reset; on 2026-09-20 the operator confirmed this is the existing enclosure wiring | Preserve the accepted wiring; repeat and record numeric measurements after any wiring, supply or enclosure change |
-| ACCEPTED LIMITATION (M2.4) | USB0/USB1 do not enumerate automatically after an OTA software reboot | The earlier matrix had passing K1/K2 and L1/L2 recovery, but both exact M2.3 and M2.4 push installations reproduced a boot with root power active and neither device enumerated. A full power cycle restored USB0 storage, FLX4 MIDI/UAC and clean playback on M2.4 boot 560 | Require a full power cycle after M2.4 update; reproduce and fix unattended dual-root recovery before claiming automatic post-OTA availability in a later release |
-| ACCEPTED LIMITATION | USB1 FLX4 control/audio recovery loses USB0, repeats recovery or leaves controls latched | H1--H5, I1, I2 and jog-held J1 passed. I3--I5 and J2--J5 were explicitly waived by the operator on 2026-09-14 | Preserve the 8 accepted reconnect results; Groups I/J are closed and the untested held-control variants are accepted release-scope limitations |
-| CLOSED (M2.1 baseline) | Sustained bounded-cache I/O blocks audio | Real WAV/FLAC natural EOF plus simultaneous MP3+FLAC and MP3+WAV windows passed with zero locked-read, PCM, late and BNA deltas and clean audio | Repeat after cache, decoder, filesystem or USB scheduling changes |
-| CLOSED (M2.1 baseline) | Audio teardown, Master Tempo or combined DSP misses real P4 deadlines | Bounded WSOLA fixed the reproduced WDT; focused mixed-rate dual-Master-Tempo and the final 180.156-minute combined scratch/FX/MAIN/cue soak passed without strict fault delta or audible defect | Direct cycle-margin profiling remains uncaptured; repeat after audio/DSP scheduling changes |
-| CLOSED | Lifetime idle UAC underflow is mistaken for active data loss | Session-scoped health passed focused transitions and the final multi-hour soak | Preserve session-scoped flags and regression coverage |
-| CLOSED | First remote transport action is consumed only to dismiss the screensaver | Fixed and exact-image smoked after more than 120 seconds idle | Preserve remote queue semantics and authoritative state confirmation |
-| CLOSED (maintenance candidate) | Two Rekordbox exports with the same raw numeric track ID share persistent Hot Cue state | On 2026-09-28 two independent one-track exports both exposed `track_key=1`; A recalled 11000 ms across remount and software reboot, B recalled 22000 ms after remount, both cues were cleared, and strict health evidence remained clean | Preserve full `media_persistent_id_t` storage keys and rerun the two-media gate after identity, PDB, persistent cue or media lifecycle changes |
-| ACCEPTED LIMITATION (M2.4) | The duplicate raw track-ID result is not repeated on the exact tagged M2.4 binary | The hardware gate passed on `M2.2-37-g751d3c6`; on 2026-09-28 the operator explicitly accepted exact-release repetition as unrun and the guided rerun was stopped before any Hot Cue pad action | Do not report exact-M2.4 duplicate isolation as passed; rerun after identity, PDB, persistent cue or media lifecycle changes, or before a deployment that requires exact-image proof |
-| ACCEPTED LIMITATION (M2.4) | Real Rekordbox cue A/C or loop slot/time import differs from the controller/application display | The direct comparison was not run. On 2026-09-28 the operator explicitly removed it from the current release scope because it is not relevant to the deployed workflow | Do not report the comparison as passed; rerun it if cue import fidelity, ANLZ parsing or loop persistence becomes release-critical or changes |
-| CLOSED (M2.4) | Pull OTA cannot validate the production edge certificate chain | Exact M2.3 reproduced `ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED`; M2.4 enables ESP-IDF cross-signed certificate-bundle verification while keeping CA/hostname validation. Exact M2.4 then completed live pre-public and post-public probes against the production HTTPS origin | Preserve the active Kconfig regression and repeat a live production pull probe after TLS, CA bundle, OTA client or hosting-chain changes |
-| CLOSED (M2.2 baseline) | Interrupted push OTA or web mutation corrupts product state | M2.1 recovery evidence remains applicable; M2.2 additionally passed marked authoritative SYNC, interrupted-upload rejection, signed opposite-slot installation and embedded web UI smoke | Repeat the relevant matrix after OTA upload, web mutation or partition-layout changes |
-| ACCEPTED LIMITATION | Final enclosure changes power, temperature, RF or service access | Operator reports the unit has operated in its current intended enclosure for approximately two months and confirms wired recovery access; dedicated numeric thermal/RF/strain evidence was not captured | Preserve the current topology and repeat qualification after any enclosure, wiring, supply or RF-layout change |
-| ACCEPTED LIMITATION | Shared service credential permits nearby disruption | Operator selected one shared service password; WPA2/WPA3 transition mode advertises PMF capability; firmware updates remain signature-protected | Verify association from the actual service client on the final image; restrict distribution/exposure and revisit per-device credentials or WPA3-only PMF-required mode if deployment expands |
-| CLOSED FOR M2.4 / DEFERRED | Signing key is lost or cannot rotate | Operator confirmed encrypted offline primary and separately stored encrypted backup copies for `rel-001` on 2026-09-20; M2.4 retains that key and the successor-key-before-retirement rotation boundary is documented. Untested backup recovery signing remains accepted deferred maintenance | Before a planned key rotation, verify backup recovery without exposing key material and implement multi-key overlap; emergency replacement retains wired recovery |
-| ACCEPTED LIMITATION (M2.4) | Physical access can bypass software-only trust because hardware-rooted protection is absent | There is no spare P4 board; Secure Boot, Flash Encryption and security eFuses remain disabled so the only unit and its wired recovery path are not put at irreversible risk | Preserve controlled physical access, closed enclosure, signed OTA and wired recovery; qualify RSA-PSS Secure Boot v2 plus release-mode Flash Encryption on a dedicated pilot before any later provisioning |
-| P2 | A non-FLX4 profile is advertised without real hardware evidence | Host fixtures pass only | Keep non-FLX4 support out of first-release claims until physical descriptor/MIDI/LED/UAC acceptance |
-| P3 | Recorder or SD idle workaround ships on an unqualified card | G allows only explicit experimental recorder builds; both experiments remain off in ordinary builds, and production packaging rejects experiment flags | Keep release disabled until exact-card SD A/B, fault injection, listening and 180-minute strict-counter qualification pass; G physical gates NOT RUN |
+| Status / priority | Risk | Evidence and required disposition |
+| --- | --- | --- |
+| ACCEPTED EXCEPTION (v91) | Monitor loss prevents a continuous 180-minute record | Saved 1,015.8899243s + completed 9,785.4764933s = 10,801.3664176s with interruption. Continuation resources/strict deltas and operator sound passed. Preserve INCOMPLETE evidence; uninterrupted 180m remains NOT RUN. No automatic exception for a later image |
+| CLOSED in focused v91 scope | Periodic PSRAM heap walks delay realtime service | Earlier ISO SKIPPED reproduced under heap diagnostics. Largest-block PSRAM walks were removed; retain cheap free/minimum readings and mark unmeasured values null. Requalify after diagnostic/allocator changes; wall-time query probes do not measure exact IRQ latency |
+| CLOSED in focused v91 scope | PCM5102A DMA quantum differs from mixer output | Earlier 240-vs-256-frame mismatch reproduced output lateness; shared 256-frame quantum and focused/final segmented v91 runs have zero new strict faults. Preserve bounds and measure sink latency separately |
+| CLOSED in focused v91 scope | Manual FLAC OUT/loop half starves decode or replays stale PCM | Failed manual-loop candidates are retained in the hardware ledger; v91 source-prefix/timeline handling passes operator OUT/half/double/exit and strict counters. Other format/deck/edge combinations remain NOT RUN |
+| CLOSED in focused v91 scope | UI exhausts internal memory or HTTP stack | Earlier H3 network/USB failure and H allocation/stack failures are retained. One presentation, PSRAM-owned LVGL/waveform buffers and request-owned HTTP text pass v91 active resource floors with zero failed critical allocations. Requalify changed scenarios and ownership |
+| CLOSED with separate diagnostics | Pending image confirms despite failed startup | Forced unconfirmed restart and readiness rejection at 60.253s restore original v91. Timeout image keeps actual AP/API alive and injects false readiness; an actual induced radio failure is not claimed. Ordinary tools exclude both diagnostic flags |
+| CLOSED in focused v91 scope | Signed OTA/reboot leaves both USB roots absent | Corrected supply and recorded v91 OTA/reboot/rollback restore roots automatically. Bare M2.4 cold-cycle observation remains history. Active removal/held-control variants not repeated on v91 remain NOT RUN |
+| OPEN / P2 | Software verification is advertised as new hardware support | JC1060/DDJ-400/non-FLX4/real peers are NOT RUN. Qualify exact board/controller/peer/sink/SHA before publishing another configuration |
+| OPEN / P2 | Network LOCKED is mistaken for audible phase acceptance | K model/session tests pass; real phase/drift/handoff and per-sink/rate latency are unmeasured. Keep Link OFF by default; calibration is RAM-only and must not cross configurations |
+| OPEN / P2 | Replaced peer media reuses wrong cached audio/artwork/cues | J full-identity and A/B host tests pass, but real peer/card replacement is NOT RUN. Unknown volume IDs force session-local identity/fresh downloads; do not promise persistent cue edits across those sessions |
+| OPEN / P2 | Network download or SD writer starves playback | Bounded SD gate/admission, pins and manifest-last transactions have software tests. Real download/deadline, SD-removal/full-card/power-loss performance is NOT RUN; qualify exact card/peer |
+| OPEN / P3 | Recorder or SD workaround ships unqualified | Both remain OFF in regular firmware and excluded by production packaging. G card/DMA/latency/finalize/overflow/audio gates are NOT RUN; separate experimental qualification required |
+| ACCEPTED LIMITATION | Remaining local metadata and transport combinations | Source-cue restore/reimport/cross-media, exhaustive playlist/artwork/PWV4, shifted/touch LOAD and active-removal variants remain NOT RUN. Existing host tests are not physical proof; run focused gates if required by the deployed workflow |
+| ACCEPTED LIMITATION | Enclosure/power assumptions change | Earlier operator electrical acceptance applies to unchanged wiring and corrected supply; numeric thermal/RF/strain margins were not captured. Repeat after supply/VBUS/enclosure/RF changes |
+| ACCEPTED LIMITATION | Shared service credential permits nearby disruption | Shared credential, WPA2/WPA3 transition with PMF capability and signed OTA remain deployed policy. Restrict service exposure; consider per-device credentials/WPA3-only if distribution expands |
+| ACCEPTED LIMITATION | Physical access bypasses application-only trust | Secure Boot, Flash Encryption and security eFuses remain OFF. Maintain controlled enclosure/recovery; qualify irreversible provisioning on a sacrificial board |
+| DEFERRED MAINTENANCE | Signing key loss or rotation | Offline encrypted primary/backup custody was operator-confirmed. Backup recovery signature and multi-key overlap are unrun; verify before planned rotation, never expose secrets |
+| HISTORICAL WAIVERS | Earlier held-control lifecycle variants were not exercised | M2.1 matrix records 43 PASS / 7 operator-waived; these are not 50 PASS or exact-v91 repetition. Preserve per-image limits |
+| CLOSED (historical M2.4) | Valid cross-signed TLS chain rejected | M2.4 fixed the demonstrated M2.3 handshake failure with cross-signed bundle verification while retaining CA/hostname checks. Repeat a live device pull probe after TLS/client/hosting-chain changes |
 
 ## Release rule
 
-The [first ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
-restored AP/USB and operator-confirmed previous design/controls, but resource
-acceptance failed: two 254,976-byte waveform internal-DMA probes and HTTP stack
-reserve 456 bytes. A focused PSRAM ownership correction is software checked;
-installed-image resource acceptance, matching baseline, active sound/timing and
-final soak remain blocking gates. Do not infer acceptance from startup `ready`.
-The installed `M2.4-61-gc4912d5b` clears failed-allocation/HTTP-stack and absolute
-largest-block failures in the empty/two-paused-track scenarios through ordinary
-PSRAM LVGL and bounded buffer ownership. Full comparison still lacks the recovery
-largest block; active audio/timing, listening and final soak remain unaccepted.
+Accept only a named image/configuration and explicit physical scope. Software,
+simulator, package, installed device, sound and publication are separate evidence.
+A newer documentation or diagnostic SHA is not the accepted firmware.
+Published tags and versioned assets must remain immutable.
 
-Development package E adds a JC1060 target and separate build/lock/CI, sharing
-the P4 core. [E evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md)
-is software evidence only. Panel/touch/PSRAM, USB root topology, SD/Hosted
-constructor interaction and RMII PHY/DHCP are unqualified. PCM5102A must remain
-disabled because its pins overlap Ethernet; ES8311 is disabled for USB pacing.
-[F software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md)
-does not qualify DDJ-400 MAIN/cue. Four-channel full-speed UAC1 adaptive/synchronous
-16-bit or packed 24-bit formats are bounded; feedback, UAC2/high-speed and 24-in-32
-are unsupported. JC1060's larger periodic FIFO and physical EP0 detach/reconnect
-must be measured on hardware. Sink latency, CPU deadline, internal/DMA heap and
-stack reserves remain unmeasured. New-board hardware gates remain NOT RUN. No JC1060
-image/channel may be represented as accepted or released on build evidence.
+JC1060 uses separate project identity/lock/channel. PCM5102A is disabled because
+its pins overlap Ethernet; USB-only pacing keeps ES8311 disabled.
+Supported formats are bounded four-channel full-speed UAC1 adaptive/synchronous
+16-bit or packed 24-bit. UAC2/high-speed, feedback-dependent and 24-in-32 formats
+remain unsupported. DDJ-400 isolation/reconnect, physical FIFO/EP0 timing,
+sink latency and real peer interoperability remain NOT RUN.
 
-M2.4 is released with exact-image automated, hardware telemetry and acoustic
-acceptance complete, subject to the listed post-OTA recovery limitation, and encrypted
-primary/backup signing-key custody operator-confirmed. Untested backup recovery
-signing is explicitly accepted as deferred future maintenance. The security
-decisions themselves are recorded in
-[`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md). A focused
-smoke closes only the exact scenario it exercised; it must not be promoted to
-unrelated acceptance.
-
-For M2.4, duplicate raw track-ID isolation has passing candidate evidence on
-`M2.2-37-g751d3c6`; its exact-tag repetition and the real Rekordbox cue A/C and
-loop comparison are explicitly accepted as unrun. Exact-tag build, signed
-installation, product smoke and publication verification remain mandatory
-release steps.
+Security decisions are in [SECURITY_PROVISIONING_POLICY.md](SECURITY_PROVISIONING_POLICY.md).
+Complete earlier failure/correction details are in
+[H](validation/JC4880_H_CANDIDATE_20261004.md) and
+[L](validation/JC4880_L_CANDIDATE_20261005.md); they do not reopen completed v91
+focused gates or imply those earlier images were accepted.

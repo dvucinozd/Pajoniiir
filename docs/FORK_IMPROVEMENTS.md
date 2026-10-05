@@ -1,20 +1,29 @@
 # Fork improvements integration
 
-Work in progress on `codex/fork-improvements`, starting from
-`05296b8e8a2a10e38b3af58bb1e8034fbe806519`. Production remains M2.4.
-Donor: [kayrozen/Pajoniiir](https://github.com/kayrozen/Pajoniiir/tree/428b97dd4a175f03d3a172c8db9c4d5ed94195fb),
+Status: **A-L software integration complete and merged into master** (2026-10-05).
+The published JC4880/FLX4 release is frozen `M2.4-91-g75136aef`, source
+`75136aef749a1f03d9089c8b6ff6452b3dba0839`. The
+[release record](validation/JC4880_V91_RELEASE_20261005.md) defines focused
+hardware acceptance, publication and the explicit segmented-soak exception.
+JC1060/DDJ-400/real Link peers remain hardware **NOT RUN**.
+
+This work began on `codex/fork-improvements` at
+`05296b8e8a2a10e38b3af58bb1e8034fbe806519`.
+Thanks to collaborator **[kayrozen](https://github.com/kayrozen)** for the
+modules, fixes and ideas adapted from his
+[donor fork](https://github.com/kayrozen/Pajoniiir/tree/428b97dd4a175f03d3a172c8db9c4d5ed94195fb),
 frozen at `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323).
-The [2026-10-04 software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
-records the pushed checkpoint and hardware gates left unrun.
-That handoff and the [H candidate record](validation/JC4880_H_CANDIDATE_20261004.md)
-are historical checkpoints. A-L software integration is complete. The
-[current JC4880 hardware record](validation/JC4880_L_CANDIDATE_20261005.md)
-retains failed packet/deadline tests and installed corrective `M2.4-77-g08996790`.
-Periodic PSRAM heap walks are removed and PCM5102A DMA matches the 256-frame
-mixer block. Focused MAIN/cue listening, resource comparison and 30-minute
-dense-status dual-loop playback pass with zero new strict faults. Full baseline,
-functional/lifecycle qualification and the final 180-minute exact-image soak
-remain open; JC1060/DDJ-400/Link physical gates are NOT RUN.
+MIT attribution and the SD idle workaround's Apache-2.0 notice are retained.
+Local integration preserves full persistent identities, audio/session ownership,
+one shared core and signed OTA rather than importing a complete fork tree.
+
+The [software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md),
+[H record](validation/JC4880_H_CANDIDATE_20261004.md) and step logs below are
+historical snapshots. Their build sizes, "next" tasks, no-hardware observations
+and unchanged-production statements apply to their named checkpoints.
+The [L hardware ledger](validation/JC4880_L_CANDIDATE_20261005.md) preserves the
+failed/corrected memory, USB deadline and manual-FLAC-loop sequence.
+No failed candidate is retrospectively accepted.
 
 ## Scope and delivery status
 
@@ -27,26 +36,26 @@ an enumeration-order heuristic or a claim that JC1060 hardware passed.
 JC4880 IDF 6.0.2 build passes at 2,541,200 bytes; lock unchanged.
 [E2 adds the JC1060 target](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md),
 shared peripherals, native geometry, Ethernet startup and separate lock/CI.
-Physical bring-up is NOT RUN; new layouts remain H.
+Physical bring-up is NOT RUN; both native layouts are implemented by H.
 
 One P4 core must serve JC4880/FLX4 and JC1060/DDJ-400. Ethernet Link belongs
 only to JC1060; recording remains an opt-in experiment. APTA integration is
-outside this branch. These are planned capabilities, not current support claims.
+outside this integration. New-board software capability is not hardware support.
 
 | Package | Scope | Current state |
 | --- | --- | --- |
-| A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; physical acceptance NOT RUN |
-| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B19 software verified on JC4880; physical acceptance NOT RUN |
+| A | Baseline host tests, independent functional suites, PDB title, PQTZ downbeat | Software verified; real title/downbeat comparison remains NOT RUN |
+| B | Accurate seek, duration, loop resize, memory/local cues, load lock | B1-B19 software verified; focused v91 transport/cue/loop/normal D1 load-lock PASS; remaining variants NOT RUN |
 | C | Hierarchical playlists, bounded artwork, PWV4 | C1-C5 software verified on JC4880 build and 800x480 simulator; physical acceptance NOT RUN |
 | D | S3CP v4, all validators/compiler/exporter, DDJ-400 profile | Software verified; DDJ-400 hardware acceptance NOT RUN; UAC belongs to F |
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
-| F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
+| F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; v91 PCM5102A/FLX4 MAIN/cue and stopped reconnect PASS; DDJ-400/USB-only hardware NOT RUN |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
-| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; current JC4880 correction 08996790 installed. Focused startup/resources/listening and 30-minute dual-loop timing PASS; full baseline/functional/soak acceptance open |
+| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; previous UI/startup/resources and focused v91 playback PASS; exhaustive touch/metadata variants and JC1060 NOT RUN |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
 | K | Epoch-bound network clock, controlled sync and tempo master | Software verified: session-fenced follower, explicit alignment, acknowledged handoff/status/beats and sink/rate latency scope; real phase/listening/handoff NOT RUN |
-| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; JC4880 corrective image installed with focused hardware PASS; final qualification open, JC1060 hardware NOT RUN; no public release |
+| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; frozen v91 JC4880/FLX4 published with explicit segmented-soak exception; JC1060 hardware NOT RUN |
 
 Software verification, hardware acceptance and release are separate states.
 The [package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
@@ -63,9 +72,9 @@ acceptance follows from a successful host test or build.
 defines board-specific ordinary packaging, separate JC1060 channel generation,
 bounded signed/app identity validation and frozen exact-SHA evidence. The image
 budget remains 0x380000 inside the unchanged 0x400000 slots. Final soak allows
-zero new strict timing/USB/audio faults. Software completion leaves physical
-qualification and publication open; current JC4880 installation and focused
-fault-correction evidence are in the hardware record above.
+zero new strict timing/USB/audio faults. JC4880 publication is complete for frozen
+v91 with its explicit segmented exception. New-board physical qualification,
+other unrun variants and any later release require separate acceptance.
 
 ## Package K
 
@@ -77,7 +86,8 @@ locks. Master selection is sticky across unrelated peer changes; handoffs use
 bounded source/claim checks and timeout. Status/beats use owned accepted-timeline
 snapshots. Sink latency remains UNMEASURED until physically calibrated for that
 sink/rate; the engineering value is RAM-only. Software tests do not qualify
-audible phase, real peer handoff or the final exact-image soak. Next: package L.
+audible phase or real peer handoff. Package L software integration is complete;
+real Link hardware qualification remains pending.
 
 ## Package J
 
@@ -87,9 +97,9 @@ NFS/PDB/DB analysis downloads use the existing worker, full identities and
 manifest-last completion. Cancel, corruption, space/admission and A/B swap tests
 pass; cache pruning respects both decks and the active artifact. Unidentified
 volumes intentionally cannot reuse cross-session audio or local cue edits.
-Completed SD playback survives network and local USB removal. No device was
-contacted or installed; SD performance, real peers, audio and final soak are
-NOT RUN. Next implementation is K, followed by L.
+Host/runtime tests verify that completed SD playback survives network and local
+USB loss. Real Link peer/card performance, phase and network-audio acceptance
+remain NOT RUN. K and L software integration are complete.
 
 ## Package G
 

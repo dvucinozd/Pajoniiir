@@ -1,5 +1,11 @@
 # Package F — UAC formats, MAIN routing and pacing
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Status: **software verified; hardware acceptance NOT RUN**.
 Production M2.4, public OTA channels, partitions and APTA remain unchanged.
 Integration branch: `codex/fork-improvements`, following package E `9729de5`.

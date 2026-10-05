@@ -1,6 +1,6 @@
 # Controller Profile Update Procedure
 
-Status: **current P4-only procedure, reconciled 2026-09-20**. Guarded overwrite
+Status: **current P4-only procedure, reconciled 2026-10-06**. Guarded overwrite
 and reboot persistence passed with the FLX4 profile during M2 qualification.
 Physical use of a non-FLX4 profile remains unqualified.
 
@@ -18,9 +18,15 @@ python tools/controller_profile/compile_profile.py `
   -o controllers/pioneer_ddj_flx4/profile.s3bin
 ```
 
-The binary must be S3CP v2, 32-16384 bytes, and contain a valid length and
+The binary must be S3CP v2, v3 or v4, 32-16384 bytes, and contain a valid length and
 CRC-32. A profile ID is its SD directory name and may contain only ASCII
 letters, digits, `_` and `-`, with a maximum of 39 characters.
+
+The compiler chooses the oldest representable binary version. v91 supports
+v2/v3/v4; the bare historical M2.4 image supports v2 only. Before a firmware
+rollback, recompile a profile representable by that runtime; changing the
+version bytes does not convert it. DDJ-400 and other non-FLX4 profiles remain
+hardware NOT RUN even if upload validation succeeds.
 
 ## Upload from the P4 web UI
 
@@ -37,6 +43,10 @@ letters, digits, `_` and `-`, with a maximum of 39 characters.
    matching profile in its local controller runtime. Check `/api/status`:
    `profile_state` should reach `active`, and `active_profile` should equal the
    uploaded ID only after the current USB binding epoch is revalidated.
+
+For a v4 profile, initial SysEx is queued once by the activation worker before
+the first LED snapshot. An enqueue success does not prove device-side acceptance;
+failed or stale initialization cannot activate a profile.
 
 ## Direct API
 

@@ -1,9 +1,8 @@
 # Controller Profile Schema v1
 
-Document status: **current P4-local schema, reconciled 2026-09-20**. Firmware
-loading, FLX4 activation, guarded web replacement and reboot persistence are
-verified in the M2 qualification. Physical qualification of a non-FLX4
-controller remains future work.
+Document status: **JSON schema v1 / binary S3CP v2-v4, reconciled 2026-10-06**.
+v91 accepts all three binary versions. FLX4 is the physically qualified
+controller; non-FLX4 profiles, including DDJ-400, remain software evidence.
 
 Data-driven controller profiles let the P4 map a USB MIDI controller to the
 existing deck-aware semantic events without a firmware rebuild.
@@ -80,9 +79,10 @@ interrupted swap during the next registry scan.
 ```
 
 Numeric fields accept `"0xNN"` hex strings or plain integers. `audio` is
-informational for the P4 (and future audio generalisation); only its presence
-sets the USB-audio capability flag in the binary. The FLX4 USB audio path
-stays hardcoded until the audio profile work matures.
+informational; the compiled USB-audio flag indicates a capability, not arbitrary
+endpoint routing. Actual formats are descriptor-validated by the UAC runtime;
+the FLX4-qualified selection remains preserved. A profile cannot enable an
+unsupported feedback, UAC2/high-speed or 24-in-32 format.
 
 ### Input entry types
 
@@ -98,7 +98,8 @@ emits one semantic event. `event` names come from the vocabulary below.
 | `encoder_2c` | `event`, `status`, `data1` | Two's-complement relative: `0x00`/`0x40` drop; `< 0x40` positive; else `data2 - 0x80`. |
 | `cc14` | `event`, `status`, `msb`, `lsb`, `replay` (bool) | 14-bit CC pair. Compiler emits two table entries sharing one pairing slot; the runtime emits `value = msb<<7 \| lsb` only when both halves have been seen. |
 | `cc7_abs` | `event`, `status`, `data1`, `replay` (bool) | 7-bit absolute → `value = data2 & 0x7F`. |
-| `cc7_to14` | `event` (PITCH), `status` (CC), `data1`, `replay` (bool) | S3CP v3 only: maps 0/64/127 to 0/8192/16383 using integer scaling; intermediate values are monotonic. |
+| `cc7_to14` | `event` (PITCH), `status` (CC), `data1`, `replay` (bool) | S3CP v3/v4: maps 0/64/127 to 0/8192/16383 using integer scaling; intermediate values are monotonic. |
+| `note_select` | `event`, `status` (Note On), `data1`, `value` (0..32767) | S3CP v4: positive velocity emits the fixed value; zero velocity emits nothing. |
 | `state_pair` | `event`, `members` (2× `{status,data1}`), `values` (4 entries, `null` = no emit) | Two buttons share latched pressed-state bits; on every edge the runtime emits `values[member0_bit \| member1_bit<<1]`. Used for FLX4 Beat FX target CH1/CH2/BOTH. |
 
 `replay: true` marks absolute controls whose last complete value the P4-local
@@ -132,12 +133,12 @@ asserted by the `control_link_protocol` host test.
 
 ### Output (LED) entry types
 
-On the fork-improvements development firmware, `jog_vinyl` and `jog_cdj`
+On v91 and the integrated runtime, `jog_vinyl` and `jog_cdj`
 explicitly select a mode on press; release is ignored by deck core. These are
 idempotent actions, shared with touch controls. They use existing S3CP v2
-NOTE_VALUE entries; v3 remains required only for scaled CC input. Existing
-FLX4 profiles and golden bytes are unchanged. M2.4 does not implement the new
-deck actions; use matching development firmware. Assign MIDI addresses from
+NOTE_VALUE entries; scaled CC input requires at least v3. Existing
+FLX4 profiles and golden bytes are unchanged. The bare historical M2.4 image
+does not implement the new actions; use matching firmware. Assign MIDI addresses from
 the specific controller's verified mapping, not the names of its controls.
 
 LED entries map the P4's semantic LED frames (`led_id` + deck + state) to
@@ -171,7 +172,7 @@ LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 
 ## profile.s3bin compatibility format (S3CP v2/v3/v4)
 
-The fork-improvements parser and SD/upload validators also accept v4. The
+The integrated parser and SD/upload validators accept v2, v3 and v4. The
 compiler chooses the oldest representable version. V2/v3 golden bytes and
 record sizes remain unchanged; raw 8 is CC7_TO14. Donor extended-v2 binaries
 are not imported.
@@ -205,10 +206,12 @@ Web equivalents: `firmwareAbi.initSysex`, capability
 and feedback MIDI `valueScale`. Python conversion retains these extensions;
 shared golden bytes test both compilers. Public web deployment is separate.
 
-The M2.5 development parser accepts v2 and v3. The compiler emits v3 only
-when a `cc7_to14` input is present; unchanged profiles remain byte-compatible
-v2. M2.4 rejects v3: install the new firmware before replacing a v2 profile
-with one using scaling. No installed-device acceptance is implied.
+The compiler emits the oldest version that fully represents a profile: v2
+without extensions, v3 for scaled CC input, v4 for initial SysEx, NOTE_SELECT,
+nonzero output scaling or the filter capability. v4 also supports scaled CC.
+The bare historical M2.4 image rejects v3/v4; v91 accepts them. When rolling
+back to older firmware, use a representable v2 JSON profile and recompile;
+never patch version bytes or silently discard required extensions.
 
 For `v = data2 & 127`, scaling is `v * 128` up to 64, otherwise
 `8192 + ((v - 64) * 8191 + 31) / 63` (integer division). This preserves
@@ -239,14 +242,15 @@ bytes from offset 16 to the end of the file.
 | 12 | 4 | crc32 over bytes `[16, profile_size)` |
 | 16 | 2 | vid |
 | 18 | 2 | pid |
-| 20 | 4 | flags: bit0 LED_FEEDBACK, bit1 USB_AUDIO, bit2 JOG_TOUCH, bit3 PITCH_14BIT |
+| 20 | 4 | flags: bit0 LED_FEEDBACK, bit1 USB_AUDIO, bit2 JOG_TOUCH, bit3 PITCH_14BIT; v4 bit4 FILTER_ALWAYS |
 | 24 | 2 | input_count |
 | 26 | 2 | output_count |
 | 28 | 1 | pair_slot_count |
 | 29 | 1 | decks |
 | 30 | 2 | v4 initial SysEx length; reserved in v2/v3 |
 
-Input entries follow the header; output entries follow the inputs.
+Input entries follow the header; output entries follow the inputs. In v4,
+the bounded initial SysEx payload follows both tables and is covered by CRC.
 
 ### Input entry — 16 bytes
 
@@ -275,7 +279,8 @@ Input entries follow the header; output entries follow the inputs.
 | 5 | CC14_LSB | store LSB in pair_slot; emit when pair complete |
 | 6 | CC7_ABS | `value = data2 & 0x7F` |
 | 7 | NOTE_STATE_PAIR | latch member bit (flags bit1 selects member B) in pair_slot; emit `lut[bitA \| bitB<<1]`, `-1` = no emit |
-| 8 | CC7_TO14 | v3 only; center-preserving 7-to-14-bit scaling above; CC/PITCH only, no pair slot, only REPLAY flag allowed |
+| 8 | CC7_TO14 | v3/v4; center-preserving 7-to-14-bit scaling above; CC/PITCH only, no pair slot, only REPLAY flag allowed |
+| 9 | NOTE_SELECT | v4; Note On press emits nonnegative base_value; no pair slot, flags or press mask; release ignored |
 
 ### Output entry — 12 bytes
 
@@ -306,14 +311,15 @@ The P4-local runtime allocates per active profile:
   after P4 heartbeat recovery keeps working (parity with
   `flx4_map_emit_snapshot()`).
 
-## Known limitations (v1)
+## Known limitations
 
-- Only 3-byte channel messages (note/CC) are matchable. SysEx is out of scope.
+- Only 3-byte channel messages (note/CC) are matchable. v4 supports one bounded
+  initial output SysEx; general input-SysEx matching is not supported.
 - Stateful behaviours are limited to what the table can express (14-bit
   pairing, two-member state pairs). Anything beyond that stays in built-in C
   profiles.
-- Audio layout is capability metadata only; the FLX4 USB audio path remains
-  hardcoded.
+- Profile audio layout is capability metadata, not an arbitrary UAC routing
+  description. Runtime descriptors and supported sink policies determine audio.
 - LED blink is a value choice per entry, not a profile-runtime timer.
 
 ## Verification

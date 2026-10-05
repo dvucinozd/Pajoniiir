@@ -1,5 +1,11 @@
 # Package L: integration candidates and qualification handoff
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Date: 2026-10-05. Integration branch `codex/fork-improvements`, based on
 `0f1dfc6c76e02b1bc7a316cb6bec342024f49392`. Package K's exact
 [CI run 37249883560](https://github.com/dvucinozd/Pajoniiir/actions/runs/37249883560)

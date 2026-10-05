@@ -1,8 +1,8 @@
 # Traktor Kontrol S2 MK3: basic transport profile
 
 Status: experimental, source-derived, no S2 MK3 hardware acceptance.
-This is a limited profile for the existing M2.4 runtime, not complete M2.5
-controller support. Do not advertise full S2 MK3 support based on SD installation.
+This is a limited S3CP v2 profile, compatible with v91 and the earlier M2.4
+runtime. Do not advertise full S2 MK3 support based on SD installation.
 
 ## Source and reproduction
 
@@ -47,7 +47,8 @@ Pad LEDs, RGB and meters remain unmapped.
 
 - Mixer and tempo use 7-bit CC values; current semantic mixer/tempo consumers
   expect 14-bit values. Mapping these directly with `cc7_abs` would give the
-  wrong range. Add tested scaling/inversion support before enabling them.
+  wrong range. v91 supports `cc7_to14` scaling (v3/v4), but this fixture still
+  omits them; map and qualify the controller-specific inversion before enabling.
 - Browser rotation and tempo are marked `flipped` in the source; the current
   profile format cannot encode that inversion.
 - Jog relative encoding is documented by the source, but its sensitivity and
@@ -55,8 +56,8 @@ Pad LEDs, RGB and meters remain unmapped.
   proper scaling and touch/bend behavior validation.
 - SHIFT routing, pad modes and any initialization performed by djay's custom
   class require further work. No custom-class behavior is guessed here.
-- USB audio is disabled in profile metadata. A controller profile alone does
-  not generalize the existing FLX4 audio path.
+- USB audio is disabled in this profile. Descriptor-driven UAC support in the
+  integrated runtime does not physically qualify the S2 MK3 audio path.
 - Confirm USB MIDI enumeration/VID/PID, all button edges, shifted pads, LEDs,
   reconnect/reboot behavior, and eventually MAIN/cue audio on physical S2 MK3.
 

@@ -1,274 +1,152 @@
 # P4 operation and release checklist
 
-Status: **current P4 checklist, reconciled 2026-10-05**.
+Status: **current v91 JC4880 checklist and development qualification gates**
+(2026-10-06). Acceptance already recorded in the
+[v91 release](validation/JC4880_V91_RELEASE_20261005.md) is not a request to
+repeat completed tests. Checkboxes below are procedures for operation or a
+new/changed candidate; NOT RUN entries remain outside accepted scope.
 
-## Normal startup
+## Normal JC4880 operation
 
-- [ ] For a new pending OTA image, confirm the saved-enabled AP/HTTP service
-  starts before the 60-second startup deadline and image confirmation. Failure
-  must request rollback; absent media/controllers/AP clients do not fail boot.
-  Physical fault-injection tests passed unconfirmed-image rollback and startup
-  readiness rejection at 60.253 seconds, followed by automatic return to v91.
-  See the [release record](validation/JC4880_V91_RELEASE_20261005.md) for the
-  accepted JC4880/FLX4 scope and segmented-soak exception.
+- [ ] Use the accepted regulated supply and unchanged protected dual-VBUS wiring.
+- [ ] Connect PCM5102A MAIN and FLX4 headphones before raising amplifier levels.
+- [ ] Insert Rekordbox media in USB0 and connect FLX4 to USB1.
+- [ ] Wait for display, Library and controller/profile/UAC readiness.
+- [ ] Confirm the expected library and normal transport, MAIN and cue.
+- [ ] LOAD LOCK is enabled by default: pause/stop the destination before replacing
+  its track. A rejected load must leave its existing track intact.
+- [ ] Preserve the active Library location and use explicit source-cue restore
+  only when local overrides should be replaced.
+- [ ] Treat unexplained reset, brownout, watchdog, missing USB root or latched
+  audio loss as a failure; save diagnostics before retrying.
+- [ ] Stop playback before media removal, maintenance writes or power-off.
 
-- [ ] Use the accepted regulated 5 V supply and unchanged protected USB0/USB1
-  VBUS wiring.
-- [ ] Connect PCM5102A MAIN RCA and, if needed, FLX4 headphones before raising
-  amplifier levels.
-- [ ] Insert Rekordbox media in USB0 and connect DDJ-FLX4 to USB1.
-- [ ] Power on and wait for the display, Library and FLX4 profile/MIDI/UAC to
-  become ready.
-- [ ] Load one track to each deck and confirm PLAY, waveforms, MAIN and cue.
-- [ ] Treat a reboot, brownout, TWDT, missing root or latched UAC loss as a
-  failure; do not continue a performance test from an unexplained reset.
+The released previous UI is the normal presentation. Preview and recorder
+controls are not production features. S3CP v2/v3/v4 profiles are accepted by
+v91; bare historical M2.4 accepts v2 only. Dynamic profiles are not proof of
+physical non-FLX4 support.
 
-## Media and controller
+## Wi-Fi and signed OTA
 
-- [ ] For the [L candidates](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md),
-  verify the retained bundle/evidence hashes and exact source/CI SHA before
-  installing the correct board's signed bundle. Use the ordinary previous-design
-  configuration; preview/recorder/SD/DMA experiments must be absent. No physical
-  result from c4912d5b transfers to the new image. The [first L install](validation/JC4880_L_CANDIDATE_20261005.md)
-  restored startup/AP/API/USB0/FLX4, but one USB packet loss failed strict audio
-  smoke. Corrective `M2.4-77-g08996790` passes focused startup, MAIN/cue listening,
-  active resources and 30-minute dense-status dual-loop timing with zero new
-  strict faults. Preserve its exact SHA/hash and complete final qualification;
-  this focused run is not the 180-minute release gate. Repeat absolute resource
-  floors, listening/channel isolation/reconnect/rollback and at least 180 minutes
-  on the final image with zero new strict output-late/underrun/USB faults.
-  The 2026-10-05 operator-approved segmented target (29 credited + 151 completed
-  minutes) passes telemetry on 08996790. Preserve its original interruption,
-  raw hashes and final listening status; do not label it uninterrupted 180 minutes
-  or transfer it to another image. Functional/lifecycle and baseline gates remain.
+- [ ] Enable Wi-Fi/P4 Remote in Settings when needed; connect to `Pajoniiir`
+  and open `http://pajoniiir.local` or `http://192.168.4.1`.
+- [ ] Expect temporary AP absence during a STA connection test or pull-update
+  check; reconnect to the restored AP and verify state.
+- [ ] Before OTA stop both decks, leave recorder inactive and keep power stable.
+- [ ] Record project, version, slot and health; use only the correct signed
+  `main-deck-p4.ddjota` for JC4880.
+- [ ] After restart verify version/slot, startup readiness, empty OTA error,
+  Library, FLX4 controls/LED/UAC and MAIN/cue.
+- [ ] A pending image must meet critical startup readiness and, when saved-enabled,
+  AP/HTTP readiness within 60 seconds. External USB devices/clients are not
+  required for boot confirmation.
+- [ ] If the candidate rejects or resets before confirmation, verify rollback
+  to the prior image. Do not mistake OTA service `idle` for valid image state.
+- [ ] Local signed push is the intentional rollback path; public pull is newer-only.
+- [ ] Use wired recovery only for an identified Pajoniiir board when necessary;
+  ignore COM devices from other projects. App-only OTA cannot migrate partitions.
+- [ ] Keep keys/hosting secrets out of Git, logs and public artifacts.
 
-- [ ] Operator sequencing decision (2026-10-04): physical audio testing and the
-  final soak are deferred until I-L integration finishes. Keep these gates open;
-  software tests do not replace them. Retain the installed JC4880 candidate
-  while developing the Ethernet-only JC1060 Link path; ignore unrelated COM ports.
+v91 recovered automatically in recorded OTA/reboot/rollback scenarios.
+The old M2.4 cold-power-cycle observation is not a required normal v91 step.
+Physical unconfirmed-image rollback and 60.253-second startup rejection passed
+with isolated diagnostic images, restoring the frozen release.
 
-- [ ] Package I Ethernet acceptance remains NOT RUN. On JC1060, verify the saved
-  Link switch defaults OFF, waits for Ethernet DHCP, claims two different numbers,
-  withdraws/reclaims on conflict and reports observer mode if fewer than two are
-  free. Remove/reconnect Ethernet and replace peer IP/MAC; stale requests must
-  fail. Verify no Link traffic uses Wi-Fi and no local library is advertised.
-  Record real peer model/version; codec/socket mocks do not prove interoperability.
-  [I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md)
-  adds single-session TCP browse and the Library selector. Verify USB/SD and
-  rekordbox sources, folders, ordered playlists, visible-page metadata, 2,000-row
-  truncation, cancel/timeout and source loss without stale rows/artwork. Incoming
-  LOAD must respect LOAD LOCK/busy and must not ACK or replace a deck before
-  verification of its local file. Network audio downloads are part of J.
+## Recorded v91 acceptance and remaining variants
 
-- [ ] [Package J](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md)
-  physical gates are NOT RUN. On JC1060 test real CDJ and rekordbox NFS paths,
-  MP3/WAV/FLAC plus associated artwork/analysis/cues, SD gate latency and active
-  dual-deck deadlines while downloading. Replace media A/B with identical peer
-  IP/player/track ID/extension but different audio; B must not inherit A assets.
-  Verify cancellation, Link OFF, Ethernet removal, SD removal, full card and
-  interrupted power. Incomplete manifests must never hit; deck/active files must
-  survive prune. Recording must exclude downloads. Completed local playback must
-  survive network and unrelated local USB removal. Unidentified volumes require
-  a fresh session download; do not claim durable cue edits across such sessions.
-  Record exact card, peer/model/version and firmware SHA; follow the existing
-  resource/listening/reconnect/180-minute acceptance gates before publication.
+The release record closes focused MP3/WAV/FLAC, MAIN/D1/D2 cue, scratch,
+CUE/PLAY/MT, loop OUT/half/double/exit, combined scratch/MT, local cue
+save/reload/reboot/delete, normal D1 LOAD lock and stopped USB reconnect.
+Strict counters and operator results are tied to the exact image.
 
-- [ ] [Package K](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
-  physical acceptance is NOT RUN. Measure audible MAIN phase/drift for each
-  sink/sample-rate and record its latency; never reuse another configuration's
-  calibration. The engineering setter is RAM-only and must be reapplied after
-  reboot. Test SYNC/PLAY alignment, scratch hold, jitter/loss, master stop,
-  remote/local handoff, unrelated peer arrival and claimed-number conflict.
-  Loss must retain tempo in WAIT, with no periodic seek. Confirm master source
-  epochs, controller/touch parity and clean sound; LOCKED alone is insufficient.
-  Record JC1060/controller/peer versions and exact image SHA. Final audio/soak
-  gates stay deferred until integration completion, not waived.
+Remaining local qualification, **NOT RUN**:
 
-- [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
-  returned network/USB and operator-confirmed previous design/FLX4 controls.
-  Resource gate FAILED: waveform internal-DMA probes and HTTP stack 456 bytes.
-  Verify the focused correction on a fresh image; do not accept/publish the first
-  candidate or compare its loaded decks to an empty recovery memory baseline.
-  The first correction cleared failures/HTTP stack pressure, but two paused loads
-  still failed the largest-block floor. Verify ordinary PSRAM LVGL on the next
-  immutable candidate, retaining internal audio/USB DMA policy.
-  `M2.4-61-gc4912d5b` passes focused empty/two-paused-track absolute heap/stack
-  floors with zero failed allocations. Capture the missing recovery largest-block
-  baseline and active playback evidence before full resource acceptance.
-  Signed installation/one idle soft reboot restored the same version, AP/API,
-  USB0 and FLX4. Operator confirmed previous design/controls on the exact image.
-  These focused results do not close the full reconnect, sound or soak matrix.
+- [ ] Title/downbeat comparison including an offset grid; actual playlist
+  hierarchy/order, rapid artwork browsing and corrupt/missing PWV4 fallback.
+- [ ] Source cue deletion/reimport, HOLD RESTORE, full persistent identity
+  isolation across exports sharing a raw track ID.
+- [ ] Touch/controller parity for held CUE, hot cues, jog modes and load lock,
+  shifted LOAD variants and untested deck/format combinations.
+- [ ] Analysis-tail/EOF/VBR seek edge cases, index-load latency and rapid
+  LOAD/SEEK/UNLOAD cancellation on real media.
+- [ ] Active USB removal/cancel and untested held-control reconnect variants.
 
-- [ ] H is software verified; qualify its exact image separately. Verify one
-  selected presentation, retained controller navigation and owned artwork.
-  Capture `/api/status` and `/api/resources` in network/dual-USB idle and active
-  dual playback; run `tools/check_ui_runtime_budget.py` against measured matching
-  baseline scenarios. Missing evidence, critical allocation failures, absolute
-  reserve failures or >10% internal-free/largest-block regression block acceptance.
+The accepted soak total is 180m01.37s **in two segments**, including a saved
+interrupted interval. The operator explicitly accepted that exception;
+an uninterrupted 180-minute exact-v91 soak remains **NOT RUN**.
+Do not carry that exception or measured passes onto another image.
 
-- [ ] [Package H](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md):
-  previous product design by default, optional preview; both native layouts and
-  shared runtime Settings pass simulator gates. Physical touch,
-  render, MAIN/cue and strict timing gates remain NOT RUN. Network OTA installation
-  is authorized when reachable. H3 failed Wi-Fi/USB acceptance; verified previous
-  firmware was restored on explicitly authorized COM15 with matching flash
-  read-back. AP/API, USB0 mount and FLX4 MIDI/UAC presence recovered; the operator
-  confirmed working FLX4 controls. MAIN/cue listening remains a separate gate.
-  The one-time wired recovery is complete; ignore unrelated devices. Verify project/image and idle
-  decks before an install, then collect exact-image/operator acceptance separately.
+## JC1060 / DDJ-400 / Link qualification — NOT RUN
 
-- [ ] [Package G](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md):
-  all card/recording/audio gates NOT RUN. Record board, card model/capacity and
-  exact image; compare idle-on/off and JC1060 internal/PSRAM+bounce builds.
-  Test full card, removal, power loss, STOP timeout and `.part` recovery;
-  capture SD/gate/fsync, heap/stack and strict audio/USB counters with listening.
-  Keep recorder and SD workaround off in ordinary releases. Ignore COM devices
-  from other projects; future installation uses authorized OTA only.
+- [ ] Record board revision/panel variant, flash/PSRAM, USB topology and exact SHA.
+  Verify native 1024x600 touch/render, SD and Ethernet PHY/DHCP.
+- [ ] Keep PCM5102A disabled (Ethernet pin overlap), ES8311 disabled for USB pacing.
+- [ ] Capture DDJ-400 UAC descriptors, MAIN 1/2 and cue 3/4 isolation, full-scale
+  16/24-bit packing, MIDI/LED/SysEx and UAC teardown/reconnect/restart.
+- [ ] Verify stopped-only sink changes; reject transitions during active
+  playback, scratch, load or recording.
+- [ ] Link defaults OFF and binds only Ethernet. Check two distinct player claims,
+  conflicts/reclaim, observer reason, peer loss and no local library advertisement.
+- [ ] Verify single-session browse, folders/playlist order, metadata, 2,000-row
+  truncation, cancel/timeouts and no stale source rows/artwork.
+- [ ] Incoming LOAD uses common admission and cannot ACK/replace a deck before
+  verified local audio acceptance.
+- [ ] Exercise NFS downloads and full-identity audio/ANLZ/artwork/cues on named
+  CDJ models and a separately named rekordbox configuration.
+- [ ] Swap media A/B with identical IP/player/track ID/extension but different
+  audio. B must inherit none of A's assets or local cue edits.
+- [ ] Test space reserve, cache prune pins, corruption, cancel, SD/network removal
+  and interrupted power. Incomplete completion manifests are never cache hits.
+  Unidentified volumes require a fresh session download.
+- [ ] Completed SD playback survives network/unrelated USB loss.
+- [ ] Measure output phase/drift and latency for each sink/sample-rate. Engineering
+  calibration is RAM-only. Test master handoff/loss, jitter/reorder, scratch hold
+  and explicit PLAY/SYNC alignment; WAIT retains tempo, no periodic seek.
+- [ ] Perform exact-image OTA/recovery, listening and sustained dual-deck gates.
+  A green LOCKED indicator or host/mock test cannot close these checks.
 
-- [ ] [Package E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md):
-  JC1060 bring-up is NOT RUN. Verify panel/revision, flash/PSRAM, USB roles,
-  touch/render, SD and Ethernet. Do not enable PCM5102A: pins overlap Ethernet.
-  ES8311 is disabled in the USB-only configuration.
+Software evidence: [E](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md),
+[F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md),
+[I](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md),
+[J](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md),
+[K](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md).
 
-- [ ] [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md):
-  all physical gates NOT RUN. Capture DDJ-400 descriptors; verify MAIN channels
-  1/2 and cue 3/4 independently, full-scale packing, reconnect and UAC restart.
-  Repeat FLX4/PCM5102A listening, strict counters and 180-minute dual-deck soak.
-  Verify stopped-only sink changes and rejection during LOAD/PLAY/scratch/recording.
+## Experimental storage / recorder — NOT RUN
 
-- [ ] [Package D](validation/FORK_IMPROVEMENTS_PACKAGE_D_SOFTWARE_20261004.md):
-  confirm DDJ-400 initial SysEx, MIDI/LED behavior, CH1/CH2/MASTER selector,
-  filter travel and reconnect on the exact candidate. NOT RUN. MASTER uses
-  both-deck FX; physical UAC acceptance remains NOT RUN. V4 requires development firmware;
-  M2.4 rejects it. Recompile JSON for rollback; never patch version bytes.
+- [ ] Use a separate experimental image; record board/card model/capacity/SHA.
+- [ ] Compare SD idle wait and DMA/bounce policies in otherwise identical A/B builds.
+- [ ] Measure read/write/fsync/gate wait, decode runway, strict output/USB counters,
+  ring watermarks, heap/stack and listening.
+- [ ] Test ring overflow (explicit recording failure), full card, removal,
+  finalize/`.part`, power loss and STOP timeout/retained writer ownership.
+- [ ] Verify download/recording admission exclusion; no simultaneous writers.
+- [ ] Keep recorder and SD experiments disabled in ordinary packaging.
 
-- [ ] For the [fork improvements branch](FORK_IMPROVEMENTS.md), verify titles
-  against the real Rekordbox export and confirm beat number 1 is accented,
-  including a grid starting on beat 3. Host fixtures are not physical acceptance.
-- [ ] Before hardware acceptance of [software steps A and B1–B5](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md),
-  compare MP3/WAV/FLAC tail seeks, paused CUE/scratch and active loop resize
-  against the existing device, then run MAIN/cue listening and the exact-image
-  dual-deck soak. These checks remain **NOT RUN**.
+See [G procedure](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
 
-- [ ] Use FAT32 or exFAT media on superfloppy, MBR or GPT layouts.
-- [ ] Confirm the expected Rekordbox library count before relying on the media.
-- [ ] For a reconnect test, record which root was removed and avoid accidental
-  movement of the other cable.
-- [ ] For package C on the fork-improvements branch, compare playlist order and
-  nested navigation with the real export. Browse quickly during dual-deck
-  playback; verify artwork matches each track after page changes and USB
-  removal, PWV4 falls back on missing/corrupt EXT, and MAIN/cue remain clean.
-  These physical checks are **NOT RUN**.
-- [ ] On the fork improvements branch, compare Rekordbox hot cues with pad LEDs
-  and the Hot Cues screen. Delete a source cue, reload the track and confirm it
-  stays deleted; verify local cues do not appear on a second export sharing a
-  raw track ID. Physical confirmation remains **NOT RUN**.
-- [ ] Hold `HOLD RESTORE` on Hot Cues and confirm source cues return for the
-  selected deck, with refreshed labels and LEDs. A short tap must preserve
-  local edits. Physical confirmation remains **NOT RUN**.
-- [ ] Compare a touch hot-cue press with the matching FLX4 pad: an empty slot
-  stores, a point recalls and exits the loop, a loop cue recalls its bounds,
-  and both inputs preserve play/pause. Physical confirmation: **NOT RUN**.
-- [ ] Check CUE set while paused, held preview, release-to-cue and PLAY while
-  CUE is held, using both touch and FLX4. Disconnect during preview must pause
-  and return to cue. Physical/listening confirmation: **NOT RUN**.
-- [ ] Verify the B13b touch VINYL/CDJ selector and B18 `jog_vinyl`/`jog_cdj`
-  profile bindings on matching development firmware. Verify
-  switching during platter touch, playing bend and paused scrub independently
-  on both decks. B13a-B13b verify software only; physical acceptance:
-  **NOT RUN**.
-- [ ] B14: compare a shorter decoded file and a longer file with truncated
-  analysis. Check live elapsed/remaining time, touch seek, fixed zoom waveform
-  timing and blank mini-waveform tail. Hardware/listening acceptance: **NOT RUN**.
-- [ ] B15: repeat beat-jump and shift+jog through the analysis tail and near
-  actual EOF on both decks, then rapid LOAD/unload/reload. Check pause/play
-  continuity and deck isolation. Physical acceptance: **NOT RUN**.
-- [ ] B16: compare cold ANLZ parsing and warm metadata-cache loads for a real
-  export with whole-second PDB rounding. Check zoom/preview alignment and tail
-  playback; missing or capped PWV3 must retain the fallback. Physical acceptance:
-  **NOT RUN**.
-- [ ] B17: play CBR/VBR MP3 without Xing/VBRI from the beginning through the
-  final audio tail, with both short and long analysis spans. Check EOF drain,
-  remaining time, rewind and seek/loop cancellation of duration measurement.
-  Read faults must not publish a successful measured EOF. Physical/listening
-  acceptance: **NOT RUN**.
-- [ ] B19: measure complete-index load/seek latency while the other deck plays;
-  compare first/last samples, paused cue scratch and loop wraps with actual
-  exports. Exercise cancellation, SD/USB removal, fallback files and the
-  `SEEK INDEX ERR` path. Record internal heap, PSRAM, worker stack headroom and
-  strict audio/USB counters on the exact candidate SHA. **NOT RUN**.
-- [ ] [Package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
-  does not qualify hardware. Repeat MAIN/cue listening and the final 180-minute
-  dual-deck soak before release; signed OTA/recovery remain **NOT RUN**.
-- [ ] On the fork improvements branch, LOAD LOCK starts enabled. Confirm a
-  playing destination deck rejects touch, FLX4 and Web Remote LOAD without
-  changing its track; pause/stop that deck before loading another track.
-  Physical confirmation remains **NOT RUN**.
-- [ ] After FLX4 reconnect, confirm profile, MIDI IN/OUT, UAC, LEDs and held
-  controls have converged to the P4-owned state.
-- [ ] Do not advertise a non-FLX4 profile from host fixtures alone.
-- [ ] Before installing scaled CC profiles, confirm firmware supports S3CP v3.
-  M2.4 accepts only v2; keep the installed v2 profiles until firmware update.
-  See [M2.5 scaling validation](validation/P4_M2_5_CC7_SCALING_20261002.md).
+## Before a commit or new release
 
-## Wi-Fi Remote
+- [ ] Documentation-only: run `tools/check_documentation.ps1` and `git diff --check`.
+- [ ] Firmware: initialize IDF v6.0.2, run relevant/full host suites, build affected
+  target(s), preserve independent locks and the `0x380000` application budget.
+- [ ] UI: run real product layouts and relevant preview/Link simulator modes,
+  visually review changes before updating screenshot baselines.
+- [ ] Capture matching idle/loaded/active resource scenarios: allocation failures,
+  internal/DMA free/minimum/largest block and critical stack floors. Missing
+  evidence or failed absolute floors blocks acceptance; >10% regression requires
+  explanation/correction. Do not walk the PSRAM largest-block heap during playback.
+- [ ] Freeze exact clean source/configuration and applicable green CI; diagnostic
+  startup fault flags must be OFF.
+- [ ] Install that image and run change-driven physical/listening/lifecycle gates.
+  Default final duration is uninterrupted 180 minutes unless a new explicit
+  image-specific exception is recorded.
+- [ ] Keep published tags/assets immutable; verify signatures and public
+  hash/size after uploading versioned content, then switch the correct channel.
+- [ ] Record PASS, FAIL, NOT RUN and explicit exceptions separately; do not
+  advertise JC1060/non-FLX4/real peer support before physical acceptance.
+- [ ] Selectively commit/push and verify local/remote SHA.
 
-- [ ] Enable **Wi-Fi Remote** in Settings only when the service surface is
-  needed.
-- [ ] Connect to `Pajoniiir`, then open `http://pajoniiir.local` or
-  `http://192.168.4.1`.
-- [ ] Expect the local AP to disappear temporarily during a TEST CONNECTION,
-  CHECK FOR UPDATE or pull-update STA visit.
-- [ ] Reconnect to the restored AP and verify authoritative device state before
-  issuing more commands.
-
-## Signed OTA
-
-- [ ] Stop playback and keep power stable.
-- [ ] Record version, slot and current health before the update.
-- [ ] Upload only `main-deck-p4.ddjota`; raw `.bin` is wired-recovery material.
-- [ ] After reboot, verify the expected version, opposite slot, empty OTA
-  error, valid boot state, USB0 Library, FLX4 control/LED/UAC, MAIN and cue.
-- [ ] Use local signed push OTA for intentional rollback; public pull OTA is
-  newer-only.
-- [ ] Never expose or commit the private signing key or hosting credentials.
-
-## Before a firmware commit
-
-- [ ] Initialize ESP-IDF v6.0.2 and confirm `idf.py --version`.
-- [ ] Run `./tests/run_p4_host_tests.ps1` for shared/firmware behavior.
-- [ ] Run the UI simulator gate when UI rendering or navigation changes.
-- [ ] Build `firmware/main-deck-p4` with ESP-IDF v6.0.2.
-- [ ] Confirm `firmware/main-deck-p4/dependencies.lock` changed only when the
-  dependency resolution is intentionally updated.
-- [ ] Run `git diff --check` and review the exact staged file set.
-
-## Before a release
-
-- [ ] For M2.5, prove automatic USB0/USB1 recovery after software restart and
-  signed opposite-slot OTA with reboot diagnostics disabled; confirm FLX4 and
-  each newly advertised controller on real hardware, including MAIN/cue.
-- [ ] Freeze a clean commit and run complete CI/build/package gates.
-- [ ] Create a new immutable version; never move `M2`, `M2.1`, `M2.2`, `M2.3` or `M2.4`.
-- [ ] Build and sign from the exact tag, then independently verify bundle and
-  manifest signatures/hashes.
-- [ ] Install the exact tagged image and run impact-appropriate physical,
-  audible and duration gates.
-- [ ] Publish the versioned OTA bundle before updating `latest.json`.
-- [ ] Verify public URL, size, SHA-256 and GitHub Release assets independently.
-- [ ] Record accepted limitations without converting waived or unrun checks
-  into passes.
-
-## Requalification triggers
-
-Repeat the relevant electrical/lifecycle/audio/OTA gates after changes to:
-
-- power supply, VBUS isolation/protection, enclosure or cable routing;
-- USB host ownership, FIFO, recovery or controller profile lifecycle;
-- decoder/cache/filesystem, audio scheduling, Master Tempo, effects or sinks;
-- Wi-Fi transition, web mutation, signing, OTA partitions or trust keys;
-- display/touch timing, UI ownership or controller-to-UI dispatch.
-
-The M2.4 release evidence is indexed in [`README.md`](README.md). Current
-accepted limitations are in [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md)
-and [`RISK_REGISTER.md`](RISK_REGISTER.md).
+Repeat relevant qualification after power/wiring/enclosure, USB ownership,
+decoder/storage/DSP/sink, network/OTA/trust or display/touch changes.
+Completed historical checks and failed candidates remain in dated records;
+[DOCUMENTATION_STATUS.md](DOCUMENTATION_STATUS.md) defines current scope.

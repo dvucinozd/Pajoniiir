@@ -1,5 +1,12 @@
 # esp-djlink
 
+Pajoniiir integration note (2026-10-05): this donor codec is adapted from
+collaborator [kayrozen](https://github.com/kayrozen), frozen `428b97dd`.
+[UPSTREAM.md](UPSTREAM.md) records local corrections; the inherited description
+below describes codec coverage, not real-peer compatibility. The JC1060
+Ethernet-only service and tests are software verified; hardware is NOT RUN.
+JC4880 has no Link provider. Original protocol credits/license are retained.
+
 Standalone, reusable ESP-IDF component implementing a **complete pure-C99
 codec for the Pioneer Pro DJ Link network protocol** (UDP ports
 50000/50001/50002, the TCP remote DB server and NFSv2 media download).

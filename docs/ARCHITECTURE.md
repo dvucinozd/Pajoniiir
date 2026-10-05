@@ -1,10 +1,13 @@
 # Architecture
 
-Status: **current M2.4 P4-only architecture, reconciled 2026-09-29**. The P4 is
+Status: **current shared P4 architecture, reconciled 2026-10-06**. The P4 is
 both the authoritative playback/UI engine and the direct dual-root USB host.
-No secondary firmware target or inter-board transport belongs to the product.
+JC4880 and JC1060 have separate board entrypoints sharing one core; no S3
+firmware or inter-board transport belongs to either configuration. The published
+JC4880/FLX4 image is frozen v91; JC1060/DDJ-400/Link remains software verified.
+See the [release scope](validation/JC4880_V91_RELEASE_20261005.md).
 
-Development integration on `codex/fork-improvements` additionally binds
+The A-L integration, now merged into `master`, binds
 loaded-track snapshots to the audio session returned by the accepted LOAD.
 UI duration, beat-jump and search consume live length only for that session;
 metadata remains the fallback and waveform time base. See
@@ -12,8 +15,8 @@ metadata remains the fallback and waveform time base. See
 MP3 frame index supplies file length and source-sample seek geometry without
 rescaling the analysis waveform. Index IO is owned by the decoder worker
 outside the output/audio lock; publication and seek commit recheck session and
-request identity. This is software evidence,
-with physical acceptance pending; the production baseline above is unchanged.
+request identity. Focused exact-v91 playback/transport acceptance is recorded
+separately from unrun seek/metadata edge cases and new-board hardware gates.
 
 ## High-Level Flow
 
@@ -25,7 +28,7 @@ experiments. Candidate evidence is separate from the signed OTA schema and
 records both dependency locks, configuration, binary hashes and NOT RUN physical
 gates. JC1060 has a separate channel root; app-only OTA cannot migrate partitions.
 
-Development package H constructs one selected Overview/Library/Hot Cues tree;
+Package H constructs one selected Overview/Library/Hot Cues tree;
 Settings and chrome are shared. Library ownership/actions do not depend on table
 widgets. The product Overview retains leased analysis snapshots, owns PSRAM
 render metadata, merges local cue edits by full persistent identity and copies
@@ -45,17 +48,20 @@ HTTP USB status text is request-owned PSRAM rather than a 2 KiB stack array.
 Audio and USB DMA placement remain unchanged. Historical CLIB measurements
 report owned LVGL bytes as unknown rather than fabricated. These diagnostics
 and [resource gates](validation/FORK_IMPROVEMENTS_PACKAGE_H_SOFTWARE_20261004.md)
-require physical measurements before acceptance.
+are measured on exact candidates. v91 passes its recorded idle/loaded/active
+resource floors. PSRAM largest-block walks were removed from runtime polling
+after reproducing USB timing faults; unmeasured values remain null. Free/minimum
+readings are retained. PCM5102A DMA uses the same 256-frame quantum as the mixer.
 
-Development package G preserves the FAT and media locks, adding a long-operation
-reservation shared by REC and future download workers. START/STOP serialize;
+Package G preserves the FAT and media locks, adding a long-operation
+reservation shared by REC and the J download worker. START/STOP serialize;
 producer admission closes on loss, and timeout retains writer-owned resources.
 The producer performs no filesystem work. SD idle yielding is a default-off
 IDF 6.0.2 experiment; JC1060 PSRAM USB DMA requires internal SD bounce for both
 read/write. Saturating SD transfer/gate snapshots are optional Web status fields.
 See [G bounds and physical gates](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
 
-Development package E adds `main-deck-jc1060` with an explicit shared-component
+Package E adds `main-deck-jc1060` with an explicit shared-component
 list and a thin wrapper around common P4 startup. `board_adapter` owns immutable
 capabilities and shared touch/codec/SD peripherals; display BSP and Ethernet
 startup remain board-specific. The JC4880 BSP is absent from the JC1060 build.
@@ -333,7 +339,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `master` path frozen by the M2.4 production release:
+JC4880 direct-USB path retained in the frozen v91 release:
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -360,13 +366,13 @@ Active `master` path frozen by the M2.4 production release:
   owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
   and releases device/interface ownership, then submits at most one deferred
   root-recovery request. A physical device-gone event cancels that soft request.
-  The P4 matrix records the earlier reconnect and non-OTA post-reboot
-  dual-playback evidence. M2.4 does not inherit its signed-OTA recovery result:
-  USB0 and USB1 remained unenumerated after the M2.4 OTA software reboot until
-  a cold power cycle. See
+  The original bare M2.4 session required a cold power cycle after OTA;
+  later corrected-supply and v91 signed-OTA/reboot/rollback checks returned
+  both roots automatically. Stopped-device reconnect and focused listening
+  passed on v91; its untested active-removal/held-control variants remain
+  outside accepted scope. See
   [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
-  and
-  [M2_4_PRODUCTION_RELEASE_20260929.md](validation/M2_4_PRODUCTION_RELEASE_20260929.md).
+  and the [v91 record](validation/JC4880_L_CANDIDATE_20261005.md).
 
 The retired S3 UART and monitor-I2S implementation is available only in Git
 history.
@@ -420,7 +426,7 @@ boundary, handler wiring, failed-mutation behavior and single-shot seek rule.
 
 ## Data-Driven Multi-Controller Platform
 
-The fork-improvements branch accepts S3CP v4 alongside unchanged v2/v3.
+The integrated runtime accepts S3CP v4 alongside unchanged v2/v3.
 Initial SysEx, press-only selectors, output scale and channel filter policy
 are declared in the profile. USB generation and connection epoch bind worker
 initialization; LED/MIDI mapping waits for initialization enqueue completion.
@@ -434,9 +440,9 @@ details: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
 
 Roles:
 
-- **Windows Profile Builder** (planned, out of firmware scope): scans a
-  controller, runs MIDI/LED learn wizards, and exports `profile.json` +
-  compiled `profile.s3bin`.
+- **Profile tools / external Web Profile Builder**: compile profile JSON to
+  `profile.s3bin`; the coordinated v4 exporter has software evidence in package D.
+  Public deployment and controller-learning workflows are separate project gates.
 - **SD/TF card**: holds `/controllers/<name>/profile.s3bin` (one directory per
   controller). Rekordbox media stays on the USB drive; profiles live on the SD.
 - **P4 `controller_profile_manager`**: scans `/sd/controllers` at boot, validates
@@ -460,7 +466,8 @@ Flow (adds to the base data flow above):
 controller connect
   -> P4 USB1 owner publishes VID/PID/caps/product locally
   -> P4 matches and validates a profile in /sd/controllers
-  -> P4 controller_profile_runtime activates it synchronously
+  -> controller worker validates binding epoch and initializes the profile
+  -> one initial SysEx enqueue (when present) precedes LED mapping activation
   -> P4 maps MIDI IN and LED OUT locally (built-in FLX4 map fallback)
   -> P4 deck_core / audio_engine / UI are unchanged: they still receive the
      same semantic events and send the same semantic LED frames
@@ -474,7 +481,8 @@ compiled profile.s3bin
   -> strict directory ID + bounded body + S3CP length/CRC validation
   -> same-directory upload, fsync, backup and atomic rename on SD
   -> locked registry rescan
-  -> matching profile is activated locally for the connected controller
+  -> matching profile reactivation is queued to the controller worker
+  -> binding epoch is revalidated before initialization/activation
 ```
 
 `/api/status.controller.active_profile` is empty until local validation and

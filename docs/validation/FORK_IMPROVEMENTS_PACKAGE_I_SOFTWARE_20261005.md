@@ -1,5 +1,11 @@
 # Package I software closure — 2026-10-05
 
+> Historical / scenario-specific record, indexed 2026-10-06. Results, hashes
+> and pending items below apply to the named images and sessions. They are not
+> a current installed-device or public-channel claim. See the
+> [v91 release](JC4880_V91_RELEASE_20261005.md) and [current status](../DOCUMENTATION_STATUS.md) for later acceptance;
+> no NOT RUN or waived scenario is converted into PASS by this reconciliation.
+
 Scope: MIT codecs, JC1060 Ethernet-only discovery/dual-player claim, serialized
 DBServer browse and the shared Library presentation bridge. Production M2.4 and
 installed JC4880 `M2.4-61-gc4912d5b` are unchanged. This is software verification,

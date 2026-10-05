@@ -1,13 +1,15 @@
 # Pioneer DDJ-400 — software profile
 
-Adapted from kayrozen/Pajoniiir commit
+Adapted from collaborator [kayrozen](https://github.com/kayrozen)'s
+[Pajoniiir fork](https://github.com/kayrozen/Pajoniiir), commit
 `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
 `controllers/pioneer_ddj_400/profile.json`. Recompiled using our S3CP v4 ABI;
 the donor's extended v2 binary is deliberately not imported.
 
 USB identity and MIDI addresses come from the donor. Its hardware reports
 are provenance, not local qualification. **Hardware acceptance: NOT RUN.**
-UAC format/routing/pacing support belongs to package F.
+UAC format/routing/pacing software support is integrated by package F;
+real DDJ-400 MIDI/LED/audio/reconnect acceptance is still NOT RUN.
 
 Beat FX target notes 94/10, 94/11 and 94/14 emit CH1, CH2 and BOTH on
 press only. The DDJ-400 MASTER switch maps to our existing both-deck FX,

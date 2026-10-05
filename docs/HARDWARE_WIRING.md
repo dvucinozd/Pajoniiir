@@ -1,6 +1,8 @@
 # Hardware Wiring
 
-Status: **active P4-only wiring, reconciled 2026-09-20**.
+Status: **active JC4880/FLX4 wiring, reconciled 2026-10-06**.
+The unchanged topology is used by frozen v91. This document does not qualify
+JC1060 wiring; see its [development guide](../firmware/main-deck-jc1060/README.md).
 
 ## Product connections
 
@@ -71,4 +73,9 @@ cable, and verify cooling and RF behavior with the enclosure closed.
 
 The accepted measurement record is
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
+Later weak-supply failures and corrected-supply reboot/OTA recovery are recorded
+in the [supply investigation](validation/P4_M2_5_USB_REBOOT_INVESTIGATION_20261001.md).
+Focused v91 audio/reconnect acceptance is in the
+[release record](validation/JC4880_V91_RELEASE_20261005.md); it does not add
+new numeric electrical/thermal measurements to the original wiring record.
 Superseded dual-board wiring remains available in Git history only.
