@@ -62,7 +62,7 @@ Full resource baseline, functional/lifecycle qualification and the final
 The operator-approved segmented soak target subsequently completed: a detached
 151-minute segment has 39,144 requests and zero new strict faults, plus 29
 credited minutes from the interrupted attempt. This does not prove uninterrupted
-180-minute monitoring. Final listening and remaining qualification stay open;
+180-minute monitoring. Final listening is operator-confirmed PASS; remaining qualification stays open;
 both decks are stopped and no public channel changed.
 [Package I progress](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md)
 adds bounded Link discovery, two distinct player claims and an Ethernet-only

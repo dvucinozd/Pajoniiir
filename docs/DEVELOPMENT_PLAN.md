@@ -61,8 +61,8 @@ the missing recovery resource baseline and final 180-minute soak stay open.
 The operator-approved 29+151-minute segmented telemetry target is now complete:
 the detached continuation passed 9,060.489 seconds with zero new strict faults
 and stable reserves. The original interruption is retained; uninterrupted
-180-minute monitoring is not claimed. Final listening and the remaining
-functional/lifecycle/recovery-baseline gates are open; no release follows.
+180-minute monitoring is not claimed. Final listening is operator-confirmed PASS;
+the remaining functional/lifecycle/recovery-baseline gates are open; no release follows.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

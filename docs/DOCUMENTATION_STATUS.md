@@ -58,7 +58,8 @@ checks. Memory/stack reserves were stable and failed allocations zero. Both
 decks are stopped on the same image; heartbeat automations are paused. The
 operator-approved 29+151-minute accounting target is complete, but does not
 prove uninterrupted 180-minute monitoring. Original interrupted evidence is
-retained; final operator listening remains PENDING. Full functional/lifecycle
+retained; final operator listening is PASS by explicit confirmation on 2026-10-05.
+Full functional/lifecycle
 qualification, recovery baseline and new-hardware gates remain open.
 
 The active product has one firmware and release target:
