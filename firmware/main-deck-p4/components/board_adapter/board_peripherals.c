@@ -1,4 +1,5 @@
 #include "board_adapter.h"
+#include "audio_output_timing.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_idf_version.h"
@@ -239,6 +240,12 @@ static esp_err_t bsp_audio_init_i2s_pcm5102(void)
     }
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BSP_PCM5102_I2S_NUM, I2S_ROLE_MASTER);
+    /* IDF defaults to 240, while the mixer submits 256-frame blocks. A write
+     * crossing a DMA boundary can then wait for two completions (~10.9 ms at
+     * 44.1 kHz), leaving almost no mixer/scheduling budget before the 2-block
+     * deadline. Match the DMA quantum to the authoritative output geometry;
+     * descriptor count, I2S pacing and late-warning threshold stay unchanged. */
+    chan_cfg.dma_frame_num = AUDIO_OUTPUT_BLOCK_FRAMES;
     chan_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_i2s_tx_pcm5102, NULL), TAG, "pcm5102 i2s_new_channel failed");
 

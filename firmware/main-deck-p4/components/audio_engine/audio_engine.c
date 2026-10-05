@@ -2694,18 +2694,18 @@ static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
     }
 }
 
-/* Well above the 2x-period late warning (~11.6 ms at 44.1 kHz), so this only
- * fires on a genuine stall rather than ordinary jitter. Rate-limited because a
- * storm of them would flood the journal queue from the audio task. */
+/* Preserve the severe-outlier identity above 50 ms, and also capture the
+ * current block's dominant phase at the unchanged 2x-period late threshold.
+ * Rate-limited, non-blocking journal enqueue; no UART or filesystem work here. */
 #define AE_BLOCK_OUTLIER_US     50000u
 #define AE_OUTLIER_MIN_GAP_US   2000000
 
 #if !defined(AUDIO_ENGINE_PC_TEST)
 static int64_t s_last_outlier_us;
 
-static void ae_report_block_outlier(uint32_t block_us)
+static void ae_report_block_outlier(uint32_t block_us, uint32_t late_threshold_us)
 {
-    if (block_us < AE_BLOCK_OUTLIER_US) {
+    if (late_threshold_us == 0 || block_us < late_threshold_us) {
         return;
     }
     int64_t now = esp_timer_get_time();
@@ -2725,7 +2725,8 @@ static void ae_report_block_outlier(uint32_t block_us)
      * (head, codec), the block was preempted rather than slow. */
     /* For a mix-phase stall the group breakdown is the informative part: which
      * sixteenth of the loop ate the time, and how much of it. */
-    service_log_event(SERVICE_LOG_AUDIO_BLOCK_OUTLIER, SERVICE_LOG_WARN,
+    service_log_event(block_us >= AE_BLOCK_OUTLIER_US ? SERVICE_LOG_AUDIO_BLOCK_OUTLIER :
+                      SERVICE_LOG_AUDIO_LATE_PHASE, SERVICE_LOG_WARN,
                       4u, block_us, s_phase_block[worst],
                       s_mix_group_worst, s_mix_group_max_us,
                       AE_PHASE_NAME[worst]);
@@ -3478,7 +3479,7 @@ cleanup:
 
 /* Consumer: pitch-resample from the ring and write PCM to the physical outputs.
  * The codec/I2S writes block on DMA, which paces real-time playback. */
-#define AE_OUT_FRAMES 256
+#define AE_OUT_FRAMES ((int)AUDIO_OUTPUT_BLOCK_FRAMES)
 #define AE_OUTPUT_TASK_STACK 8192
 #define AE_OUTPUT_TASK_PRIORITY 6u
 /* Keep real-time audio producer/output work off the LVGL core. */
@@ -4191,11 +4192,12 @@ static void ae_output_task(void *arg)
         ae_phase_note(AE_PH_BOOK, esp_timer_get_time() - phase_mark);
         ae_wdt_trace(AUDIO_WDT_PHASE_DIAGNOSTICS, 0u);
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
-#if !defined(AUDIO_ENGINE_PC_TEST)
-        ae_report_block_outlier(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
-#endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
+#if !defined(AUDIO_ENGINE_PC_TEST)
+        ae_report_block_outlier(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
+                                late_warning_us > 0u ? late_warning_us : block_period_us);
+#endif
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
                                     late_warning_us > 0u ? late_warning_us : block_period_us);
         /* No software audio pacing delay: PCM mode's i2s_channel_write blocks

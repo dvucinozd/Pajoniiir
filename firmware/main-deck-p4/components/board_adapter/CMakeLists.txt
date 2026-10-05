@@ -4,6 +4,8 @@ if(CONFIG_USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM AND
     message(FATAL_ERROR "USB PSRAM DMA requires a JC1060 storage experiment and internal SD bounce")
 endif()
 idf_component_register(SRCS "board_capabilities.c" "board_peripherals.c" "board_sd_dma.c" INCLUDE_DIRS "include"
+    # Only the portable block geometry header; no audio-engine link dependency.
+    PRIV_INCLUDE_DIRS "../audio_engine/include"
     REQUIRES esp_lcd esp_lcd_touch esp_lcd_touch_gt911 esp_codec_dev esp_driver_i2c
              esp_driver_i2s esp_driver_gpio esp_driver_ledc esp_driver_sdmmc
              fatfs sdmmc esp_hw_support)

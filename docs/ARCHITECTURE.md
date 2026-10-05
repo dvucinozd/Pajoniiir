@@ -225,6 +225,11 @@ Current P4 audio ownership rule:
   `/api/status` includes these values under
   `diagnostics` so hardware smoke tests can read one structured report instead
   of scraping log lines;
+- PCM5102A DMA uses the same 256-frame quantum as the audio output block.
+  IDF's 240-frame default can make one write wait for two DMA completions.
+  Descriptor count and the existing two-block late threshold are unchanged;
+  physical sink latency must be measured on this geometry. Late-block journal
+  details retain the actual block's dominant phase, separate from lifetime maxima;
 - Beat FX state is P4-owned and read by both the physical Overview UI and
   `/api/status`. The effect selector uses the explicit cycle
   `FILTER → ECHO → FLANGER → DELAY → FILTER` (and the exact reverse for

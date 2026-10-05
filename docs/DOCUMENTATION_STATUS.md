@@ -24,6 +24,11 @@ boot 603, stopped after reproducing one SKIPPED packet under dense status
 polling. PSRAM heap walks from periodic health/status are now a corrective
 experiment; exact-image verification remains required. See the same hardware
 report for source/artifact identities and failed runs. No public channel change.
+The first correction `M2.4-76-g2941121b`, `ota_0`, boot 604 passed a 183-second
+dense-status run, active resource comparison and operator MAIN/cue listening,
+but the extended loop run stopped on one 12,994-us output-late block. USB/PCM
+counters stayed zero. A 240/256-frame PCM5102A DMA/mixer geometry mismatch is
+the next correction; exact-image acceptance remains open.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
