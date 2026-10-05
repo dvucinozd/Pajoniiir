@@ -62,6 +62,14 @@ retained; final operator listening is PASS by explicit confirmation on 2026-10-0
 Full functional/lifecycle
 qualification, recovery baseline and new-hardware gates remain open.
 
+Subsequent short WAV/44.1 kHz FLAC and 96 kHz/24-bit FLAC listening passed,
+but mixed MP3/FLAC operator transport testing recorded 3,176 new D2 PCM
+underrun frames. The operator withdrew the freeze report; the triggering
+gesture was Master Tempo or loop. Controlled plain playback, four-beat loop,
+loop exit and natural FLAC EOF were clean. This unresolved transport event
+blocks complete acceptance; the prior soak evidence remains scoped to its
+tested scenario. See the candidate validation for retained samples and logs.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
