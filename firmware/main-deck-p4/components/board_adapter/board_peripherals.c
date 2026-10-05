@@ -238,6 +238,8 @@ static DRAM_ATTR uint32_t s_main_dma_completions;
 static DRAM_ATTR uint32_t s_main_dma_last_us;
 static DRAM_ATTR uint32_t s_main_dma_max_gap_us;
 static DRAM_ATTR uint32_t s_main_dma_queue_overflows;
+static DRAM_ATTR uint32_t s_main_dma_interrupted_priority;
+static DRAM_ATTR char s_main_dma_interrupted_task[16];
 
 #if CONFIG_BSP_PCM5102A_MAIN_OUT
 static bool IRAM_ATTR main_dma_sent(i2s_chan_handle_t chan, i2s_event_data_t *event, void *user)
@@ -250,6 +252,15 @@ static bool IRAM_ATTR main_dma_sent(i2s_chan_handle_t chan, i2s_event_data_t *ev
     if (last && gap > __atomic_load_n(&s_main_dma_max_gap_us, __ATOMIC_RELAXED))
         __atomic_store_n(&s_main_dma_max_gap_us, gap, __ATOMIC_RELAXED);
     __atomic_add_fetch(&s_main_dma_completions, 1u, __ATOMIC_RELAXED);
+    uint32_t priority = (uint32_t)uxTaskPriorityGetFromISR(NULL);
+    if (priority > s_main_dma_interrupted_priority) {
+        const char *name = pcTaskGetName(NULL);
+        unsigned i = 0;
+        for (; i < sizeof(s_main_dma_interrupted_task) - 1u && name[i]; ++i)
+            s_main_dma_interrupted_task[i] = name[i];
+        s_main_dma_interrupted_task[i] = '\0';
+        s_main_dma_interrupted_priority = priority;
+    }
     return false;
 }
 
@@ -269,6 +280,10 @@ void bsp_audio_main_dma_snapshot(bsp_main_dma_diag_t *out, bool reset_gap)
     out->max_gap_us = reset_gap
         ? __atomic_exchange_n(&s_main_dma_max_gap_us, 0u, __ATOMIC_RELAXED)
         : __atomic_load_n(&s_main_dma_max_gap_us, __ATOMIC_RELAXED);
+    out->interrupted_priority = s_main_dma_interrupted_priority;
+    memcpy(out->interrupted_task, s_main_dma_interrupted_task, sizeof(out->interrupted_task));
+    out->interrupted_task[sizeof(out->interrupted_task) - 1u] = '\0';
+    if (reset_gap) s_main_dma_interrupted_priority = 0u;
 }
 
 static esp_err_t bsp_audio_init_i2s_pcm5102(void)

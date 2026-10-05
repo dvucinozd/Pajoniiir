@@ -2745,10 +2745,14 @@ static void ae_report_block_outlier(uint32_t block_us, uint32_t late_threshold_u
                       s_mix_group_worst, s_mix_group_max_us,
                       AE_PHASE_NAME[worst]);
 #if AE_FW
-    if (worst == AE_PH_MAIN && !s_usb_main_sink)
+    if (worst == AE_PH_MAIN && !s_usb_main_sink) {
         service_log_event(SERVICE_LOG_AUDIO_LATE_PHASE, SERVICE_LOG_WARN,
             4u, s_main_write_dma.completions, s_main_write_dma.max_gap_us,
             s_main_write_dma.queue_overflows, s_phase_block[AE_PH_MAIN], "i2s dma");
+        service_log_event(SERVICE_LOG_AUDIO_LATE_PHASE, SERVICE_LOG_WARN,
+            2u, s_main_write_dma.interrupted_priority, s_phase_block[AE_PH_MAIN],
+            0u, 0u, s_main_write_dma.interrupted_task);
+    }
 #endif
 }
 #endif
@@ -3814,7 +3818,10 @@ static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
         .completions = after.completions - before.completions,
         .max_gap_us = after.max_gap_us,
         .queue_overflows = after.queue_overflows - before.queue_overflows,
+        .interrupted_priority = after.interrupted_priority,
     };
+    memcpy(s_main_write_dma.interrupted_task, after.interrupted_task,
+           sizeof(s_main_write_dma.interrupted_task));
     if (result == AUDIO_OUTPUT_SINK_TIMEOUT) return ESP_ERR_TIMEOUT;
     return result == AUDIO_OUTPUT_SINK_OK ? ESP_OK : ESP_FAIL;
 #else

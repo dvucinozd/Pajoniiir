@@ -87,6 +87,8 @@ typedef struct {
     uint32_t completions;
     uint32_t max_gap_us;
     uint32_t queue_overflows;
+    uint32_t interrupted_priority;
+    char interrupted_task[16];
 } bsp_main_dma_diag_t;
 /* Bounded ISR counters; reset_gap starts a write's observation window only. */
 void bsp_audio_main_dma_snapshot(bsp_main_dma_diag_t *out, bool reset_gap);
