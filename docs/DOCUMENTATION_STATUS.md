@@ -13,7 +13,11 @@ installed `M2.4-71-gd20a9f0e` in `ota_1`; AP/API/USB0/FLX4 startup and previous
 design/controls passed focused checks. Operator heard clean MAIN/cue, but one
 44-frame USB packet loss fails strict audio acceptance. Reproduction/correction,
 relative resource comparison, reconnect/rollback and final soak stay open;
-public M2.4 is unchanged. JC1060 remains software verified only.
+public M2.4 is unchanged. Diagnostic `M2.4-72-g875aefe0` identifies ISO SKIPPED;
+the same packet-loss fault reproduced on H `M2.4-61-gc4912d5b` before I-L.
+A short recovery A/B run was clean. Last confirmed installed image at the
+documented isolation checkpoint is H in `ota_0`, stopped; do not transfer its
+results to any candidate. JC1060 remains software verified only.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
