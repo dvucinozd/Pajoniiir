@@ -474,7 +474,8 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 late-output anomalies are aggregated outside the audio task" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late")
+    -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late",
+        "#define AUDIO_MON_PRIORITY        2u", "xTaskCreatePinnedToCore(health_monitor_task")
 
 Assert-FileContains `
     -Name "p4 media acceptance counters are exposed by status" `

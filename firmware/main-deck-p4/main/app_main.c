@@ -39,10 +39,12 @@ static const char *TAG = "main";
 
 void p4_tcm_heap_guard_keep(void);
 
-// Periodic health monitor (esp_timer task, not the audio path): reads the
-// counters the audio engine already maintains and emits rate-limited service-log
-// summaries for anomalies and low-memory edges. No hot-path work.
-#define AUDIO_MON_PERIOD_US       (5ll * 1000000ll)
+/* Snapshot takes the recursive audio mutex, also owned during FLAC seeks.
+ * Calling it from the priority-22 esp_timer task boosts that decoder above the
+ * priority-6 output through mutex inheritance. Keep diagnostics below both
+ * audio workers, including while output is blocked waiting for DMA. */
+#define AUDIO_MON_PERIOD_MS       5000u
+#define AUDIO_MON_PRIORITY        2u
 #define LOW_INTERNAL_HEAP_BYTES   (24u * 1024u)
 #define LOW_PSRAM_BYTES           (256u * 1024u)
 
@@ -186,6 +188,15 @@ static void health_monitor_cb(void *arg)
         low_psram = true;
     } else if (psram_free >= LOW_PSRAM_BYTES * 2u) {
         low_psram = false;
+    }
+}
+
+static void health_monitor_task(void *arg)
+{
+    TickType_t wake = xTaskGetTickCount();
+    for (;;) {
+        xTaskDelayUntil(&wake, pdMS_TO_TICKS(AUDIO_MON_PERIOD_MS));
+        health_monitor_cb(arg);
     }
 }
 
@@ -448,16 +459,9 @@ void app_main(void)
     audio_recorder_init();
 #endif
 
-    /* Periodic health monitor -> rate-limited service-log anomaly summaries. */
-    {
-        const esp_timer_create_args_t mon_args = {
-            .callback = health_monitor_cb, .name = "svclog_mon"
-        };
-        esp_timer_handle_t mon = NULL;
-        if (esp_timer_create(&mon_args, &mon) == ESP_OK) {
-            esp_timer_start_periodic(mon, AUDIO_MON_PERIOD_US);
-        }
-    }
+    /* Diagnostics must never inherit a real-time timer's priority into decode. */
+    ESP_ERROR_CHECK(xTaskCreatePinnedToCore(health_monitor_task, "svclog_mon",
+        4096u, NULL, AUDIO_MON_PRIORITY, NULL, 1) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
     app_settings_t settings = app_settings_get();
     audio_engine_set_cue_mode(settings.cue_mode);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(settings.master_trim_preset));
