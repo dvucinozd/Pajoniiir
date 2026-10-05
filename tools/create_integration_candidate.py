@@ -91,6 +91,9 @@ def main():
         raise ValueError("exact candidate SHA needs all eight successful CI jobs")
     verify_board(build, args.project)
     config = (build / "config/sdkconfig.h").read_text()
+    if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
+           for flag in ("FORCE_ROLLBACK_TEST", "STARTUP_TIMEOUT_TEST")):
+        raise ValueError("OTA fault-injection image is not an ordinary candidate")
     if "#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1" in config:
         raise ValueError("preview is not an ordinary candidate")
     desc = json.loads((build / "project_description.json").read_text())

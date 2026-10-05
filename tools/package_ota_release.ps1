@@ -51,6 +51,9 @@ function Read-TargetBuild {
     $configPath = Join-Path $buildDir "config/sdkconfig.h"
     if (-not (Test-Path -LiteralPath $configPath)) { throw "Missing build configuration: $configPath" }
     $configText = Get-Content -LiteralPath $configPath -Raw
+    if ($configText -match '(?m)^#define CONFIG_DDJ_OTA_(FORCE_ROLLBACK_TEST|STARTUP_TIMEOUT_TEST) 1\r?$') {
+        throw "OTA fault-injection images cannot be packaged as a production release"
+    }
     if ($configText -match '(?m)^#define CONFIG_(AUDIO_RECORDER_ENABLED|AUDIO_RECORDER_EXPERIMENTAL_BUILD|PAJONIIIR_SD_IDLE_WAIT) 1\r?$') {
         throw "Storage experiment images cannot be packaged as a production OTA release"
     }

@@ -516,7 +516,11 @@ void app_main(void)
     if (boot_health.rollback_pending) {
         const p4_startup_gate_t gate = {
             .boot_started_us = boot_started_us,
+#if CONFIG_DDJ_OTA_STARTUP_TIMEOUT_TEST
+            .network_required = true,
+#else
             .network_required = boot_network_required,
+#endif
         };
         p4_startup_result_t result;
         do {
@@ -524,12 +528,21 @@ void app_main(void)
             firmware_resources_snapshot(&resources);
             result = p4_startup_gate_poll(&gate,
                 (uint64_t)esp_timer_get_time(), resources.critical_allocation_failures == 0,
+#if CONFIG_DDJ_OTA_STARTUP_TIMEOUT_TEST
+                false);
+#else
                 boot_network_required && wifi_link_is_active());
+#endif
             if (result == P4_STARTUP_WAIT) vTaskDelay(pdMS_TO_TICKS(250));
         } while (result == P4_STARTUP_WAIT);
         if (result != P4_STARTUP_READY) {
             ESP_LOGE(TAG, "pending startup failed: requested AP/HTTP ready=%d",
                      boot_network_required && wifi_link_is_active());
+            service_log_event(SERVICE_LOG_P4_OTA_FAILED, SERVICE_LOG_ERROR,
+                              2u, (uint32_t)result,
+                              (uint32_t)(esp_timer_get_time() / 1000), 0u, 0u,
+                              "startup readiness rejected");
+            service_log_sync();
             ESP_ERROR_CHECK(firmware_health_reject_pending());
             /* The rollback API normally never returns on success. */
             esp_restart();
