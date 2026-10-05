@@ -97,8 +97,12 @@ double/exit scenario for 181.571 seconds with zero new strict faults and
 operator-confirmed clean MAIN/D2 cue sound. This focused correction is accepted;
 Subsequent D1 MP3 / D2 FLAC VINYL scratch/release and CUE/PLAY/MT tempo-move
 checks passed 91.899/122.057 seconds with zero new strict faults and operator
-confirmation of natural scratch and clean MAIN/D1/D2 cue sound. Remaining
-format/deck loop parity, combined scratch+MT, cancellation, cue store/load lock
+confirmation of natural scratch and clean MAIN/D1/D2 cue sound. Separate
+operator-PLAY-gated D2 WAV and D1 MP3 IN/OUT/half/double/EXIT checks passed
+62.097/61.706 seconds with zero new strict faults, zero failed allocations and
+operator-confirmed clean MAIN/respective cue sound. The prior combined attempt
+included no operator loop actions and qualifies only plain playback telemetry.
+Remaining opposite-deck format parity, combined scratch+MT, cancellation, cue store/load lock
 and final-image lifecycle/soak gates remain open. The older image's soak does
 not qualify this image.
 
