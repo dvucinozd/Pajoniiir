@@ -43,7 +43,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | H | Previous product design with new features at 800x480 and 1024x600 | Software verified; c4912d5b installed on JC4880. Focused AP/USB, operator design/controls and paused-track absolute resources PASS; full baseline/audio/soak acceptance open |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
-| K | Epoch-bound network clock, controlled sync and tempo master | Pending |
+| K | Epoch-bound network clock, controlled sync and tempo master | Software verified: session-fenced follower, explicit alignment, acknowledged handoff/status/beats and sink/rate latency scope; real phase/listening/handoff NOT RUN |
 | L | Project-bound OTA, documentation, qualification and release candidate | Pending |
 
 Software verification, hardware acceptance and release are separate states.
@@ -54,6 +54,18 @@ supersede them. UI redesign/presentation belongs to H and S3CP v4 to D.
 JC1060, DDJ-400 and real CDJ peer acceptance remain **NOT RUN** until the
 hardware is available. No deployment, production channel change or hardware
 acceptance follows from a successful host test or build.
+
+## Package K
+
+[K software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
+records the donor-derived follower and new runtime/transport integration. The
+40 ms model cannot periodically seek; source loss holds tempo in WAIT. Playback
+mutations revalidate the accepted audio session without waiting for lifecycle
+locks. Master selection is sticky across unrelated peer changes; handoffs use
+bounded source/claim checks and timeout. Status/beats use owned accepted-timeline
+snapshots. Sink latency remains UNMEASURED until physically calibrated for that
+sink/rate; the engineering value is RAM-only. Software tests do not qualify
+audible phase, real peer handoff or the final exact-image soak. Next: package L.
 
 ## Package J
 

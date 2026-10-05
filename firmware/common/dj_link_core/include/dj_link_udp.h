@@ -20,3 +20,5 @@ void dj_link_udp_close(dj_link_udp_t *t);
 /* 1 datagram, 0 timeout/oversized, -1 socket error. wait_ms is bounded at 40. */
 int dj_link_udp_receive(dj_link_udp_t *t, dj_link_datagram_t *out, unsigned wait_ms);
 bool dj_link_udp_broadcast(dj_link_udp_t *t, const uint8_t *buf, size_t len);
+bool dj_link_udp_send(dj_link_udp_t *t, uint16_t port, uint32_t ip,
+    const uint8_t *buf, size_t len);

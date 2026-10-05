@@ -5,6 +5,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 int main(void)
@@ -52,6 +53,24 @@ int main(void)
     for (unsigned i = 0; i < 3; ++i) {
         assert(dj_link_udp_receive(&t, &packet, 40) == 1);
         assert(packet.port == 50000+i);
+    }
+    assert(!dj_link_udp_send(&t,49999,0x7f000001,&broadcast,1));
+    assert(!dj_link_udp_send(&t,50001,0,&broadcast,1));
+    /* Real loopback sockets verify each outbound family uses its own bound
+     * source port and exact destination, including handoff/beat port 50001. */
+    for (unsigned i=0;i<3;++i) {
+        struct sockaddr_in dst={.sin_family=AF_INET,.sin_port=htons((uint16_t)(50000+i)),
+            .sin_addr={.s_addr=htonl(0x7f000001)}};
+        int receiver=socket(AF_INET,SOCK_DGRAM,0);assert(receiver>=0);
+        assert(bind(receiver,(struct sockaddr *)&dst,sizeof(dst))==0);
+        struct timeval timeout={.tv_sec=1};
+        assert(setsockopt(receiver,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout))==0);
+        assert(dj_link_udp_send(&t,(uint16_t)(50000+i),0x7f000001,&broadcast,1));
+        struct sockaddr_in src; socklen_t src_len=sizeof(src);uint8_t value=0;
+        assert(recvfrom(receiver,&value,1,0,(struct sockaddr *)&src,&src_len)==1 && value==1);
+        struct sockaddr_in bound;socklen_t bound_len=sizeof(bound);
+        assert(getsockname(t.fd[i],(struct sockaddr *)&bound,&bound_len)==0);
+        assert(src.sin_port==bound.sin_port);close(receiver);
     }
     close(sender); dj_link_udp_close(&t); dj_link_udp_close(&t);
     assert(dj_link_udp_receive(&t, &packet, 1) == -1);

@@ -46,6 +46,7 @@ typedef enum {
 #   define ESP_ERR_NO_MEM        0x101
 #   define ESP_ERR_NOT_FOUND    0x105
 #   define ESP_ERR_NOT_SUPPORTED 0x106
+#   define ESP_ERR_TIMEOUT       0x107
 #else
 #   include "esp_err.h"
 #endif
@@ -102,6 +103,10 @@ esp_err_t audio_engine_deck_stop_session(uint8_t deck,
                                          uint32_t expected_session_generation);
 uint32_t audio_engine_deck_session_generation(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
+/* Network controller mutation: no lifecycle wait, rejects replaced sessions
+ * and scratch/hold. A caller must explicitly re-align after rejection. */
+esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,
+    bool seek,uint32_t position_ms,bool set_pitch,float pitch_percent);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
 void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled);

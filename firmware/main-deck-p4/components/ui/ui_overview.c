@@ -2499,9 +2499,18 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
     if (audio_engine_deck_get_status(deck, &status) == ESP_OK && status.state == AE_LOADING)
         snprintf(status_text, sizeof status_text, "LOADING %u%%", (unsigned)status.load_progress);
     else if (status.last_error_text[0]) snprintf(status_text, sizeof status_text, "ERROR: %.72s", status.last_error_text);
+    else if (state->network_sync!=DECK_NET_SYNC_OFF) {
+        const char *sync=state->network_sync==DECK_NET_SYNC_LOCKED?"LOCKED":
+            state->network_sync==DECK_NET_SYNC_ALIGNING?"ALIGNING":"WAIT";
+        if (state->network_player) snprintf(status_text,sizeof status_text,"%s #%u",sync,(unsigned)state->network_player);
+        else snprintf(status_text,sizeof status_text,"%s",sync);
+    }
     else snprintf(status_text, sizeof status_text, "%s%s", info->valid ? "READY" : "EMPTY",
                   !deck_core_load_allowed(deck) ? " / LOAD LOCK" : "");
     ui_label_set_text_if_changed(panel->label_status, status_text);
+    ui_obj_set_text_color_if_changed(panel->label_status,
+        state->network_sync==DECK_NET_SYNC_LOCKED?COL_GREEN:
+        state->network_sync!=DECK_NET_SYNC_OFF?COL_AMBER:COL_TEXT_MUTED);
     deck_loaded_track_summary_t track = {0};
     const uint16_t *pixels = deck_core_get_loaded_track(deck, &track)
         ? ui_library_deck_artwork(deck) : NULL;

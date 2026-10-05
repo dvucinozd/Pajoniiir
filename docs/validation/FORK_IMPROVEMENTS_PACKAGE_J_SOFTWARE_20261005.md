@@ -148,6 +148,10 @@ on `b6f3a220` found a host-test portability error: strict Linux C11 needed
 the pthread sanitizer build exposed it already. The follow-up adds the feature
 declaration in that test; no firmware behavior changes and no test is removed.
 
+Follow-up `298ee029253183015454535451de218de2781e68` is pushed and all eight
+jobs in [37243322538](https://github.com/dvucinozd/Pajoniiir/actions/runs/37243322538)
+PASS. This closes J's hosted software gate; physical gates below stay NOT RUN.
+
 ## Physical gates, rollback and next work
 
 | Gate | Result |

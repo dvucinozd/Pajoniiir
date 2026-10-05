@@ -3201,6 +3201,71 @@ static void test_imported_hot_loop_recalls_bounds_and_single_cue_exits_loop(void
 uint32_t audio_engine_stub_duration_ms[2];
 uint32_t audio_engine_stub_session_generation[2];
 
+static deck_net_clock_t network_clock;
+static deck_sink_latency_t network_latency;
+static deck_net_local_snapshot_t network_local[2];
+static int8_t network_master=-1;
+static unsigned network_follow_calls,network_master_calls;
+static bool network_on;
+static bool network_read(deck_net_clock_t *c,int8_t *m,deck_sink_latency_t *l)
+{*c=network_clock;*m=network_master;*l=network_latency;return network_on;}
+static void network_publish(const deck_net_local_snapshot_t local[2])
+{network_local[0]=local[0];network_local[1]=local[1];}
+static void network_follow(void) {++network_follow_calls;}
+static void network_request_master(uint8_t deck) {assert(deck==0);++network_master_calls;}
+static void test_network_sync_semantic_path_and_replacement(void)
+{
+    deck_core_test_reset();reset_audio_engine_stub();
+    anlz_beat_t beats[4]={{.time_ms=0,.beat_phase=1,.bpm_x100=12000},
+        {.time_ms=500,.beat_phase=2,.bpm_x100=12000},
+        {.time_ms=1000,.beat_phase=3,.bpm_x100=12000},
+        {.time_ms=1500,.beat_phase=4,.bpm_x100=12000}};
+    anlz_metadata_t meta={.beats=beats,.beat_count=4,.bpm=120};
+    audio_engine_stub_deck_loaded[0]=true;audio_engine_stub_session_generation[0]=42;
+    media_persistent_id_t id=persistent_id_for_key(101);
+    assert(deck_core_publish_loaded_track_session(0,1,101,&id,120,300000,&meta,42)==ESP_OK);
+    static const deck_core_network_ops_t ops={network_read,network_publish,network_follow,network_request_master};
+    network_clock=(deck_net_clock_t){.valid=true,.anchor_ms=1000,.period_us=500000,
+        .beat_in_bar=1,.player=3,.source_epoch=300,.master_epoch=1};
+    network_latency=(deck_sink_latency_t){.sink=1,.sample_rate=48000,.latency_us=20000,.measured=true};
+    network_follow_calls=network_master_calls=0;network_master=-1;network_on=true;
+    deck_core_set_network_ops(&ops);
+    deck_core_network_tick(1000,1,48000);
+    ctrl_event_t sync=deck_button(CTRL_ID_DECK1_SYNC);
+    deck_core_test_apply_event(&sync);assert(network_follow_calls==1);
+    deck_core_network_tick(1000,1,48000);
+    assert(audio_engine_stub_deck_seek_count[0]==0);
+    assert(deck_core_get_deck_state(0).network_sync==DECK_NET_SYNC_WAIT);
+    ctrl_event_t play=deck_button(CTRL_ID_DECK1_PLAY);deck_core_test_apply_event(&play);
+    audio_engine_stub_deck_position_ms[0]=100;
+    deck_core_network_tick(1000,1,48000);
+    assert(audio_engine_stub_deck_seek_count[0]==1 && audio_engine_stub_deck_position_ms[0]==20);
+    assert(network_local[0].loaded && network_local[0].session==42 && network_local[0].calibrated);
+    network_clock.valid=false;float pitch=audio_engine_stub_pitch_percent[0];
+    deck_core_network_tick(1400,0,44100);
+    assert(audio_engine_stub_pitch_percent[0]==pitch && !network_local[0].calibrated);
+    assert(deck_core_get_deck_state(0).network_sync==DECK_NET_SYNC_WAIT);
+    ctrl_event_t master=deck_ext_action(CTRL_DECK_1,CTRL_DECK_EXT_ACTION_SYNC_MASTER,true);deck_core_test_apply_event(&master);
+    assert(network_master_calls==1 && !deck_core_get_deck_state(0).sync_master);
+    network_master=0;deck_core_network_tick(1440,1,48000);
+    assert(deck_core_get_deck_state(0).sync_master);
+    network_master=-1;audio_engine_stub_session_generation[0]=43;
+    network_clock.valid=true;deck_core_network_tick(1480,1,48000);
+    assert(!network_local[0].loaded && audio_engine_stub_deck_seek_count[0]==1);
+    assert(deck_core_publish_loaded_track_session(0,1,102,&id,120,300000,&meta,43)==ESP_OK);
+    deck_core_network_tick(1520,1,48000);
+    assert(!deck_core_get_deck_state(0).sync_enabled);
+    network_master=0;deck_core_network_tick(1560,1,48000);
+    assert(deck_core_get_deck_state(0).sync_master);
+    network_on=false;deck_core_network_tick(1600,1,48000);
+    assert(!deck_core_get_deck_state(0).sync_master &&
+        deck_core_get_deck_state(0).network_sync==DECK_NET_SYNC_OFF);
+    assert(deck_core_publish_loaded_track_session(0,1,103,&id,120,300000,&meta,0)==ESP_OK);
+    network_on=true;deck_core_network_tick(1640,1,48000);
+    assert(!network_local[0].loaded); /* unbound metadata cannot publish a clock */
+    deck_core_set_network_ops(NULL);
+}
+
 int main(void)
 {
     test_load_lock_uses_actual_target_deck_transport();
@@ -3320,5 +3385,6 @@ int main(void)
     test_smoke_log_policy_rates_limits_deferred_analog_controls();
     test_smoke_log_policy_logs_deferred_buttons_only_on_press();
     puts("deck_core_dual tests passed");
+    test_network_sync_semantic_path_and_replacement();
     return 0;
 }

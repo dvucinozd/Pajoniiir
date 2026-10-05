@@ -19,6 +19,9 @@
                      "memory_cues_scrolled":  "3f4b3623db32e9ce0b6ffa1d152bfcb850d3469a2868a62fbaea7d42e6fe14d7",
                      "overview_loading":  "9135e995e0f49f25a9f0a80d54f89b7c2c1946d9e598a7dd0bdcf0fd6015e0f5",
                      "overview_error":  "950132606efcebe71f97d99ab8fbb584e7ad220ebaf6e54b79f161d6dc2ff464",
+                     "network_wait":  "bb972b7d0bedec01ac09f2fcf3e93ef47b1f13af82355e863b99a5776211dcdc",
+                     "network_aligning":  "0855d3e60627509f3df51875acefd465570b8463e2f0c59735d2d753783fa0c2",
+                     "network_locked":  "81c000b5b16132037765bc6a9dd551eaa6abe5b759ae2643112496dcbeb6f0d4",
                      "overview_empty":  "bf1a443d767247da59f51febc2859b26c4d69c3ac66a246da48acf655d886e90",
                      "library_unavailable":  "a8fc5c8e158df28cc5bf2a384dcad82ccf03d8c252b775df4759fcd0ff7de22c"
                  }

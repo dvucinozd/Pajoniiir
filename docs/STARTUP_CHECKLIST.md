@@ -53,6 +53,17 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   Record exact card, peer/model/version and firmware SHA; follow the existing
   resource/listening/reconnect/180-minute acceptance gates before publication.
 
+- [ ] [Package K](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
+  physical acceptance is NOT RUN. Measure audible MAIN phase/drift for each
+  sink/sample-rate and record its latency; never reuse another configuration's
+  calibration. The engineering setter is RAM-only and must be reapplied after
+  reboot. Test SYNC/PLAY alignment, scratch hold, jitter/loss, master stop,
+  remote/local handoff, unrelated peer arrival and claimed-number conflict.
+  Loss must retain tempo in WAIT, with no periodic seek. Confirm master source
+  epochs, controller/touch parity and clean sound; LOCKED alone is insufficient.
+  Record JC1060/controller/peer versions and exact image SHA. Final audio/soak
+  gates stay deferred until integration completion, not waived.
+
 - [ ] [First ordinary H candidate](validation/JC4880_H_CANDIDATE_20261004.md)
   returned network/USB and operator-confirmed previous design/FLX4 controls.
   Resource gate FAILED: waveform internal-DMA probes and HTTP stack 456 bytes.

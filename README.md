@@ -71,7 +71,13 @@ preserve the old deck. Verified SD playback survives network loss and local USB
 removal. Unidentified NFS volumes use session-local identities and require a
 fresh download; local cue edits cannot migrate between those sessions. Real
 SD/peer timing, fault injection, MAIN/cue listening and final soak remain NOT RUN.
-Next are K sync/master and L final compatibility/candidate gates.
+[Package K software closure](docs/validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
+adds epoch-bound network sync, explicit PLAY/SYNC alignment, master handoff and
+outgoing status/beats using the accepted audio timeline. Loss holds the last
+tempo; scratch and ordinary drift never trigger automatic seeks. Sink latency
+is configuration-specific and remains UNMEASURED until a real calibration.
+Real output phase, listening and peer handoff remain NOT RUN. Next is L final
+compatibility/candidate work; the installed JC4880 image is unchanged.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

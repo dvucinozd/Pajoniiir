@@ -1,4 +1,5 @@
 #include "deck_core.h"
+#include "deck_net_sync.h"
 #include "deck_loaded_track_store.h"
 #include "deck_load_lock.h"
 #include "control_link.h"
@@ -16,6 +17,7 @@
 #include "sdkconfig.h"   /* CONFIG_AUDIO_SCRATCH_ENABLED (undefined -> Phase 1) */
 #endif
 #include <inttypes.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,6 +90,20 @@ static TickType_t        s_last_drop_warn;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
+static const deck_core_network_ops_t *s_network_ops;
+static deck_net_sync_t s_net_sync[2];
+static uint32_t s_net_generation[2];
+static bool s_network_was_enabled;
+static bool network_enabled(void)
+{
+    const deck_core_network_ops_t *ops=__atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE);
+    deck_net_clock_t clock;deck_sink_latency_t latency;int8_t master;
+    return ops && ops->read && ops->read(&clock,&master,&latency);
+}
+void deck_core_set_network_ops(const deck_core_network_ops_t *ops)
+{
+    __atomic_store_n(&s_network_ops,ops,__ATOMIC_RELEASE);
+}
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -2070,6 +2086,7 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
             /* PLAY while CUE is held commits the preview to normal playback. */
             state->cue_preview = false;
             state->playing = true;
+            deck_net_sync_request_align(&s_net_sync[deck]);
             sync_legacy_compat_leds(deck);
             break;
         }
@@ -2096,6 +2113,7 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         }
         ESP_LOGI(TAG, "deck %u play -> %s", (unsigned)deck + 1,
                  state->playing ? "PLAYING" : "PAUSED");
+        if (state->playing) deck_net_sync_request_align(&s_net_sync[deck]);
         sync_legacy_compat_leds(deck);
         break;
 
@@ -2818,6 +2836,16 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
         return false;
     }
 
+    if (network_enabled()) {
+        const deck_core_network_ops_t *ops=__atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE);
+        if (ops->follow) ops->follow();
+        deck_loaded_track_summary_t loaded={0};
+        (void)deck_core_get_loaded_track(deck,&loaded);
+        s_net_generation[deck]=loaded.generation;
+        deck_net_sync_engage(&s_net_sync[deck]);
+        state->sync_enabled=true;state->network_sync=DECK_NET_SYNC_WAIT;
+        return true;
+    }
     uint8_t reference_deck = beat_sync_reference_deck(deck);
     int16_t target_centipercent = centipercent_for_bpm_match(deck, reference_deck);
     bool changed = state->pitch_centipercent != target_centipercent || !state->sync_enabled;
@@ -2903,6 +2931,11 @@ static void set_sync_master(uint8_t deck, deck_state_t *state)
         return;
     }
 
+    if (network_enabled()) {
+        const deck_core_network_ops_t *ops=__atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE);
+        if (ops->master) ops->master(deck);
+        return; /* authority is published only after handoff acceptance */
+    }
     s_sync_master_deck = deck;
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         s_decks[i].sync_master = i == deck;
@@ -2910,6 +2943,76 @@ static void set_sync_master(uint8_t deck, deck_state_t *state)
     state->sync_enabled = false;
     ESP_LOGI(TAG, "deck %u sync master", (unsigned)deck + 1);
     publish_flx4_led_snapshot(false);
+}
+
+void deck_core_network_tick(uint32_t now, uint8_t sink, uint32_t rate)
+{
+    const deck_core_network_ops_t *ops=__atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE);
+    if (!ops || !ops->read) return;
+    deck_net_clock_t clock={0};deck_sink_latency_t calibration={0};int8_t master=-1;
+    bool enabled=ops->read(&clock,&master,&calibration);
+    deck_net_local_snapshot_t local[2]={{0}};
+    float latency=deck_sink_latency_ms(&calibration,sink,rate);
+    for (uint8_t deck=0;deck<2;++deck) {
+        deck_state_t *state=&s_decks[deck];deck_net_sync_t *sync=&s_net_sync[deck];
+        deck_loaded_track_summary_t loaded={0};anlz_snapshot_t *lease=NULL;
+        bool valid=acquire_loaded_track_for_deck(deck,&loaded,&lease);
+        const anlz_metadata_t *meta=anlz_snapshot_metadata(lease);
+        bool uses_audio=deck_uses_audio_engine(deck);
+        bool playing=uses_audio?audio_engine_deck_is_playing(deck):state->playing;
+        uint32_t position=current_deck_position_ms(deck,state);
+        bool hold=s_jog_touched[deck] || s_jog_hold_active[deck] || s_jog_scratch_active[deck];
+        if (loaded.generation!=s_net_generation[deck]) {
+            if (s_net_generation[deck]) state->sync_enabled=false;
+            deck_net_sync_disengage(sync);s_net_generation[deck]=loaded.generation;
+        }
+        /* A pending LOAD may already have replaced audio while metadata is old. */
+        if (uses_audio) {
+            audio_engine_deck_status_t audio={0};
+            valid=valid && loaded.audio_session_generation &&
+                audio_engine_deck_get_status(deck,&audio)==ESP_OK && audio.loaded &&
+                audio.session_generation==loaded.audio_session_generation;
+        }
+        if (!enabled || !state->sync_enabled || master==(int8_t)deck) deck_net_sync_disengage(sync);
+        deck_net_sync_local_t in={.playing=playing,.hold=hold,.position_ms=position,
+            .beats=valid && meta?meta->beats:NULL,.beat_count=valid && meta?meta->beat_count:0,
+            .latency_ms=latency,.current_pitch=deck_core_pitch_percent(state)};
+        deck_net_sync_out_t out;
+        deck_net_sync_step(sync,&clock,&in,now,&out);
+        bool applied=valid && (!uses_audio || (!(out.seek || out.set_pitch) ||
+            audio_engine_deck_apply_network(deck,loaded.audio_session_generation,
+                out.seek,out.seek_ms,out.set_pitch,out.pitch_percent)==ESP_OK));
+        if (out.seek && applied)
+            state->position_ms=out.seek_ms;
+        if (out.set_pitch && applied) {
+            state->pitch_centipercent=(int16_t)lroundf(out.pitch_percent*100);
+        }
+        if (!applied && (out.seek || out.set_pitch)) {
+            out.status=DECK_NET_SYNC_WAIT;sync->have_pitch=false;
+        }
+        state->network_sync=out.status;state->network_player=enabled?clock.player:0;
+        state->network_phase_error=out.phase_error;
+        state->sink_latency_calibrated=calibration.measured && calibration.sink==sink &&
+            calibration.sample_rate==rate && rate && calibration.latency_us<=500000;
+        if (enabled || s_network_was_enabled) {
+            state->sync_master=enabled && master==(int8_t)deck;
+            if (state->sync_master) state->sync_enabled=false;
+        }
+        local[deck].loaded=valid;local[deck].session=loaded.audio_session_generation;
+        local[deck].captured_ms=now;
+        local[deck].playing=playing;local[deck].hold=hold;local[deck].sync=sync->engaged;
+        local[deck].position_ms=position;local[deck].pitch=deck_core_pitch_percent(state);
+        local[deck].calibrated=state->sink_latency_calibrated;
+        float len=0;bool known=false;
+        local[deck].grid=deck_net_sync_local_position(in.beats,in.beat_count,position,
+            &local[deck].bar,&known,&len,&local[deck].bpm) && known;
+        if (local[deck].grid)
+            local[deck].bar=fmodf(local[deck].bar-latency*(1+local[deck].pitch/100)/len+4,4);
+        anlz_snapshot_release(lease);
+    }
+    if (ops->publish) ops->publish(local);
+    s_network_was_enabled=enabled;
+    publish_state_snapshot();
 }
 
 static void on_mixer_control(uint8_t id, int16_t raw)
@@ -3000,9 +3103,20 @@ static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
 static void deck_task(void *arg)
 {
     ctrl_event_t ev;
+    uint32_t network_last_ms=0;
     while (1) {
         publish_state_snapshot();
-        if (xQueueReceive(s_queue, &ev, portMAX_DELAY) != pdTRUE) continue;
+#if !defined(DECK_CORE_PC_TEST)
+        uint32_t network_now=(uint32_t)(esp_timer_get_time()/1000);
+        if (__atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE) &&
+            (uint32_t)(network_now-network_last_ms)>=DECK_NET_SYNC_POLL_MS) {
+            deck_core_network_tick(network_now,(uint8_t)audio_engine_get_main_sink(),
+                audio_engine_get_output_sample_rate());
+            network_last_ms=network_now;
+        }
+#endif
+        if (xQueueReceive(s_queue, &ev, __atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE) ?
+            pdMS_TO_TICKS(DECK_NET_SYNC_POLL_MS) : portMAX_DELAY) != pdTRUE) continue;
 
         if (ev.type == CTRL_EV_STATE && ev.id == DECK_CORE_INTERNAL_RESET_ID) {
             const uint8_t idx = normalize_deck(ev.deck);
@@ -3013,6 +3127,7 @@ static void deck_task(void *arg)
             const bool controller_connected = s_flx4_connected;
             const bool jog_cdj_mode = s_decks[idx].jog_cdj_mode;
             init_deck_state(&s_decks[idx]);
+            deck_net_sync_disengage(&s_net_sync[idx]);
             s_decks[idx].controller_connected = controller_connected;
             s_decks[idx].jog_cdj_mode = jog_cdj_mode;
             s_jog_touched[idx] = false;
@@ -3455,6 +3570,9 @@ bool deck_core_get_loaded_track(uint8_t deck,
 #if defined(DECK_CORE_PC_TEST)
 void deck_core_test_reset(void)
 {
+    deck_core_set_network_ops(NULL);
+    memset(s_net_sync,0,sizeof(s_net_sync));memset(s_net_generation,0,sizeof(s_net_generation));
+    s_network_was_enabled=false;
     deck_core_set_load_lock(true);
     deck_loaded_track_store_reset(&s_loaded_tracks);
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {

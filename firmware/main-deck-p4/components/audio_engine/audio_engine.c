@@ -5476,6 +5476,27 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
     return audio_engine_request_user_seek(deck, position_ms);
 }
 
+esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,
+    bool seek,uint32_t position_ms,bool set_pitch,float pitch_percent)
+{
+    if (!deck_is_valid(deck) || !session || !isfinite(pitch_percent) ||
+        fabsf(pitch_percent)>20) return ESP_ERR_INVALID_ARG;
+#if AE_PC
+    if (pthread_mutex_trylock(&s_lifecycle_mutex[deck])!=0) return ESP_ERR_TIMEOUT;
+#elif AE_FW
+    if (!s_lifecycle_mutex[deck] || xSemaphoreTake(s_lifecycle_mutex[deck],0)!=pdTRUE)
+        return ESP_ERR_TIMEOUT;
+#endif
+    esp_err_t rc=ESP_ERR_INVALID_STATE;
+    if (s_lifecycle_session_generation[deck]==session && s_engines[deck].loaded &&
+        s_engines[deck].loaded_session_generation==session &&
+        !atomic_load_bool(&s_scratch_playing[deck]) && !atomic_load_bool(&s_deck_hold[deck])) {
+        rc=seek?audio_engine_request_user_seek(deck,position_ms):ESP_OK;
+        if (rc==ESP_OK && set_pitch) audio_engine_set_pitch_percent_for_deck(deck,pitch_percent);
+    }
+    lifecycle_deck_unlock(deck);return rc;
+}
+
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 {
     if (!deck_is_valid(deck)) return;

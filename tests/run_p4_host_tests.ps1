@@ -1656,6 +1656,28 @@ Assert-FileDoesNotContain `
 $djlinkSources = @(Get-ChildItem (Join-Path $RepoRoot 'firmware/common/djlink/src') -Filter *.c |
     Sort-Object Name | ForEach-Object { $_.FullName })
 $tests = @(
+    @{
+        Name = 'deck_net_sync'
+        Dir = 'tests/deck_net_sync'
+        Target = 'test_deck_net_sync.exe'
+        Args = @('-Wall','-Wextra','-Werror','-std=c11','-DANLZ_STANDALONE_TEST',
+            '-I../../firmware/main-deck-p4/components/deck_core/include',
+            '-I../../firmware/main-deck-p4/components/library/include',
+            '-o','test_deck_net_sync.exe','test_deck_net_sync.c',
+            '../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c','-lm')
+    }
+    @{
+        Name = 'djlink_sync'
+        Dir = 'tests/djlink'
+        Target = 'test_sync.exe'
+        Args = @('-Wall','-Wextra','-Werror','-std=c11','-DANLZ_STANDALONE_TEST',
+            '-I../../firmware/common/djlink/include','-I../../firmware/common/dj_link_core/include',
+            '-I../../firmware/main-deck-p4/components/deck_core/include',
+            '-I../../firmware/main-deck-p4/components/library/include',
+            '-o','test_sync.exe','test_sync.c',
+            '../../firmware/common/dj_link_core/dj_link_sync.c',
+            '../../firmware/common/dj_link_core/dj_link_discovery.c') + $djlinkSources + @('-lm')
+    }
     foreach ($assetSuite in @('test_pdb', 'test_link_anlz')) {
         @{
             Name = "djlink_$assetSuite"
@@ -2671,7 +2693,8 @@ $tests = @(
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
             "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
-            "deck_core_test_snapshot_wrapper.c"
+            "deck_core_test_snapshot_wrapper.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c", "-lm"
         )
     },
     @{
@@ -2715,7 +2738,8 @@ $tests = @(
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
             "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
-            "deck_core_test_snapshot_wrapper.c"
+            "deck_core_test_snapshot_wrapper.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c", "-lm"
         )
     },
     @{
@@ -3766,6 +3790,8 @@ Assert-FileContains `
 if (-not $pythonSource) { throw "Python is required for firmware lifecycle regression" }
 Invoke-Step -Name "run firmware lifecycle regression" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/audio_fw_runtime/test_firmware_lifecycle.py")
+Invoke-Step -Name "run production network mutation lifecycle regression" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/deck_net_sync/test_network_lifecycle.py")
 Invoke-Step -Name "run firmware artwork identity ownership regression" `
     -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/djlink/test_artwork_identity.py")

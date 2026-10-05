@@ -21,6 +21,15 @@ static void test_formats_active_transport_text(void)
     ui_status_format_transport_text(&text, 0, &state, true, 42);
     assert(strcmp(text.text, "D1 LOAD 42%") == 0);
     assert(text.kind == UI_STATUS_TRANSPORT_LOADING);
+    state.network_sync=DECK_NET_SYNC_WAIT;
+    ui_status_format_transport_text(&text,0,&state,false,0);
+    assert(strcmp(text.text,"D1 WAIT")==0);
+    state.network_sync=DECK_NET_SYNC_ALIGNING;
+    ui_status_format_transport_text(&text,1,&state,false,0);
+    assert(strcmp(text.text,"D2 ALIGNING")==0);
+    state.network_sync=DECK_NET_SYNC_LOCKED;
+    ui_status_format_transport_text(&text,0,&state,false,0);
+    assert(strcmp(text.text,"D1 LOCKED")==0);
 }
 
 static void test_formats_limiter_telemetry_only_when_counter_increases(void)

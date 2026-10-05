@@ -91,8 +91,16 @@ int dj_link_udp_receive(dj_link_udp_t *t, dj_link_datagram_t *out, unsigned wait
 }
 bool dj_link_udp_broadcast(dj_link_udp_t *t, const uint8_t *buf, size_t len)
 {
-    if (!t || !buf || !len || len > DJLINK_MAX_PACKET || t->fd[0] < 0 || !t->broadcast_ip) return false;
-    struct sockaddr_in destination = {.sin_family=AF_INET, .sin_port=htons(DJLINK_PORT_DISCOVERY),
-        .sin_addr={.s_addr=htonl(t->broadcast_ip)}};
-    return sendto(t->fd[0], buf, len, 0, (struct sockaddr *)&destination, sizeof(destination)) == (int)len;
+    return t && dj_link_udp_send(t,DJLINK_PORT_DISCOVERY,t->broadcast_ip,buf,len);
+}
+bool dj_link_udp_send(dj_link_udp_t *t, uint16_t port, uint32_t ip,
+    const uint8_t *buf, size_t len)
+{
+    if (!t || !ip || !buf || !len || len>DJLINK_MAX_PACKET ||
+        port<DJLINK_PORT_DISCOVERY || port>DJLINK_PORT_STATUS ||
+        t->fd[port-DJLINK_PORT_DISCOVERY]<0) return false;
+    struct sockaddr_in destination={.sin_family=AF_INET,.sin_port=htons(port),
+        .sin_addr={.s_addr=htonl(ip)}};
+    return sendto(t->fd[port-DJLINK_PORT_DISCOVERY],buf,len,MSG_DONTWAIT,
+        (struct sockaddr *)&destination,sizeof(destination))==(int)len;
 }

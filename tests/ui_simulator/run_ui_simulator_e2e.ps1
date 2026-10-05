@@ -139,7 +139,8 @@ $Captures = @(
 
 $Actual = [ordered]@{}
 if ($Presentation -eq 'legacy' -or $Presentation.StartsWith('product-')) {
-    $Captures += @('memory_cues', 'memory_cues_scrolled', 'overview_loading', 'overview_error')
+    $Captures += @('memory_cues', 'memory_cues_scrolled', 'overview_loading', 'overview_error',
+        'network_wait','network_aligning','network_locked')
 }
 if (-not $Presentation.StartsWith('native-')) { $Captures += @('overview_empty', 'library_unavailable') }
 if ($Presentation.StartsWith('native-')) {

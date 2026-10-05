@@ -28,6 +28,11 @@ void ui_status_format_transport_text(ui_status_transport_text_t *out,
              (unsigned)active_deck + 1u,
              playing ? "PLAY" : "PAUSE");
     out->kind = playing ? UI_STATUS_TRANSPORT_PLAY : UI_STATUS_TRANSPORT_PAUSE;
+    if (state && state->network_sync!=DECK_NET_SYNC_OFF) {
+        const char *text=state->network_sync==DECK_NET_SYNC_LOCKED?"LOCKED":
+            state->network_sync==DECK_NET_SYNC_ALIGNING?"ALIGNING":"WAIT";
+        snprintf(out->text,sizeof(out->text),"D%u %s",(unsigned)active_deck+1,text);
+    }
 }
 
 bool ui_status_format_limiter_text(char *out,
@@ -362,7 +367,9 @@ static void ui_status_update_transport(const ui_frame_context_t *ctx)
             return;
         }
         ui_status_set_indicator(transport.text,
-                                transport.kind == UI_STATUS_TRANSPORT_PLAY ? COL_GREEN : COL_AMBER);
+            ctx->active_state.network_sync!=DECK_NET_SYNC_OFF ?
+                (ctx->active_state.network_sync==DECK_NET_SYNC_LOCKED?COL_GREEN:COL_AMBER) :
+                (transport.kind==UI_STATUS_TRANSPORT_PLAY?COL_GREEN:COL_AMBER));
     }
 }
 

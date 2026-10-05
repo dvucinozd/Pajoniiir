@@ -40,8 +40,14 @@ admission failures preserve existing decks; local SD playback is independent of
 network and USB media presence. Unknown volume identity requires fresh session
 downloads and prevents cross-session local cue migration. The A/B replacement,
 integrity/interruption, gated SD loader and UI admission regressions are automated.
-Physical SD/peer/concurrent playback acceptance is NOT RUN. Next: K sync/master,
-then L final compatibility/release gates; keep the installed JC4880 image.
+Physical SD/peer/concurrent playback acceptance is NOT RUN.
+[K software closure](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
+adds the 40 ms clock follower, session-fenced audio mutations, sticky master
+selection, acknowledged handoff and own status/beats. Only explicit PLAY/SYNC
+may align with a seek; loss retains tempo in WAIT. A measured latency applies
+only to its sink/rate, and no measurement is invented. Physical output phase,
+listening and real handoff remain NOT RUN. Next: L final compatibility/release
+gates; keep the installed JC4880 image and deferred exact-image audio/soak gates.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

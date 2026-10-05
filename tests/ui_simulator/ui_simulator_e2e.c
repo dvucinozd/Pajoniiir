@@ -12,6 +12,8 @@
 #include "ui_artwork_thumb.h"
 #include "artwork_fixture.h"
 #include "splash_screen.h"
+#include "ui_status.h"
+#include "ui_overview.h"
 
 extern void ui_simulator_deck_set_playing(bool playing);
 extern void deck_core_test_apply_event(const ctrl_event_t *event);
@@ -698,6 +700,23 @@ int main(int argc, char **argv)
     if (!find_visible_label(lv_screen_active(), "EMPTY"))
         fail("empty Library deck claimed ready");
     save_ppm(argv[1], "library_unavailable");
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    click_label("OVERVIEW");
+    ui_frame_context_t network_ctx={0};
+    network_ctx.active_deck=0;network_ctx.active_state.playing=true;
+    ui_status_hold("",lv_color_hex(0),0);
+    const char *network_text[]={"WAIT #3","ALIGNING #3","LOCKED #3"};
+    const char *network_capture[]={"network_wait","network_aligning","network_locked"};
+    for (unsigned i=0;i<3;++i) {
+        network_ctx.active_state.network_sync=(deck_net_sync_status_t)(i+1);
+        network_ctx.active_state.network_player=3;
+        network_ctx.deck_state[0]=network_ctx.active_state;
+        ui_overview_update(&network_ctx);
+        if (!find_visible_label(lv_screen_active(),network_text[i]))
+            fail("actual product header did not expose network sync status");
+        save_ppm(argv[1],network_capture[i]);
+    }
+#endif
 
     if (s_failures != 0) {
         fprintf(stderr, "UI simulator E2E failed: %d failure(s)\n", s_failures);

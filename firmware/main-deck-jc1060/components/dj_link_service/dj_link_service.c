@@ -1,6 +1,9 @@
 #include "dj_link_service.h"
 #include "dj_link_udp.h"
 #include "dj_link_tcp.h"
+#include "dj_link_sync.h"
+#include "deck_core.h"
+#include "audio_engine.h"
 #include "board_ethernet.h"
 #include "app_settings.h"
 #include "esp_heap_caps.h"
@@ -16,6 +19,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static const char *TAG = "dj_link";
 static TaskHandle_t s_task;
@@ -25,6 +29,76 @@ static SemaphoreHandle_t s_browse_lock;
 static dj_link_browse_t *s_browse;
 static dj_link_peer_track_t *s_rows;
 static dj_link_tcp_t s_tcp;
+static dj_link_sync_t s_sync;
+static portMUX_TYPE s_clock_lock=portMUX_INITIALIZER_UNLOCKED;
+static deck_net_clock_t s_clock;
+static deck_net_local_snapshot_t s_local[2];
+static deck_sink_latency_t s_calibration;
+static int8_t s_local_master=-1;
+static uint32_t s_clock_ms;
+static bool s_link_enabled;
+static uint8_t s_clock_command; /* 1 follow, 2/3 request local master */
+static bool clock_read(deck_net_clock_t *clock,int8_t *master,deck_sink_latency_t *calibration)
+{
+    portENTER_CRITICAL(&s_clock_lock);
+    *clock=s_clock;*master=s_local_master;*calibration=s_calibration;
+    bool enabled=s_link_enabled;uint32_t published=s_clock_ms;
+    portEXIT_CRITICAL(&s_clock_lock);
+    if ((uint32_t)((uint32_t)(esp_timer_get_time()/1000)-published)>120) {
+        clock->valid=false;*master=-1;
+    }
+    return enabled;
+}
+static void clock_publish(const deck_net_local_snapshot_t local[2])
+{
+    portENTER_CRITICAL(&s_clock_lock);memcpy(s_local,local,sizeof(s_local));portEXIT_CRITICAL(&s_clock_lock);
+}
+static void clock_follow(void)
+{
+    portENTER_CRITICAL(&s_clock_lock);s_clock_command=1;s_clock.valid=false;portEXIT_CRITICAL(&s_clock_lock);
+}
+static void clock_master(uint8_t deck)
+{
+    if (deck>1) return;
+    portENTER_CRITICAL(&s_clock_lock);s_clock_command=(uint8_t)(deck+2);portEXIT_CRITICAL(&s_clock_lock);
+}
+bool dj_link_service_set_sink_latency(uint8_t sink,uint32_t rate,uint32_t us,bool measured)
+{
+    if (sink>1 || (rate!=44100 && rate!=48000) || us>500000) return false;
+    portENTER_CRITICAL(&s_clock_lock);
+    s_calibration=(deck_sink_latency_t){.sink=sink,.sample_rate=rate,.latency_us=us,.measured=measured};
+    portEXIT_CRITICAL(&s_clock_lock);return true;
+}
+static const deck_core_network_ops_t s_clock_ops={
+    .read=clock_read,.publish=clock_publish,.follow=clock_follow,.master=clock_master};
+static bool clock_send(void *ctx,uint16_t port,uint32_t ip,const uint8_t *buf,size_t len)
+{
+    dj_link_udp_t *t=ctx;
+    return dj_link_udp_send(t,port,ip?ip:t->broadcast_ip,buf,len);
+}
+static void clock_tick(dj_link_udp_t *transport,uint32_t now,bool enabled)
+{
+    deck_net_local_snapshot_t local[2];uint8_t command;
+    portENTER_CRITICAL(&s_clock_lock);
+    memcpy(local,s_local,sizeof(local));command=s_clock_command;s_clock_command=0;
+    portEXIT_CRITICAL(&s_clock_lock);
+    for (unsigned i=0;i<2;++i) {
+        uint32_t elapsed=now-local[i].captured_ms;
+        if (elapsed>120) {local[i].grid=false;local[i].playing=false;}
+        else if (local[i].grid && local[i].playing && !local[i].hold)
+            local[i].bar=fmodf(local[i].bar+elapsed*local[i].bpm*(1+local[i].pitch/100)/60000,4);
+    }
+    dj_link_sync_tick(&s_sync,s_model,local,now,NULL,NULL);
+    if (enabled) {
+        if (command==1) dj_link_sync_follow(&s_sync);
+        else if (command>=2) (void)dj_link_sync_master(&s_sync,s_model,command-2,now,clock_send,transport);
+    }
+    dj_link_sync_tick(&s_sync,s_model,local,now,clock_send,transport);
+    portENTER_CRITICAL(&s_clock_lock);
+    s_clock=s_sync.clock;s_local_master=s_sync.local_master;
+    s_link_enabled=enabled;s_clock_ms=now;
+    portEXIT_CRITICAL(&s_clock_lock);
+}
 static uint32_t now_ms(void);
 static struct {
     bool active, sent, done, answered;
@@ -177,11 +251,18 @@ void dj_link_service_format_status(char *out, size_t cap)
     const uint8_t a = s_summary.numbers[0], b = s_summary.numbers[1], peers = s_summary.peers;
     const bool ready = s_summary.ready, error = s_summary.socket_error;
     portEXIT_CRITICAL(&s_summary_lock);
+    portENTER_CRITICAL(&s_clock_lock);
+    uint8_t master=s_clock.player;bool fresh=s_clock.valid;
+    deck_sink_latency_t latency=s_calibration;
+    portEXIT_CRITICAL(&s_clock_lock);
+    bool calibrated=latency.measured && latency.sink==(uint8_t)audio_engine_get_main_sink() &&
+        latency.sample_rate==audio_engine_get_output_sample_rate();
     if (!app_settings_get().dj_link) snprintf(out, cap, "DJ LINK: OFF");
     else if (!ready || error) snprintf(out, cap, "DJ LINK: SERVICE ERROR");
     else if (phase == DJ_LINK_WAIT_IP) snprintf(out, cap, "DJ LINK: WAIT ETHERNET IP");
     else if (phase == DJ_LINK_OBSERVER) snprintf(out, cap, "DJ LINK: OBSERVER / NO PAIR");
-    else if (phase == DJ_LINK_ACTIVE) snprintf(out, cap, "DJ LINK: #%u/#%u (%u peers)", a, b, peers);
+    else if (phase == DJ_LINK_ACTIVE) snprintf(out, cap, "DJ LINK: #%u/#%u (%u peers) M:%u%s / LATENCY %s",
+        a,b,peers,master,fresh?"":" WAIT",calibrated?"MEASURED":"UNMEASURED");
     else snprintf(out, cap, "DJ LINK: CLAIMING");
 }
 static void worker(void *unused)
@@ -230,6 +311,8 @@ static void worker(void *unused)
                 int received = dj_link_udp_receive(&transport, &packet, i == 0 ? 40 : 0);
                 if (received < 0) { socket_error = true; break; }
                 if (!received) break;
+                if (packet.port==DJLINK_PORT_BEAT && dj_link_sync_ingest(&s_sync,s_model,
+                    packet.source_ip,packet.bytes,packet.len,now_ms(),clock_send,&transport)) continue;
                 dj_link_incoming_load_t load;
                 if (packet.port == DJLINK_PORT_STATUS &&
                     dj_link_browse_parse_load(s_model,packet.source_ip,packet.bytes,packet.len,&load)) {
@@ -251,6 +334,7 @@ static void worker(void *unused)
             }
         }
         dj_link_discovery_tick(s_model, now_ms());
+        clock_tick(&transport,now_ms(),enabled);
         xSemaphoreTake(s_browse_lock,portMAX_DELAY);
         browse_command_t command;
         if (xQueueReceive(s_commands,&command,0)==pdTRUE) {
@@ -300,8 +384,10 @@ esp_err_t dj_link_service_init(void)
         .close=dj_link_tcp_close,.path=asset_path,.blob=asset_blob,.ctx=&s_tcp};
     dj_link_browse_init(s_browse,s_rows,&io); dj_link_tcp_init(&s_tcp,&s_browse->db);
     dj_link_discovery_init(s_model); *s_snapshot = *s_model;
+    dj_link_sync_init(&s_sync);
     if (xTaskCreatePinnedToCoreWithCaps(worker, "dj_link_eth", 6144, NULL, 2, &s_task, 0,
         MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT) != pdPASS) goto fail;
+    deck_core_set_network_ops(&s_clock_ops);
     return ESP_OK;
 fail:
     if (s_snapshot_lock) vSemaphoreDelete(s_snapshot_lock);

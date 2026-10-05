@@ -7,6 +7,7 @@
 #include "freertos/queue.h"
 #include "control_link.h"
 #include "deck_loaded_track_types.h"
+#include "deck_net_clock.h"
 
 struct anlz_metadata;
 
@@ -52,6 +53,10 @@ typedef struct {
     bool          censor_active;
     bool          master_tempo;
     bool          controller_connected;
+    deck_net_sync_status_t network_sync;
+    uint8_t       network_player;
+    float         network_phase_error;
+    bool          sink_latency_calibrated;
 } deck_state_t;
 
 typedef enum {
@@ -97,6 +102,16 @@ static inline float deck_core_pitch_percent(const deck_state_t *state)
 // Create the ctrl_event_queue and start the deck task.
 // Returns the queue handle — bind it to the P4-local semantic producer.
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out);
+/* Install once after startup. Callbacks are nonblocking bounded copies only;
+ * never sockets, filesystem, allocation or waiting in the deck task. */
+typedef struct {
+    bool (*read)(deck_net_clock_t *, int8_t *local_master, deck_sink_latency_t *);
+    void (*publish)(const deck_net_local_snapshot_t [2]);
+    void (*follow)(void);
+    void (*master)(uint8_t deck);
+} deck_core_network_ops_t;
+void deck_core_set_network_ops(const deck_core_network_ops_t *ops);
+void deck_core_network_tick(uint32_t now_ms, uint8_t sink, uint32_t sample_rate);
 
 // Thread-safe snapshot of the current deck state.
 // Compatibility helper: returns Deck 1.

@@ -64,3 +64,14 @@ the firmware status socket is unicast-only. Routing never acknowledges or change
 a deck. J connects LVGL admission to the existing load worker; NFS, DB assets,
 hashing and JPEG remain outside LVGL/audio output. Incomplete downloads preserve
 the old deck. Owned metadata/artwork publish only after accepted audio binding.
+
+`dj_link_sync` is the heap-free worker-owned master coordinator. Peer inventory
+epochs cannot revoke our own player claim. Selection remains sticky after loss;
+explicit follow can choose a new authority. Handoff checks source IP/epoch,
+claimed destination and a three-second deadline. Status goes to known peers on
+50002; beats/handoff use the Ethernet-bound 50001 socket. No local library is
+advertised. The shared `deck_net_sync` follower derives from frozen donor
+428b97dd under the root MIT license, with periodic hard resync removed.
+Network snapshots never own audio state: deck_core applies output through the
+nonblocking audio-session guard. Clock/latency are value copies, with no socket
+or filesystem operation in the audio task. See package K's validation record.

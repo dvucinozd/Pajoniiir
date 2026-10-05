@@ -80,6 +80,22 @@ USB removal retires only USB sessions and preserves SD loading/output sessions.
 No filesystem or network work enters the audio output task. See
 [J evidence and limits](validation/FORK_IMPROVEMENTS_PACKAGE_J_SOFTWARE_20261005.md).
 
+Package K exchanges bounded value snapshots between the Ethernet worker and
+deck task. The network worker owns peer selection/handoff and sends packets;
+the deck task alone runs the 40 ms sync model from the accepted audio position.
+No network callback changes playback. A nonblocking lifecycle guard rechecks
+the accepted audio session before pitch/seek, rejecting replaced loads/holds.
+Source and master epochs reset phase filtering, never implicitly seek. Master
+loss retains tempo in WAIT. Only explicit SYNC/PLAY arms a one-time alignment;
+ordinary phase errors use at most 1 percent trim and cannot trigger periodic
+resync. Own player identity is independent of unrelated peer inventory epochs.
+Local-master handoff requires the current authority's reply; remote handoff
+requires its announced target/source epoch and confirmation within three seconds.
+Outgoing status and beats describe both claimed decks without advertising a
+library. Sink/rate latency calibration defaults unmeasured and is RAM-only.
+JC4880 registers no network provider, retaining its local sync path. See
+[K evidence and physical gates](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md).
+
 Package F separates the authoritative MAIN sink from USB cue mirroring.
 JC4880 defaults to blocking PCM5102A I2S pacing; its FLX4 format, attenuation
 and ring clock corrections remain unchanged. JC1060 defaults to USB MAIN 1/2

@@ -228,6 +228,14 @@ extern uint32_t audio_engine_stub_session_generation[2];
 static inline uint32_t audio_engine_deck_session_generation(uint8_t deck) {
   return deck < 2 ? audio_engine_stub_session_generation[deck] : 0u;
 }
+static inline esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,
+    bool seek,uint32_t position,bool pitch,float percent) {
+  if (deck>=2 || !session || audio_engine_stub_session_generation[deck]!=session ||
+      !audio_engine_stub_deck_loaded[deck] || audio_engine_stub_hold[deck]) return ESP_ERR_INVALID_STATE;
+  if (seek) audio_engine_deck_seek(deck,position);
+  if (pitch) audio_engine_deck_set_pitch_percent(deck,percent);
+  return ESP_OK;
+}
 
 static inline esp_err_t
 audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out) {

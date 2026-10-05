@@ -28,6 +28,12 @@ worker. Network/USB loss cannot stop completed SD playback. NFS supplies no
 trustworthy volume UUID, so current mounts remain session-local: fresh downloads
 are required and local cue edits cannot migrate across sessions. Host/mock/build
 results do not qualify real peer/card performance or power-loss behavior.
+[Package K software closure](validation/FORK_IMPROVEMENTS_PACKAGE_K_SOFTWARE_20261005.md)
+adds a network-worker clock mailbox and deck-task sync follower with generation
+checks at audio mutation. Master loss enters WAIT at the retained tempo; only
+explicit PLAY/SYNC alignment may seek. Real phase and master handoff remain
+NOT RUN. Latency defaults UNMEASURED and the engineering calibration is scoped
+to sink/rate, held in RAM only. LOCKED is a model state, not physical acceptance.
 [Package F](validation/FORK_IMPROVEMENTS_PACKAGE_F_SOFTWARE_20261004.md) adds
 UAC1 packed 16/24-bit formats and USB MAIN/cue pacing. The service API selects
 an available sink only with both decks stopped and recorder inactive. Host/build
