@@ -88,10 +88,15 @@ journal and operator-confirmed clean MAIN/D2 cue sound. Startup and final
 resource snapshots report zero allocation failures. This closes the reproduced
 D2 OUT symptom for that scenario; manual exit, both-deck/format parity,
 resize/scratch/cancellation and final-image acceptance remain open.
-The subsequent half-loop test failed on one new output-late event (24,192 us,
-MAIN phase 22,719 us), with zero new PCM underruns. The monitor stopped both
-decks after detection. Resize remains a release blocker; scheduling/write
-delay investigation is open, separately from the passed manual OUT scenario.
+The subsequent half-loop tests isolated scheduling delay while DMA continued
+normally. The priority-22 health timer took the audio mutex during FLAC seek,
+allowing decoder priority inheritance above output. Correction `75136aef`
+moves that snapshot into a priority-2 task, preserving counters and pacing.
+Installed `M2.4-91-g75136aef` passed the exact 31,989-ms FLAC IN/OUT/half/
+double/exit scenario for 181.571 seconds with zero new strict faults and
+operator-confirmed clean MAIN/D2 cue sound. This focused correction is accepted;
+remaining format/deck parity, scratch/cancellation and final-image lifecycle/
+soak gates remain open. The older image's soak does not qualify this image.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
