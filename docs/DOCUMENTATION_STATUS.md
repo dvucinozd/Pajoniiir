@@ -49,6 +49,13 @@ retained and the heartbeat paused. No reboot/counter reset or test restart was
 performed; monitor lifetime must be verified before a new attempt. This does
 not replace or extend the earlier completed 30-minute focused pass.
 
+The operator subsequently approved a 151-minute continuation, crediting the
+previous rounded 29 minutes. A detached Windows monitor survived its launching
+shell, passed assertion self-tests and started on the same image at 10:25
+Europe/Zagreb. Atomic live-state updates and 30-minute checkpoints are active.
+Its result is still RUNNING; segmented accounting must not be presented as an
+uninterrupted 180-minute run. Original interrupted evidence remains retained.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
