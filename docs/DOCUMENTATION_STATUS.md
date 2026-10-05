@@ -81,7 +81,7 @@ A software-verified candidate now captures bounded actual loop-start PCM in
 the decoder after manual IN and primes the FLAC handoff before reseek, keyed
 by request/load ownership. Full host tests and both IDF 6.0.2 builds pass;
 PSRAM-only storage adds 768,000 bytes total and leaves internal/DMA policy
-unchanged. Signed candidate `M2.4-86-g753ae13f` is now installed in `ota_0`.
+unchanged. Signed candidate `M2.4-86-g753ae13f` was installed in `ota_0`.
 The same D2 Beethoven FLAC manual IN->OUT scenario passed 181.179 seconds
 with zero new strict PCM/output-late/USB faults, confirmed prefix use in the
 journal and operator-confirmed clean MAIN/D2 cue sound. Startup and final
@@ -95,8 +95,12 @@ moves that snapshot into a priority-2 task, preserving counters and pacing.
 Installed `M2.4-91-g75136aef` passed the exact 31,989-ms FLAC IN/OUT/half/
 double/exit scenario for 181.571 seconds with zero new strict faults and
 operator-confirmed clean MAIN/D2 cue sound. This focused correction is accepted;
-remaining format/deck parity, scratch/cancellation and final-image lifecycle/
-soak gates remain open. The older image's soak does not qualify this image.
+Subsequent D1 MP3 / D2 FLAC VINYL scratch/release and CUE/PLAY/MT tempo-move
+checks passed 91.899/122.057 seconds with zero new strict faults and operator
+confirmation of natural scratch and clean MAIN/D1/D2 cue sound. Remaining
+format/deck loop parity, combined scratch+MT, cancellation, cue store/load lock
+and final-image lifecycle/soak gates remain open. The older image's soak does
+not qualify this image.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
