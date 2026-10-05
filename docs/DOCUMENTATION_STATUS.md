@@ -41,6 +41,14 @@ largest-block walks are absent; PCM5102A DMA and the mixer use the same
 evidence; full baseline, functional/lifecycle matrix, sink latency and final
 180-minute qualification remain open. Public M2.4 is unchanged.
 
+The subsequent 180-minute attempt is INCOMPLETE: the first scheduled checkpoint
+found the host monitor absent with only approximately 29 minutes of saved
+samples and no final result. The device was still playing with zero new live
+USB/PCM/output-late counts. Both decks were deliberately stopped, artifacts
+retained and the heartbeat paused. No reboot/counter reset or test restart was
+performed; monitor lifetime must be verified before a new attempt. This does
+not replace or extend the earlier completed 30-minute focused pass.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
