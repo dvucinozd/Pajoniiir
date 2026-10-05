@@ -4,4 +4,5 @@ idf_component_register(
          "controller_usb_audio_stream.c"
     INCLUDE_DIRS "include"
     REQUIRES log usb
+    PRIV_REQUIRES service_log
 )

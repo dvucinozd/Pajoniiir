@@ -2555,6 +2555,7 @@ $tests = @(
             "-Istubs",
             "-I../../firmware/main-deck-p4/components/controller_usb_audio",
             "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
+            "-I../../firmware/main-deck-p4/components/service_log/include",
             "-o", "test_controller_usb_audio_stream.exe",
             "test_controller_usb_audio_stream.c",
             "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_ring.c",

@@ -8,8 +8,12 @@ Status: **current P4-only source of truth, reconciled 2026-09-29**.
 closes A-L software integration on the isolated branch. Board-specific signed
 candidates and local channels preserve existing JC4880 format; runtime and tools
 reject wrong project/version and ordinary tools exclude experimental images.
-New candidates are software verified only. Hardware installation, listening,
-resource/reconnect/rollback and final soak stay open; public M2.4 is unchanged.
+[First JC4880 L hardware session](validation/JC4880_L_CANDIDATE_20261005.md)
+installed `M2.4-71-gd20a9f0e` in `ota_1`; AP/API/USB0/FLX4 startup and previous
+design/controls passed focused checks. Operator heard clean MAIN/cue, but one
+44-frame USB packet loss fails strict audio acceptance. Reproduction/correction,
+relative resource comparison, reconnect/rollback and final soak stay open;
+public M2.4 is unchanged. JC1060 remains software verified only.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
@@ -61,7 +65,7 @@ The subsequent `M2.4-60-g6dfaf241` cleared allocation/HTTP stack failures, but
 two paused loads failed the internal largest-block floor. Ordinary UI allocation
 now uses PSRAM too; another fresh candidate is required. This supersedes earlier
 statements that only preview uses custom LVGL allocation.
-Last-known installed image is `M2.4-61-gc4912d5b` in `ota_0`. Both clean ordinary
+The previous installed H image was `M2.4-61-gc4912d5b` in `ota_0`. Both clean ordinary
 builds/CI pass. Empty/two-paused-track absolute resource floors pass, allocation
 failures zero; full baseline comparison and active/listening/soak gates stay open.
 One idle soft reboot restored the same image, AP/API and both USB paths. Operator

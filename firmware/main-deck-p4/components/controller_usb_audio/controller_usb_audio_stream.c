@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "flx4_uac_descriptors.h"
 #include "flx4_uac_packetizer.h"
+#include "service_log.h"
 
 #define STREAM_RATE_HZ 44100u
 #define STREAM_CHANNELS 4u
@@ -68,6 +69,11 @@ static uint32_t s_config_failures;
 static uint32_t s_transfer_failures;
 static uint32_t s_packet_failures;
 static uint64_t s_packet_lost_frames;
+/* At most four detail records per boot. Never log successful packets or do
+ * filesystem work at USB priority; service_log_event only enqueues a copy. */
+static uint32_t s_packet_detail_records;
+static TickType_t s_last_isoc_callback_tick;
+static bool s_isoc_callback_seen;
 /* Monotonic per-boot identity for each successfully primed UAC stream. */
 static uint32_t s_stream_epoch;
 static uint32_t s_target_rate = STREAM_RATE_HZ;
@@ -272,6 +278,11 @@ static void isoc_callback(usb_transfer_t *transfer)
         mark_fault(false);
         return;
     }
+    const TickType_t callback_tick = xTaskGetTickCount();
+    const uint32_t callback_gap_ticks = s_isoc_callback_seen
+        ? (uint32_t)(callback_tick - s_last_isoc_callback_tick) : 0u;
+    s_last_isoc_callback_tick = callback_tick;
+    s_isoc_callback_seen = true;
     /* HCD reports a completed URB even if individual ISO packets were skipped
      * or failed. Count loss before prepare_and_submit overwrites descriptors.
      * Isolated loss does not restart USB; terminal URB faults retain the bounded
@@ -282,6 +293,13 @@ static void isoc_callback(usb_transfer_t *transfer)
         const bool completed = transfer->isoc_packet_desc[i].status ==
                                USB_TRANSFER_STATUS_COMPLETED;
         if (!completed || actual != wanted) {
+            if (s_packet_detail_records < 4u) {
+                ++s_packet_detail_records;
+                service_log_event(SERVICE_LOG_UAC_PACKET_FAULT, SERVICE_LOG_WARN,
+                    4u, (uint32_t)transfer->isoc_packet_desc[i].status,
+                    (uint32_t)actual, (uint32_t)wanted, callback_gap_ticks,
+                    "status/actual/wanted/callback gap ticks");
+            }
             __atomic_add_fetch(&s_packet_failures, 1u, __ATOMIC_RELAXED);
             const unsigned missing = !completed || actual < 0 || actual > wanted
                 ? (unsigned)wanted : (unsigned)(wanted - actual);
@@ -398,6 +416,7 @@ static void control_callback(usb_transfer_t *transfer)
     s_control_step = 0u;
     s_configuring = false;
     __atomic_add_fetch(&s_stream_epoch, 1u, __ATOMIC_RELEASE);
+    s_isoc_callback_seen = false;
     s_streaming = true;
     set_accepting(true);
     if (s_owner_task && s_active_priority > 0u) {

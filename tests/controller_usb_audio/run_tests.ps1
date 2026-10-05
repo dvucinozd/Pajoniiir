@@ -7,6 +7,7 @@ $Target = Join-Path $BuildDir "test_controller_usb_audio_stream"
 if ($env:OS -eq "Windows_NT") { $Target += ".exe" }
 gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror `
     "-I$PSScriptRoot/stubs" "-I$Component" "-I$Component/include" `
+    "-I$RepoRoot/firmware/main-deck-p4/components/service_log/include" `
     (Join-Path $PSScriptRoot "test_controller_usb_audio_stream.c") `
     (Join-Path $Component "controller_audio_ring.c") `
     (Join-Path $Component "controller_audio_resampler.c") `

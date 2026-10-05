@@ -122,7 +122,11 @@ VID/PID, peer/software version, sink/sample-rate and exact firmware SHA.
    needs its own verified decision; green CI or candidate signing does not
    authorize publication. Changed image SHA invalidates exact-image acceptance.
 
-For the new candidates all physical gates are NOT RUN. The older H observations
+The [first JC4880 L session](JC4880_L_CANDIDATE_20261005.md) now supersedes the
+initial NOT RUN installation status: signed OTA/startup/controls passed focused
+checks, but a 44-frame USB packet loss failed strict audio smoke. Final hardware
+acceptance and soak remain open. For JC1060 all physical gates remain NOT RUN.
+The older H observations
 are retained as historical evidence, not transferred to these binaries. Rollback
 uses the retained signed previous JC4880 image; no persistent schema migration
 is added by L. JC1060 requires initial wired provisioning before app-only OTA.

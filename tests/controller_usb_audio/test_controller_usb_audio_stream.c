@@ -8,6 +8,18 @@ unsigned review_ticks;
 #define CONTROLLER_USB_AUDIO_PC_TEST
 #include "controller_usb_audio_stream.c"
 
+static unsigned packet_detail_count;
+static uint32_t packet_details[4][4];
+void service_log_event(service_log_event_t event, service_log_severity_t severity,
+                       uint8_t count, uint32_t a0, uint32_t a1,
+                       uint32_t a2, uint32_t a3, const char *text)
+{
+    assert(event == SERVICE_LOG_UAC_PACKET_FAULT && severity == SERVICE_LOG_WARN);
+    assert(count == 4u && text && packet_detail_count < 4u);
+    const uint32_t args[] = {a0, a1, a2, a3};
+    memcpy(packet_details[packet_detail_count++], args, sizeof(args));
+}
+
 static bool stop_before_publish;
 static bool reject_second_writer;
 static unsigned cleanup_deferrals;
@@ -127,6 +139,12 @@ static void test_packet_loss(void)
     assert(stats.stream_epoch == 1u);
     assert(stats.packet_failures == 3);
     assert(stats.packet_lost_frames == 90); /* 44 + 44 + 2 */
+    assert(packet_detail_count == 3u);
+    assert(packet_details[0][0] == USB_TRANSFER_STATUS_SKIPPED);
+    assert(packet_details[0][1] == 0u && packet_details[0][2] == 352u);
+    assert(packet_details[1][0] == USB_TRANSFER_STATUS_ERROR);
+    assert(packet_details[2][0] == USB_TRANSFER_STATUS_COMPLETED);
+    assert(packet_details[2][1] == 336u);
     assert(stats.transfer_failures == 0 && !stats.faulted);
     assert(review_submits == submits + 1 && stats.streaming);
     for (int i = 0; i < 4; ++i) {
@@ -135,6 +153,18 @@ static void test_packet_loss(void)
     }
     isoc_callback(t);
     assert(s_packet_failures == 3 && s_packet_lost_frames == 90);
+    assert(packet_detail_count == 3u); /* Healthy completions do not log. */
+    review_ticks += 7u;
+    t->isoc_packet_desc[0].status = USB_TRANSFER_STATUS_SKIPPED;
+    t->isoc_packet_desc[0].actual_num_bytes = 0;
+    const uint32_t wanted = (uint32_t)t->isoc_packet_desc[0].num_bytes;
+    isoc_callback(t);
+    assert(packet_detail_count == 4u && packet_details[3][2] == wanted);
+    assert(packet_details[3][3] == 7u);
+    t->isoc_packet_desc[0].status = USB_TRANSFER_STATUS_SKIPPED;
+    t->isoc_packet_desc[0].actual_num_bytes = 0;
+    isoc_callback(t);
+    assert(packet_detail_count == 4u && s_packet_failures > 4u);
     t->status = USB_TRANSFER_STATUS_ERROR;
     isoc_callback(t);
     assert(s_faulted && s_transfer_failures == 1);

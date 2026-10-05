@@ -26,8 +26,9 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   verify the retained bundle/evidence hashes and exact source/CI SHA before
   installing the correct board's signed bundle. Use the ordinary previous-design
   configuration; preview/recorder/SD/DMA experiments must be absent. No physical
-  result from c4912d5b transfers to the new image. Installation is deferred to
-  the next operator session. Repeat startup/AP/API/USB0/FLX4, absolute resource
+  result from c4912d5b transfers to the new image. The [first L install](validation/JC4880_L_CANDIDATE_20261005.md)
+  restored startup/AP/API/USB0/FLX4, but one USB packet loss failed strict audio
+  smoke. Resolve the fault before final qualification. Repeat absolute resource
   floors, listening/channel isolation/reconnect/rollback and at least 180 minutes
   on the final image with zero new strict output-late/underrun/USB faults.
 
