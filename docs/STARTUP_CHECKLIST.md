@@ -34,6 +34,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   this focused run is not the 180-minute release gate. Repeat absolute resource
   floors, listening/channel isolation/reconnect/rollback and at least 180 minutes
   on the final image with zero new strict output-late/underrun/USB faults.
+  The 2026-10-05 operator-approved segmented target (29 credited + 151 completed
+  minutes) passes telemetry on 08996790. Preserve its original interruption,
+  raw hashes and final listening status; do not label it uninterrupted 180 minutes
+  or transfer it to another image. Functional/lifecycle and baseline gates remain.
 
 - [ ] Operator sequencing decision (2026-10-04): physical audio testing and the
   final soak are deferred until I-L integration finishes. Keep these gates open;

@@ -52,9 +52,14 @@ not replace or extend the earlier completed 30-minute focused pass.
 The operator subsequently approved a 151-minute continuation, crediting the
 previous rounded 29 minutes. A detached Windows monitor survived its launching
 shell, passed assertion self-tests and started on the same image at 10:25
-Europe/Zagreb. Atomic live-state updates and 30-minute checkpoints are active.
-Its result is still RUNNING; segmented accounting must not be presented as an
-uninterrupted 180-minute run. Original interrupted evidence remains retained.
+Europe/Zagreb. It completed 9,060.489 seconds and 39,144 requests at 12:56,
+with all five checkpoints and 897 saved active samples passing zero-new-fault
+checks. Memory/stack reserves were stable and failed allocations zero. Both
+decks are stopped on the same image; heartbeat automations are paused. The
+operator-approved 29+151-minute accounting target is complete, but does not
+prove uninterrupted 180-minute monitoring. Original interrupted evidence is
+retained; final operator listening remains PENDING. Full functional/lifecycle
+qualification, recovery baseline and new-hardware gates remain open.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
