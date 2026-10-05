@@ -22,6 +22,9 @@ Pajoniiir plays a Rekordbox-exported USB library without a laptop. The
 ESP32-P4 hosts both the USB drive and DDJ-FLX4, renders the touchscreen UI,
 runs the two playback decks and mixer, and sends MAIN and headphone-cue audio.
 
+Read the **[online user manual](https://docs.pajoniiir.eu/)** for setup,
+controls and update instructions.
+
 - No PC is required during a performance.
 - MP3, WAV and FLAC playback is supported.
 - Two independent decks provide waveforms, tempo control, Master Tempo,
@@ -260,6 +263,7 @@ are maintained in the [release record](docs/validation/JC4880_V91_RELEASE_202610
 [documentation status](docs/DOCUMENTATION_STATUS.md) and
 [development plan](docs/DEVELOPMENT_PLAN.md).
 
+- [Online user manual](https://docs.pajoniiir.eu/)
 - [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
