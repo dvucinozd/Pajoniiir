@@ -70,6 +70,13 @@ loop exit and natural FLAC EOF were clean. This unresolved transport event
 blocks complete acceptance; the prior soak evidence remains scoped to its
 tested scenario. See the candidate validation for retained samples and logs.
 
+The subsequent isolated manual D2 IN->OUT test reproduced 2,816 further
+underrun frames on Beethoven FLAC; the operator confirmed the failure at OUT.
+IN alone and Master Tempo alone passed. Both-deck stopping was the monitor's
+failure response, not proof of a system freeze. Manual-loop activation is now
+a confirmed release blocker; the underlying reseek/refill cause and firmware
+correction remain open.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
