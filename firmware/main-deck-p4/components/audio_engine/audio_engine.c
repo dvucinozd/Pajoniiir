@@ -47,6 +47,7 @@
 #include "audio_seek_skip.h"
 #include "audio_track_length.h"
 #include "audio_loop_resize.h"
+#include "audio_loop_prefix.h"
 #include "audio_pvbr_validation.h"
 #include "audio_scratch_buffer.h"
 #include "audio_scratch.h"
@@ -139,6 +140,12 @@ static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 #define AE_TIMELINE_CAPACITY_FRAMES (AE_TIMELINE_SECONDS * AE_TIMELINE_MAX_RATE)
 static audio_pcm_timeline_t s_pcm_timelines[AUDIO_ENGINE_DECK_COUNT];
 static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
+#if AE_FW
+/* Once-only PSRAM storage. Neither the output task nor USB callbacks allocate. */
+#define AE_LOOP_PREFIX_CAPACITY 96000u
+static audio_loop_prefix_t s_loop_prefix[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_loop_prefix_records[AUDIO_ENGINE_DECK_COUNT];
+#endif
 _Static_assert(AUDIO_ENGINE_DECK_COUNT == AUDIO_OUTPUT_BOOKKEEPING_DECKS,
                "output bookkeeping deck count must match audio engine");
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
@@ -379,6 +386,10 @@ typedef struct {
     uint32_t loop_resize_from_start_ms;
     uint32_t loop_resize_from_end_ms;
     bool     seek_was_loop_wrap;
+    bool     loop_prefix_requested;
+    uint32_t loop_prefix_epoch;
+    uint32_t loop_prefix_start_ms;
+    uint64_t loop_prefix_start_seq;
 #endif
 } audio_engine_state_t;
 
@@ -3114,6 +3125,28 @@ static void ae_decode_task(void *arg)
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     uint32_t resource_sample_blocks = 0;
     while (runtime->run) {
+        /* IN only schedules work. Copy retained PCM in its producer task,
+         * outside AE_LOCK/critical sections, then recheck request ownership. */
+        if (atomic_load_bool(&eng->loop_prefix_requested)) {
+            AE_LOCK();
+            uint32_t epoch = eng->loop_prefix_epoch;
+            uint32_t start = eng->loop_prefix_start_ms;
+            uint64_t seq = eng->loop_prefix_start_seq;
+            uint32_t session = eng->loaded_session_generation;
+            uint32_t rate = eng->sample_rate;
+            uint32_t generation = audio_pcm_timeline_generation(&s_pcm_timelines[ctx->deck]);
+            atomic_store_bool(&eng->loop_prefix_requested, false);
+            audio_loop_prefix_t prepared = s_loop_prefix[ctx->deck];
+            AE_UNLOCK();
+            (void)audio_loop_prefix_capture(&prepared, &s_pcm_timelines[ctx->deck],
+                                           seq, start, rate, session);
+            AE_LOCK();
+            if (runtime->run && epoch == eng->loop_prefix_epoch &&
+                session == eng->loaded_session_generation && !eng->seek_requested &&
+                generation == audio_pcm_timeline_generation(&s_pcm_timelines[ctx->deck]))
+                s_loop_prefix[ctx->deck] = prepared;
+            AE_UNLOCK();
+        }
         if ((resource_sample_blocks++ & 255u) == 0u)
             firmware_resources_sample_task(ctx->deck == 0 ? FW_RESOURCE_DECODE1 : FW_RESOURCE_DECODE2);
         if (eng->seek_requested) {
@@ -3319,6 +3352,7 @@ static void ae_decode_task(void *arg)
             }
         }
         int publish_frames = samples;
+        audio_loop_prefix_plan_t prefix_plan = {0};
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
             /* Source position of this batch's last frame, for scratch capture
@@ -3351,6 +3385,10 @@ static void ae_decode_task(void *arg)
                     }
                     uint64_t published = eng->frames_since_seek - (uint64_t)samples;
                     if (published > keep_frames) {
+                        if (eng->format == AUDIO_FORMAT_FLAC)
+                            prefix_plan = audio_loop_prefix_plan(&s_loop_prefix[ctx->deck],
+                                eng->loaded_session_generation,
+                                eng->loop_start_ms, eng->loop_end_ms);
                         uint32_t excess = (uint32_t)(published - keep_frames);
                         /* Leave the output something to play while the decoder
                          * reseeks and refills. Withdrawing the entire runway is
@@ -3396,6 +3434,38 @@ static void ae_decode_task(void *arg)
         bool eof = atomic_load_bool(&eng->eof);
         size_t file_pos = eng->file_pos;
         AE_UNLOCK();
+
+        /* Publish actual IN PCM before the expensive FLAC reseek. Preserve
+         * the existing small transition reserve; do not grow post-OUT overrun.
+         * Prefix publication is decoder-owned and runs with interrupts enabled.
+         * A later user seek flushes this data through the normal generation gate. */
+        if (prefix_plan.frames) {
+            audio_loop_prefix_t prefix = s_loop_prefix[ctx->deck];
+            audio_mixer_frame_t f;
+            uint32_t i = 0;
+            atomic_store_bool(&s_scratch_capture_writing[ctx->deck], true);
+            for (; i < prefix_plan.frames && runtime->run; ++i) {
+                if (atomic_load_bool(&s_scratch_capture_freeze[ctx->deck]) ||
+                    atomic_load_bool(&s_scratch_playing[ctx->deck]) ||
+                    !audio_loop_prefix_frame(&prefix, &prefix_plan, i, &f) ||
+                    !deck_pcm_push(ctx->deck, f.left, f.right)) break;
+            }
+            atomic_store_bool(&s_scratch_capture_writing[ctx->deck], false);
+            /* Never skip source samples if the copy was interrupted. A newer
+             * user seek owns its target and will discard this old publication. */
+            AE_LOCK();
+            if (i == prefix_plan.frames && eng->seek_requested &&
+                eng->seek_reason == AE_SEEK_REASON_LOOP &&
+                eng->seek_target_ms == prefix.start_ms) {
+                eng->seek_target_ms = prefix_plan.seek_ms;
+                scratch_newest_ms = prefix.start_ms + (uint32_t)(
+                    (uint64_t)(prefix_plan.period_frames - 1u) * 1000u / prefix.sample_rate);
+                if (s_loop_prefix_records[ctx->deck]++ < 4u)
+                    service_log_event(SERVICE_LOG_LOOP_PREFIX_PRIMED, SERVICE_LOG_INFO,
+                        4u, ctx->deck, i, prefix.start_ms, prefix_plan.seek_ms, NULL);
+            }
+            AE_UNLOCK();
+        }
 
         if (eof && samples <= 0) {
             publish_cue_preroll(ctx->deck, eng, true);
@@ -4395,6 +4465,9 @@ static void clear_scratch_playback_state(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
 #if AE_FW
+    s_loop_prefix[deck].valid = false;
+    atomic_store_bool(&s_engines[deck].loop_prefix_requested, false);
+    ++s_engines[deck].loop_prefix_epoch;
     censor_publish_request(deck, false);
 #endif
     atomic_store_bool(&s_censor_playing[deck], false);
@@ -5223,6 +5296,35 @@ static void ae_note_loop_change(audio_engine_state_t *eng, bool changed)
 }
 #endif
 
+void audio_engine_deck_prepare_loop_in(uint8_t deck, uint32_t start_ms)
+{
+    if (!deck_is_valid(deck)) return;
+#if AE_FW
+    AE_LOCK();
+    audio_engine_state_t *eng = &s_engines[deck];
+    s_loop_prefix[deck].valid = false;
+    ++eng->loop_prefix_epoch;
+    atomic_store_bool(&eng->loop_prefix_requested, false);
+    if (eng->loaded && eng->format == AUDIO_FORMAT_FLAC && eng->sample_rate &&
+        timeline_active(deck) && s_loop_prefix[deck].pcm && !eng->loop_active &&
+        !eng->seek_requested && !atomic_load_bool(&s_scratch_playing[deck])) {
+        uint32_t pos = eng->output_base_ms +
+            (uint32_t)(eng->output_frames_since_seek * 1000u / eng->sample_rate);
+        int64_t delta = ((int64_t)start_ms - pos) * eng->sample_rate / 1000;
+        uint64_t seq = audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
+        if (delta >= 0 || seq >= (uint64_t)(-delta)) {
+            eng->loop_prefix_start_seq = delta >= 0 ? seq + (uint64_t)delta
+                                                   : seq - (uint64_t)(-delta);
+            eng->loop_prefix_start_ms = start_ms;
+            atomic_store_bool(&eng->loop_prefix_requested, true);
+        }
+    }
+    AE_UNLOCK();
+#else
+    (void)start_ms;
+#endif
+}
+
 esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
@@ -5932,6 +6034,16 @@ static void init_pad_fx_buffers(void)
 static void init_scratch_buffers(void)
 {
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+#if AE_FW
+        if (!s_loop_prefix[deck].pcm) {
+            s_loop_prefix[deck].pcm = heap_caps_malloc(
+                AE_LOOP_PREFIX_CAPACITY * 2u * sizeof(int16_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            s_loop_prefix[deck].capacity = s_loop_prefix[deck].pcm
+                ? AE_LOOP_PREFIX_CAPACITY : 0u;
+        }
+        s_loop_prefix[deck].valid = false;
+#endif
         if (!s_pcm_timeline_storage[deck]) {
             s_pcm_timeline_storage[deck] =
                 audio_pcm_alloc_buffer(AE_TIMELINE_CAPACITY_FRAMES * 2u);

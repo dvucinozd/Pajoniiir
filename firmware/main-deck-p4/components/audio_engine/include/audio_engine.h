@@ -395,6 +395,8 @@ void audio_engine_test_set_after_internal_stop_hook(
 #endif
 
 esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
+/* Schedule bounded decoder-side PCM capture at manual IN; never does IO here. */
+void audio_engine_deck_prepare_loop_in(uint8_t deck, uint32_t start_ms);
 esp_err_t audio_engine_deck_clear_loop(uint8_t deck);
 esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
                                            bool *active,

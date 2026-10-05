@@ -1369,6 +1369,7 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
         s_beat_loop_led[deck].active = false;
         shadow->pending_in = true;
         shadow->pending_start_ms = position_ms;
+        audio_engine_deck_prepare_loop_in(deck, position_ms);
         ESP_LOGI(TAG, "deck %u loop in -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned long)position_ms);

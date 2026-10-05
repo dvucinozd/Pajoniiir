@@ -287,6 +287,10 @@ audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms) {
   return ESP_OK;
 }
 
+static inline void audio_engine_deck_prepare_loop_in(uint8_t deck, uint32_t start_ms) {
+  (void)deck; (void)start_ms;
+}
+
 static inline esp_err_t audio_engine_deck_clear_loop(uint8_t deck) {
   if (deck >= 2)
     return ESP_ERR_INVALID_ARG;

@@ -77,6 +77,14 @@ failure response, not proof of a system freeze. Manual-loop activation is now
 a confirmed release blocker; the underlying reseek/refill cause and firmware
 correction remain open.
 
+A software-verified candidate now captures bounded actual loop-start PCM in
+the decoder after manual IN and primes the FLAC handoff before reseek, keyed
+by request/load ownership. Full host tests and both IDF 6.0.2 builds pass;
+PSRAM-only storage adds 768,000 bytes total and leaves internal/DMA policy
+unchanged. Signed exact-image manual OUT/exit and resource/listening checks
+remain required. The failed installed image is still the authoritative
+hardware result until the replacement is tested.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
