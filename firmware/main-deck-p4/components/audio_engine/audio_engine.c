@@ -2713,6 +2713,9 @@ static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
 
 #if !defined(AUDIO_ENGINE_PC_TEST)
 static int64_t s_last_outlier_us;
+#if AE_FW
+static bsp_main_dma_diag_t s_main_write_dma;
+#endif
 
 static void ae_report_block_outlier(uint32_t block_us, uint32_t late_threshold_us)
 {
@@ -2741,6 +2744,12 @@ static void ae_report_block_outlier(uint32_t block_us, uint32_t late_threshold_u
                       4u, block_us, s_phase_block[worst],
                       s_mix_group_worst, s_mix_group_max_us,
                       AE_PHASE_NAME[worst]);
+#if AE_FW
+    if (worst == AE_PH_MAIN && !s_usb_main_sink)
+        service_log_event(SERVICE_LOG_AUDIO_LATE_PHASE, SERVICE_LOG_WARN,
+            4u, s_main_write_dma.completions, s_main_write_dma.max_gap_us,
+            s_main_write_dma.queue_overflows, s_phase_block[AE_PH_MAIN], "i2s dma");
+#endif
 }
 #endif
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
@@ -3795,9 +3804,17 @@ static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
     uint32_t timeout_ms = 100u;
     TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
     if (timeout_ticks == 0u) timeout_ticks = 1u;
+    bsp_main_dma_diag_t before, after;
+    bsp_audio_main_dma_snapshot(&before, true);
     audio_output_sink_result_t result = audio_output_sink_write_all(
         audio_output_main_i2s_write, s_main_i2s_tx, frames, bytes,
         (uint32_t)timeout_ticks, 3u, &s_main_sink_stats);
+    bsp_audio_main_dma_snapshot(&after, false);
+    s_main_write_dma = (bsp_main_dma_diag_t){
+        .completions = after.completions - before.completions,
+        .max_gap_us = after.max_gap_us,
+        .queue_overflows = after.queue_overflows - before.queue_overflows,
+    };
     if (result == AUDIO_OUTPUT_SINK_TIMEOUT) return ESP_ERR_TIMEOUT;
     return result == AUDIO_OUTPUT_SINK_OK ? ESP_OK : ESP_FAIL;
 #else

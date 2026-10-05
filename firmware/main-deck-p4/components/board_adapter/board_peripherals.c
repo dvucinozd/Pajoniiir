@@ -3,6 +3,8 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_idf_version.h"
+#include "esp_timer.h"
+#include "esp_attr.h"
 #include "board_sd_dma.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -232,6 +234,43 @@ esp_err_t bsp_audio_force_safe_boot_state(void)
     return ESP_OK;
 }
 
+static DRAM_ATTR uint32_t s_main_dma_completions;
+static DRAM_ATTR uint32_t s_main_dma_last_us;
+static DRAM_ATTR uint32_t s_main_dma_max_gap_us;
+static DRAM_ATTR uint32_t s_main_dma_queue_overflows;
+
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+static bool IRAM_ATTR main_dma_sent(i2s_chan_handle_t chan, i2s_event_data_t *event, void *user)
+{
+    (void)chan; (void)event; (void)user;
+    uint32_t now = (uint32_t)esp_timer_get_time();
+    uint32_t last = s_main_dma_last_us;
+    s_main_dma_last_us = now;
+    uint32_t gap = now - last;
+    if (last && gap > __atomic_load_n(&s_main_dma_max_gap_us, __ATOMIC_RELAXED))
+        __atomic_store_n(&s_main_dma_max_gap_us, gap, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&s_main_dma_completions, 1u, __ATOMIC_RELAXED);
+    return false;
+}
+
+static bool IRAM_ATTR main_dma_overflow(i2s_chan_handle_t chan, i2s_event_data_t *event, void *user)
+{
+    (void)chan; (void)event; (void)user;
+    __atomic_add_fetch(&s_main_dma_queue_overflows, 1u, __ATOMIC_RELAXED);
+    return false;
+}
+#endif
+
+void bsp_audio_main_dma_snapshot(bsp_main_dma_diag_t *out, bool reset_gap)
+{
+    if (!out) return;
+    out->completions = __atomic_load_n(&s_main_dma_completions, __ATOMIC_RELAXED);
+    out->queue_overflows = __atomic_load_n(&s_main_dma_queue_overflows, __ATOMIC_RELAXED);
+    out->max_gap_us = reset_gap
+        ? __atomic_exchange_n(&s_main_dma_max_gap_us, 0u, __ATOMIC_RELAXED)
+        : __atomic_load_n(&s_main_dma_max_gap_us, __ATOMIC_RELAXED);
+}
+
 static esp_err_t bsp_audio_init_i2s_pcm5102(void)
 {
 #if CONFIG_BSP_PCM5102A_MAIN_OUT
@@ -262,6 +301,8 @@ static esp_err_t bsp_audio_init_i2s_pcm5102(void)
         },
     };
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx_pcm5102, &std_cfg), TAG, "pcm5102 i2s std init failed");
+    i2s_event_callbacks_t callbacks = {.on_sent = main_dma_sent, .on_send_q_ovf = main_dma_overflow};
+    ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(s_i2s_tx_pcm5102, &callbacks, NULL), TAG, "pcm5102 callbacks failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 i2s enable failed");
     s_i2s_tx_pcm5102_enabled = true;
     ESP_LOGI(TAG, "PCM5102A main out ready: BCLK=%d WS=%d DOUT=%d",
@@ -462,6 +503,7 @@ esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate)
     }
     i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
     ESP_RETURN_ON_ERROR(i2s_channel_reconfig_std_clock(s_i2s_tx_pcm5102, &clk_cfg), TAG, "pcm5102 clock reconfig failed");
+    s_main_dma_last_us = 0u;
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 enable failed");
     s_i2s_tx_pcm5102_enabled = true;
     return ESP_OK;
