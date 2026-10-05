@@ -267,7 +267,7 @@ typedef struct {
     uint32_t dma_largest_free;
     uint32_t psram_free;
     uint32_t psram_min_free;
-    uint32_t psram_largest_free;
+    uint32_t psram_largest_free; /* unavailable (0): no live PSRAM heap walk */
     uint32_t heap_walk_max_us[3]; /* internal, DMA, PSRAM; query incl. preemption */
 } audio_engine_diagnostics_snapshot_t;
 

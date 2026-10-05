@@ -47,5 +47,12 @@ void audio_engine_snapshot_memory(audio_engine_diagnostics_snapshot_t *out)
     out->dma_largest_free = measured_largest(dma_caps, 1, &out->heap_walk_max_us[1]);
     out->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     out->psram_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
-    out->psram_largest_free = measured_largest(MALLOC_CAP_SPIRAM, 2, &out->heap_walk_max_us[2]);
+    /* IDF's largest-block query walks every TLSF block under an IRQ-masking
+     * heap lock. The custom LVGL PSRAM heap makes that walk unbounded with UI
+     * complexity. Never run it from the esp_timer health monitor or status
+     * polling, including idle: UAC continues to send silence between PLAYs.
+     * Keep O(number-of-heaps) free/low-water counters and internal/DMA gates.
+     * Zero is not a measured largest block; the API marks it unavailable. */
+    out->psram_largest_free = 0;
+    out->heap_walk_max_us[2] = 0;
 }

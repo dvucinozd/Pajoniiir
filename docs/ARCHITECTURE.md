@@ -214,8 +214,13 @@ Current P4 audio ownership rule:
   limiter counters, shared Beat FX Echo/Delay-line allocation/enabled/delay/mode
   state, and
   heap/internal/PSRAM free space. Internal, internal-DMA and PSRAM diagnostics
-  additionally expose allocator lifetime minimum-free and current largest-free
-  block values. Heap queries run after releasing the audio state mutex, so
+  additionally expose allocator lifetime minimum-free. Current largest-free
+  blocks remain measured for internal/DMA only. The optional JSON
+  `psram_largest_free` is null: IDF's full PSRAM TLSF walk masks interrupts and
+  must not run in periodic status/esp_timer diagnostics while UAC sends audio
+  or idle silence. `heap_walk_max_us` retains internal/DMA query wall-time
+  maxima (including preemption; PSRAM entry zero, not measured).
+  Heap queries run after releasing the audio state mutex, so
   these observation-time values do not extend the mixer critical section.
   `/api/status` includes these values under
   `diagnostics` so hardware smoke tests can read one structured report instead

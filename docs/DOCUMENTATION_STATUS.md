@@ -19,6 +19,12 @@ A short recovery A/B run was clean. Last confirmed installed image at the
 documented isolation checkpoint is H in `ota_0`, stopped; do not transfer its
 results to any candidate. JC1060 remains software verified only.
 
+The later heap-query diagnostic `M2.4-75-gb89c474c` is installed in `ota_1`,
+boot 603, stopped after reproducing one SKIPPED packet under dense status
+polling. PSRAM heap walks from periodic health/status are now a corrective
+experiment; exact-image verification remains required. See the same hardware
+report for source/artifact identities and failed runs. No public channel change.
+
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
 DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
