@@ -109,9 +109,15 @@ AP/API, mounted storage and FLX4 MIDI/audio returned on the same image; startup
 and final resources reported zero failed allocations. PC Wi-Fi reconnection
 was required, so no exact startup duration is claimed. Remaining opposite-deck
 format parity, combined scratch+MT, cancellation, cue deletion/isolation,
-physical load lock, USB hotplug, post-reboot audio, repeated lifecycle and
+physical load lock, repeated lifecycle and
 final-image soak gates remain open. The older image's soak does
 not qualify this image.
+One stopped FLX4 hotplug and one stopped USB-storage hotplug subsequently
+passed API and operator control/Library checks; library generation advanced
+1 to 3. Fresh D1 MP3/D2 FLAC playback passed 91.648 seconds with zero strict
+fault deltas and failed allocations. Operator confirmed clean MAIN/D1/D2 cue,
+normal speed and cue controls after reboot/reconnect; active removal and
+repeated hotplug are not accepted by these checks.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
