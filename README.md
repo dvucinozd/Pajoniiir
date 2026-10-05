@@ -76,8 +76,12 @@ adds epoch-bound network sync, explicit PLAY/SYNC alignment, master handoff and
 outgoing status/beats using the accepted audio timeline. Loss holds the last
 tempo; scratch and ordinary drift never trigger automatic seeks. Sink latency
 is configuration-specific and remains UNMEASURED until a real calibration.
-Real output phase, listening and peer handoff remain NOT RUN. Next is L final
-compatibility/candidate work; the installed JC4880 image is unchanged.
+Real output phase, listening and peer handoff remain NOT RUN.
+[Package L](docs/validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
+completes ordinary per-board candidate packaging, signed identity/budget guards
+and a support/acceptance matrix. A-L software integration is complete; physical
+qualification and release remain open. Installation is deferred to the next
+operator session; the installed JC4880 image remains M2.4-61-gc4912d5b.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

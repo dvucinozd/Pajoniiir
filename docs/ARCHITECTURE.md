@@ -17,6 +17,14 @@ with physical acceptance pending; the production baseline above is unchanged.
 
 ## High-Level Flow
 
+L keeps signed board identity in the existing project field. The inactive app
+descriptor must have bounded project/version text matching the running project
+and signed version before selection. Ordinary candidate tooling additionally
+checks clean/pushed source, exact green CI, fixed image budget and absence of
+experiments. Candidate evidence is separate from the signed OTA schema and
+records both dependency locks, configuration, binary hashes and NOT RUN physical
+gates. JC1060 has a separate channel root; app-only OTA cannot migrate partitions.
+
 Development package H constructs one selected Overview/Library/Hot Cues tree;
 Settings and chrome are shared. Library ownership/actions do not depend on table
 widgets. The product Overview retains leased analysis snapshots, owns PSRAM

@@ -20,6 +20,11 @@ The parser/matcher is
 
 Design constraints:
 
+Integration L retains the documented v2/v3 ABI and v4 extensions from package D.
+Compiler, runtime, storage and upload validators are tested together. DDJ-400
+profiles remain software-qualified only; candidate acceptance records must name
+the real board/controller and exact firmware SHA before hardware support claims.
+
 - The semantic vocabulary is exactly the existing `control_link.h` ID space
   (`CTRL_TYPE_*` / `CTRL_ID_*`). Profiles translate raw MIDI into that
   vocabulary; they cannot invent new semantics.

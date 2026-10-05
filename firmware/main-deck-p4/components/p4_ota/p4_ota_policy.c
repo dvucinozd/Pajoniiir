@@ -1,4 +1,14 @@
 #include "p4_ota_policy.h"
+#include <string.h>
+
+bool p4_ota_policy_text_matches(const char *field, size_t capacity, const char *expected)
+{
+    if (!field || !capacity || !expected || !expected[0]) return false;
+    const char *end = memchr(field, 0, capacity);
+    if (!end) return false;
+    size_t length = (size_t)(end - field);
+    return strlen(expected) == length && !memcmp(field, expected, length);
+}
 
 bool p4_ota_policy_size_valid(size_t image_size, size_t slot_size)
 {

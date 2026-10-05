@@ -12,7 +12,8 @@ AP/USB recovery and focused paused-track resource floors. Full baseline/audio/
 soak qualification remains open; JC1060/DDJ-400/Link physical gates are NOT RUN.
 The operator deferred physical audio testing and final soak until completion
 of the remaining integration packages. This changes sequencing, not acceptance
-criteria. Continue I-L software work without replacing the installed candidate.
+criteria. A-L software work is complete; candidate installation and exact-image
+qualification follow in the next operator session.
 
 ## Scope and delivery status
 
@@ -44,7 +45,7 @@ outside this branch. These are planned capabilities, not current support claims.
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
 | K | Epoch-bound network clock, controlled sync and tempo master | Software verified: session-fenced follower, explicit alignment, acknowledged handoff/status/beats and sink/rate latency scope; real phase/listening/handoff NOT RUN |
-| L | Project-bound OTA, documentation, qualification and release candidate | Pending |
+| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; separate ordinary signed candidates and acceptance evidence; new-image installation/audio/soak NOT RUN; no public release |
 
 Software verification, hardware acceptance and release are separate states.
 The [package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
@@ -54,6 +55,15 @@ supersede them. UI redesign/presentation belongs to H and S3CP v4 to D.
 JC1060, DDJ-400 and real CDJ peer acceptance remain **NOT RUN** until the
 hardware is available. No deployment, production channel change or hardware
 acceptance follows from a successful host test or build.
+
+## Package L
+
+[L software/candidate handoff](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
+defines board-specific ordinary packaging, separate JC1060 channel generation,
+bounded signed/app identity validation and frozen exact-SHA evidence. The image
+budget remains 0x380000 inside the unchanged 0x400000 slots. Final soak allows
+zero new strict timing/USB/audio faults. Software completion leaves physical
+qualification and publication open; flashing is deferred to the next session.
 
 ## Package K
 

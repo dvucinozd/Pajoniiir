@@ -22,6 +22,15 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
 
 ## Media and controller
 
+- [ ] For the [L candidates](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md),
+  verify the retained bundle/evidence hashes and exact source/CI SHA before
+  installing the correct board's signed bundle. Use the ordinary previous-design
+  configuration; preview/recorder/SD/DMA experiments must be absent. No physical
+  result from c4912d5b transfers to the new image. Installation is deferred to
+  the next operator session. Repeat startup/AP/API/USB0/FLX4, absolute resource
+  floors, listening/channel isolation/reconnect/rollback and at least 180 minutes
+  on the final image with zero new strict output-late/underrun/USB faults.
+
 - [ ] Operator sequencing decision (2026-10-04): physical audio testing and the
   final soak are deferred until I-L integration finishes. Keep these gates open;
   software tests do not replace them. Retain the installed JC4880 candidate

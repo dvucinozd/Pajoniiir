@@ -8,6 +8,19 @@ Superseded multi-target OTA procedures remain available in Git history only.
 
 ## Safety rules
 
+Development [L candidates](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
+use `main-deck-p4` for JC4880 and `main-deck-jc1060` for JC1060. Both retain the
+existing P4 signing/schema and same physical slot sizes; the fixed build budget
+is 0x380000. Packager and runtime reject mismatched signed/embedded project or
+version. Ordinary packaging also rejects dirty, preview and storage experiments.
+Specify `-Project main-deck-jc1060` in both packaging/channel tools for that board.
+JC1060 uses `https://ota.pajoniiir.eu/jc1060` as its separate configured pull
+root; JC4880's existing root/schema is unchanged. Channel generation writes local
+files only and does not publish or alter saved device settings. Each candidate's
+`candidate-evidence.json` freezes source SHA, exact CI, locks/configuration and
+binary/bundle hashes with hardware gates NOT RUN. First JC1060 provisioning
+requires wired partition installation; app-only OTA cannot change partitions.
+
 Development startup confirmation: a pending image is confirmed only after
 critical core initialization and, if Wi-Fi remote was enabled in saved boot
 settings, the AP/HTTP service becoming active within 60 seconds of P4 app

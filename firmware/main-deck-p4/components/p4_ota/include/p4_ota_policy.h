@@ -18,6 +18,8 @@ typedef enum {
 
 bool p4_ota_policy_size_valid(size_t image_size, size_t slot_size);
 bool p4_ota_policy_header_valid(const uint8_t *data, size_t size);
+/* App descriptor fields must terminate within their fixed bounds. */
+bool p4_ota_policy_text_matches(const char *field, size_t capacity, const char *expected);
 p4_ota_finish_policy_t p4_ota_policy_finish(bool receiving,
                                              bool handle_open,
                                              size_t received_size,

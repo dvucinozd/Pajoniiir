@@ -207,11 +207,13 @@ esp_err_t p4_ota_finish(void)
     s_handle_open = false;
     esp_app_desc_t desc = {0};
     if (rc == ESP_OK) rc = esp_ota_get_partition_description(s_target, &desc);
-    if (rc == ESP_OK && strcmp(desc.project_name, P4_OTA_PROJECT_NAME) != 0) {
+    if (rc == ESP_OK && !p4_ota_policy_text_matches(desc.project_name,
+            sizeof(desc.project_name), P4_OTA_PROJECT_NAME)) {
         rc = ESP_ERR_INVALID_RESPONSE;
         copy_text(s_status.last_error, sizeof(s_status.last_error), "wrong firmware project");
     }
-    if (rc == ESP_OK && strcmp(desc.version, s_expected_version) != 0) {
+    if (rc == ESP_OK && !p4_ota_policy_text_matches(desc.version,
+            sizeof(desc.version), s_expected_version)) {
         rc = ESP_ERR_INVALID_RESPONSE;
         copy_text(s_status.last_error, sizeof(s_status.last_error),
                   "signed version does not match image");

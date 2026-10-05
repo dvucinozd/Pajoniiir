@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import ota_signing  # noqa: E402
+import create_integration_candidate as candidate  # noqa: E402
 
 
 class OtaSigningTests(unittest.TestCase):
@@ -82,6 +83,74 @@ class OtaSigningTests(unittest.TestCase):
         ota_signing._raw_verify(self.public, signature, payload)
         with self.assertRaises(InvalidSignature):
             ota_signing._raw_verify(self.public, signature, payload + b"x")
+
+    def candidate_image(self, project="main-deck-p4", version="M2.4-70-g12345678"):
+        import struct
+        image = bytearray(256)
+        image[0] = 0xe9
+        struct.pack_into("<H", image, 12, 0x12)
+        struct.pack_into("<I", image, 32, 0xabcd5432)
+        image[80:80 + len(project)] = project.encode()
+        image[48:48 + len(version)] = version.encode()
+        return bytes(image)
+
+    def test_candidates_require_matching_signed_and_embedded_board(self):
+        root = Path(self.temp.name)
+        version = "M2.4-70-g12345678"
+        for project, other in (("main-deck-p4", "main-deck-jc1060"), ("main-deck-jc1060", "main-deck-p4")):
+            image = self.candidate_image(project, version)
+            (root / f"{project}.bin").write_bytes(image)
+            bundle = root / f"{project}.ddjota"
+            bundle.write_bytes(ota_signing.create_bundle(image, self.private, "p4", 0x12, project, version, "rel-001"))
+            self.assertEqual(candidate.verify_artifacts(root, project, self.public_path)[0], version)
+            bundle.write_bytes(ota_signing.create_bundle(image, self.private, "p4", 0x12, other, version, "rel-001"))
+            with self.assertRaisesRegex(ValueError, "descriptor mismatch"):
+                candidate.verify_artifacts(root, project, self.public_path)
+            bundle.write_bytes(ota_signing.create_bundle(image, self.private, "p4", 0x12, project, "M2.4", "rel-001"))
+            with self.assertRaisesRegex(ValueError, "descriptor mismatch"):
+                candidate.verify_artifacts(root, project, self.public_path)
+            # Correct signature and descriptor, but binary file from another build.
+            bundle.write_bytes(ota_signing.create_bundle(image + b"x", self.private, "p4", 0x12, project, version, "rel-001"))
+            with self.assertRaisesRegex(ValueError, "bundle mismatch"):
+                candidate.verify_artifacts(root, project, self.public_path)
+            (root / f"{project}.bin").write_bytes(self.candidate_image(other))
+            with self.assertRaisesRegex(ValueError, "wrong project"):
+                candidate.verify_artifacts(root, project, self.public_path)
+
+    def test_candidate_rejects_malformed_descriptor_and_budget(self):
+        root = Path(self.temp.name)
+        image = bytearray(self.candidate_image())
+        image[80:112] = b"x" * 32
+        with self.assertRaisesRegex(ValueError, "unterminated"):
+            candidate.image_identity(image)
+        image[32] = 0
+        with self.assertRaisesRegex(ValueError, "missing"):
+            candidate.image_identity(image)
+        image = self.candidate_image() + bytes(0x380001 - 256)
+        (root / "main-deck-p4.bin").write_bytes(image)
+        with self.assertRaisesRegex(ValueError, "budget"):
+            candidate.verify_artifacts(root, "main-deck-p4", self.public_path)
+
+    def test_signed_release_manifest_must_describe_actual_candidate(self):
+        import json
+        root = Path(self.temp.name)
+        image = {"file": "main-deck-p4.bin", "size": 256, "sha256": "a" * 64}
+        bundle = {"file": "main-deck-p4.ddjota", "size": 512, "sha256": "b" * 64}
+        target = {"target": "p4", "project": "main-deck-p4", "file": image["file"],
+                  "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
+                  "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
+        def write(target):
+            payload = json.dumps({"schema_version": 2, "release_version": "M2.4", "targets": [target]}).encode()
+            (root / "manifest.json").write_bytes(payload)
+            (root / "manifest.sig").write_bytes(ota_signing._raw_sign(self.private, payload))
+        write(target)
+        candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
+        write(target | {"project": "main-deck-jc1060"})
+        with self.assertRaisesRegex(ValueError, "artifact mismatch"):
+            candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
+        write(target | {"bundle_sha256": "c" * 64})
+        with self.assertRaisesRegex(ValueError, "artifact mismatch"):
+            candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
 
 
 if __name__ == "__main__":

@@ -46,8 +46,13 @@ adds the 40 ms clock follower, session-fenced audio mutations, sticky master
 selection, acknowledged handoff and own status/beats. Only explicit PLAY/SYNC
 may align with a seek; loss retains tempo in WAIT. A measured latency applies
 only to its sink/rate, and no measurement is invented. Physical output phase,
-listening and real handoff remain NOT RUN. Next: L final compatibility/release
-gates; keep the installed JC4880 image and deferred exact-image audio/soak gates.
+listening and real handoff remain NOT RUN.
+[L candidate handoff](validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
+completes software integration A-L. Ordinary JC4880/JC1060 artifacts are isolated
+by signed project, with fixed image budget, exact source/CI/config/lock evidence
+and separate local channel documents. Preview/recorder/storage experiments are
+excluded. Next is operator installation and exact-image resources/audio/soak
+qualification; keep JC1060/DDJ-400/real peer acceptance NOT RUN until available.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator

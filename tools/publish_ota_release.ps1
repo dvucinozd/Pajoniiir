@@ -8,7 +8,9 @@
 # the bundle parser is entered.
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
-    [string]$BaseUrl = "https://ota.pajoniiir.eu",
+    [ValidateSet("main-deck-p4", "main-deck-jc1060")]
+    [string]$Project = "main-deck-p4",
+    [string]$BaseUrl,
     [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
     [switch]$WriteToReleaseDir
 )
@@ -21,8 +23,16 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
     throw "No such release directory: $ReleaseDir"
 }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $BaseUrl) {
+    $BaseUrl = if ($Project -eq 'main-deck-jc1060') { 'https://ota.pajoniiir.eu/jc1060' } else { 'https://ota.pajoniiir.eu' }
+}
+$BaseUrl = $BaseUrl.TrimEnd('/')
+if ($Project -eq 'main-deck-jc1060' -and $BaseUrl -eq 'https://ota.pajoniiir.eu') {
+    throw 'JC1060 must use its separate OTA channel'
+}
 
-$bundle = Join-Path $ReleaseDir "main-deck-p4.ddjota"
+$bundleFile = "$Project.ddjota"
+$bundle = Join-Path $ReleaseDir $bundleFile
 if (-not (Test-Path -LiteralPath $bundle)) {
     throw "Missing P4 bundle: $bundle"
 }
@@ -49,9 +59,9 @@ foreach ($line in $metadataLines) {
     }
 }
 if ($metadata["target"] -cne "p4" -or
-    $metadata["project"] -cne "main-deck-p4" -or
+    $metadata["project"] -cne $Project -or
     [string]::IsNullOrEmpty($metadata["version"])) {
-    throw "Verified bundle metadata is not a versioned main-deck-p4 image"
+    throw "Verified bundle metadata is not a versioned $Project image"
 }
 $version = [string]$metadata["version"]
 
@@ -64,7 +74,7 @@ $doc = [ordered]@{
     schema_version = 1
     release        = $version
     p4             = [ordered]@{
-        url    = "$version/main-deck-p4.ddjota"
+        url    = "$version/$bundleFile"
         size   = $bytes.Length
         sha256 = $sha
     }
@@ -83,6 +93,6 @@ Write-Output $json
 Write-Output ""
 Write-Output "--- publish so these HTTPS URLs resolve ---"
 Write-Output "  $BaseUrl/latest.json"
-Write-Output "  $BaseUrl/$version/main-deck-p4.ddjota   ($($bytes.Length) bytes)"
+Write-Output "  $BaseUrl/$version/$bundleFile   ($($bytes.Length) bytes)"
 Write-Output ""
 Write-Output "sha256 $sha"

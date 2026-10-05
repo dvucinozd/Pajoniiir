@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("main-deck-p4", "main-deck-jc1060")]
+    [string]$Project = "main-deck-p4",
     [string]$BuildName = "build_signed",
     [string]$OutputRoot = "releases",
     [string]$SigningKey = "keys/ota_signing_private.pem",
@@ -15,8 +17,8 @@ $SigningTool = Join-Path $PSScriptRoot "ota_signing.py"
 $ReleaseHelpers = Join-Path $PSScriptRoot "OtaReleaseHelpers.psm1"
 Import-Module $ReleaseHelpers -Force
 $Python = Resolve-OtaSigningPython
-$SigningKeyPath = Join-Path $RepoRoot $SigningKey
-$PublicKeyPath = Join-Path $RepoRoot $PublicKey
+$SigningKeyPath = if ([System.IO.Path]::IsPathRooted($SigningKey)) { $SigningKey } else { Join-Path $RepoRoot $SigningKey }
+$PublicKeyPath = if ([System.IO.Path]::IsPathRooted($PublicKey)) { $PublicKey } else { Join-Path $RepoRoot $PublicKey }
 if (-not (Test-Path -LiteralPath $SigningKeyPath)) {
     throw "Missing private signing key: $SigningKeyPath. Generate/provision it outside git before packaging."
 }
@@ -52,6 +54,9 @@ function Read-TargetBuild {
     if ($configText -match '(?m)^#define CONFIG_(AUDIO_RECORDER_ENABLED|AUDIO_RECORDER_EXPERIMENTAL_BUILD|PAJONIIIR_SD_IDLE_WAIT) 1\r?$') {
         throw "Storage experiment images cannot be packaged as a production OTA release"
     }
+    if ($configText -match '(?m)^#define CONFIG_(PAJONIIIR_DJ_OVERVIEW|USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM) 1\r?$') {
+        throw "Preview or DMA experiment images cannot be packaged as ordinary OTA candidates"
+    }
     if ($description.project_name -ne $ExpectedProject) {
         throw "Wrong project in ${descriptionPath}: $($description.project_name)"
     }
@@ -73,8 +78,19 @@ function Read-TargetBuild {
         throw ("{0} image is {1} bytes, beyond its {2}-byte OTA slot" -f
                $ExpectedProject, $bytes.Length, $SlotSize)
     }
+    if ($bytes.Length -gt 0x380000) { throw "Application exceeds the fixed 0x380000 build budget" }
+    if ($bytes.Length -lt 112 -or [BitConverter]::ToUInt32($bytes, 32) -ne [Convert]::ToUInt32('ABCD5432',16)) {
+        throw "Missing ESP app descriptor"
+    }
+    $embeddedProject = [Text.Encoding]::UTF8.GetString($bytes, 80, 32).Split([char]0)[0]
+    $embeddedVersion = [Text.Encoding]::UTF8.GetString($bytes, 48, 32).Split([char]0)[0]
+    if ($embeddedProject -cne $ExpectedProject -or
+        $embeddedVersion -cne (ConvertTo-EspAppVersion ([string]$description.project_version))) {
+        throw "Embedded app descriptor does not match build project/version"
+    }
 
     $sourceVersion = [string]$description.project_version
+    if ($sourceVersion -match '-dirty$') { throw "OTA candidate must come from a clean committed source" }
     [pscustomobject]@{
         Project = $ExpectedProject
         SourceVersion = $sourceVersion
@@ -89,8 +105,8 @@ function Read-TargetBuild {
 }
 
 $p4 = Read-TargetBuild `
-    -RelativeProjectDir "firmware/main-deck-p4" `
-    -ExpectedProject "main-deck-p4" `
+    -RelativeProjectDir "firmware/$Project" `
+    -ExpectedProject $Project `
     -ExpectedChipId 0x0012 `
     -SlotSize 0x400000
 if ($p4.SourceVersion -ne $p4.Version) {
@@ -98,7 +114,9 @@ if ($p4.SourceVersion -ne $p4.Version) {
 }
 
 $safeVersion = $p4.Version -replace '[^A-Za-z0-9._-]', '_'
-$outputDir = Join-Path (Join-Path $RepoRoot $OutputRoot) "pajoniiir-$safeVersion"
+$resolvedOutputRoot = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $RepoRoot $OutputRoot }
+$directoryName = if ($Project -eq 'main-deck-p4') { "pajoniiir-$safeVersion" } else { "pajoniiir-jc1060-$safeVersion" }
+$outputDir = Join-Path $resolvedOutputRoot $directoryName
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
 Copy-Item -LiteralPath $p4.Source -Destination (Join-Path $outputDir $p4.File) -Force

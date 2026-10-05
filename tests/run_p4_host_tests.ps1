@@ -1093,9 +1093,9 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("monitor_pcm_link")
 
 Assert-FileContains `
-    -Name "OTA release packager emits only the P4 target" `
+    -Name "OTA release packager emits only P4 silicon for both board projects" `
     -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
-    -LiteralPatterns @('-RelativeProjectDir "firmware/main-deck-p4"', '"--target", "p4"', 'target = "p4"')
+    -LiteralPatterns @('[ValidateSet("main-deck-p4", "main-deck-jc1060")]', '"--target", "p4"', 'target = "p4"')
 
 Assert-FileDoesNotContain `
     -Name "OTA release packager excludes the retired S3 target" `

@@ -18,7 +18,7 @@ param(
     [uint32]$Deck2TrackKey = 18,
 
     [ValidateRange(0, 10000)]
-    [uint32]$MaximumOutputLateDelta = 120,
+    [uint32]$MaximumOutputLateDelta = 0,
 
     [string]$OutputDirectory = "tmp/p4-release-qualification",
     [switch]$SelfTest
@@ -254,6 +254,9 @@ function Invoke-QualificationSelfTest {
     }
     $good = $baseline.psobject.Copy()
     $good.output_late = 14
+    if (@(Get-QualificationFailures -Baseline $baseline -Current $good -LateLimit 0).Count -ne 1) {
+        throw "strict zero-late acceptance self-test failed"
+    }
     if (@(Get-QualificationFailures -Baseline $baseline -Current $good `
             -LateLimit 4).Count -ne 0) {
         throw "clean qualification self-test failed"

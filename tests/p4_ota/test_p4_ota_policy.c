@@ -15,6 +15,20 @@ static void make_header(uint8_t header[P4_OTA_IMAGE_HEADER_SIZE], uint16_t chip_
 
 int main(void)
 {
+    char project[32] = "main-deck-p4", version[32] = "M2.4-62-g12345678";
+    assert(p4_ota_policy_text_matches(project, sizeof(project), "main-deck-p4"));
+    assert(!p4_ota_policy_text_matches(project, sizeof(project), "main-deck-jc1060"));
+    strcpy(project, "main-deck-jc1060");
+    assert(p4_ota_policy_text_matches(project, sizeof(project), "main-deck-jc1060"));
+    assert(!p4_ota_policy_text_matches(project, sizeof(project), "main-deck-p4"));
+    assert(p4_ota_policy_text_matches(version, sizeof(version), version));
+    assert(!p4_ota_policy_text_matches(version, sizeof(version), "M2.4-61-g12345678"));
+    memset(project, 'x', sizeof(project));
+    assert(!p4_ota_policy_text_matches(project, sizeof(project), "main-deck-p4"));
+    assert(!p4_ota_policy_text_matches(NULL, 32, "main-deck-p4"));
+    assert(!p4_ota_policy_text_matches(version, 0, version));
+    assert(!p4_ota_policy_text_matches(version, 32, NULL));
+    assert(!p4_ota_policy_text_matches(version, 32, ""));
     assert(!p4_ota_policy_size_valid(0, 0x400000));
     assert(!p4_ota_policy_size_valid(P4_OTA_IMAGE_HEADER_SIZE - 1u, 0x400000));
     assert(!p4_ota_policy_size_valid(1, 0));
