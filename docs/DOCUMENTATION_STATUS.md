@@ -15,11 +15,11 @@ design/controls passed focused checks. Operator heard clean MAIN/cue, but one
 relative resource comparison, reconnect/rollback and final soak stay open;
 public M2.4 is unchanged. Diagnostic `M2.4-72-g875aefe0` identifies ISO SKIPPED;
 the same packet-loss fault reproduced on H `M2.4-61-gc4912d5b` before I-L.
-A short recovery A/B run was clean. Last confirmed installed image at the
-documented isolation checkpoint is H in `ota_0`, stopped; do not transfer its
-results to any candidate. JC1060 remains software verified only.
+A short recovery A/B run was clean. The earlier isolation checkpoint used H
+in `ota_0`; do not transfer its results to another candidate. JC1060 remains
+software verified only.
 
-The later heap-query diagnostic `M2.4-75-gb89c474c` is installed in `ota_1`,
+The later heap-query diagnostic `M2.4-75-gb89c474c` was installed in `ota_1`,
 boot 603, stopped after reproducing one SKIPPED packet under dense status
 polling. PSRAM heap walks from periodic health/status are now a corrective
 experiment; exact-image verification remains required. See the same hardware
@@ -29,6 +29,17 @@ dense-status run, active resource comparison and operator MAIN/cue listening,
 but the extended loop run stopped on one 12,994-us output-late block. USB/PCM
 counters stayed zero. A 240/256-frame PCM5102A DMA/mixer geometry mismatch is
 the next correction; exact-image acceptance remains open.
+
+Current installed correction is `M2.4-77-g08996790`, `ota_1`, from pushed
+source `0899679021bc7879fc244627a74af00d962be5ca`. Both local builds, the full
+host runner and all eight exact-SHA CI jobs pass. Signed clean-build identity,
+configuration, locks, hash and budget checks pass. Focused MAIN/D1/D2 cue
+listening, active resource comparison, 183-second dense-status playback and
+30-minute dual-loop playback pass with zero new strict faults. Periodic PSRAM
+largest-block walks are absent; PCM5102A DMA and the mixer use the same
+256-frame quantum without relaxing deadlines. This is focused fault-correction
+evidence; full baseline, functional/lifecycle matrix, sink latency and final
+180-minute qualification remain open. Public M2.4 is unchanged.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1

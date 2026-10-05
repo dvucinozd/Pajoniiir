@@ -51,8 +51,13 @@ listening and real handoff remain NOT RUN.
 completes software integration A-L. Ordinary JC4880/JC1060 artifacts are isolated
 by signed project, with fixed image budget, exact source/CI/config/lock evidence
 and separate local channel documents. Preview/recorder/storage experiments are
-excluded. Next is operator installation and exact-image resources/audio/soak
-qualification; keep JC1060/DDJ-400/real peer acceptance NOT RUN until available.
+excluded. JC4880 hardware qualification has started; keep JC1060/DDJ-400/real
+peer acceptance NOT RUN until available. The
+[current hardware record](validation/JC4880_L_CANDIDATE_20261005.md) retains
+failed L/H runs and the installed corrective `M2.4-77-g08996790`. Its focused
+MAIN/cue listening, resource comparison and 30-minute dense-status dual-loop
+test pass with zero new strict faults. Remaining functional/lifecycle gates,
+the missing recovery resource baseline and final 180-minute soak stay open.
 
 [First candidate installation](validation/JC4880_H_CANDIDATE_20261004.md):
 `M2.4-59-gf9260125` returned network, USB0 and FLX4 after signed OTA. Operator
@@ -63,8 +68,8 @@ The first correction removed failed allocations and restored HTTP stack reserve.
 Two paused loads still failed the 12 KiB internal largest-block floor, so ordinary
 LVGL moves to the tested PSRAM-only allocator. Repeat exact-image measurements;
 do not waive or lower the gate to make the candidate pass.
-`M2.4-61-gc4912d5b` is now installed with ordinary PSRAM LVGL. Both clean regular
-builds and eight CI jobs pass. Empty/two-paused-track absolute heap/stack floors
+The H checkpoint `M2.4-61-gc4912d5b` was installed with ordinary PSRAM LVGL.
+Both clean regular builds and eight CI jobs pass. Empty/two-paused-track absolute heap/stack floors
 pass with zero allocation failures. Recovery largest-block baseline, active
 audio/timing and final soak remain open; see the candidate record for raw evidence.
 

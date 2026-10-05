@@ -49,12 +49,16 @@ internal-allocation probes and HTTP stack reserve; acceptance remains open.
 Those probes/stack failures were corrected. A subsequent two-track reserve
 failure requires PSRAM-only LVGL allocation in ordinary builds too; the previous
 presentation remains unchanged. Exact-image resource/audio acceptance stays open.
-Signed `M2.4-61-gc4912d5b` is installed: the focused empty/two-paused-track memory
-and stack floors pass with zero allocation failures. Full comparison still lacks
-the recovery largest-block measurement; listening and final soak remain open.
-At the operator's request, physical audio tests and the final soak are deferred
-until the remaining packages are integrated. They remain mandatory acceptance
-gates. Software work proceeds with I-L; the installed JC4880 image is retained.
+The H checkpoint `M2.4-61-gc4912d5b` passed focused empty/two-paused-track
+memory and stack floors. After I-L integration, hardware tests reproduced real
+USB packet losses and audio deadlines. The current corrective JC4880 image is
+`M2.4-77-g08996790`, retaining the previous design. Removing periodic PSRAM
+heap walks and aligning PCM5102A DMA with the 256-frame mixer block passed
+focused listening, resource comparison and 30 minutes of dense-status dual-loop
+playback with zero new strict faults. See the
+[current hardware record](docs/validation/JC4880_L_CANDIDATE_20261005.md).
+Full resource baseline, functional/lifecycle qualification and the final
+180-minute exact-image soak remain open; these focused results are not a release.
 [Package I progress](docs/validation/FORK_IMPROVEMENTS_PACKAGE_I_PROGRESS_20261004.md)
 adds bounded Link discovery, two distinct player claims and an Ethernet-only
 JC1060 worker. Link is default-off with a persistent Settings switch. Codec,
@@ -80,8 +84,8 @@ Real output phase, listening and peer handoff remain NOT RUN.
 [Package L](docs/validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_20261005.md)
 completes ordinary per-board candidate packaging, signed identity/budget guards
 and a support/acceptance matrix. A-L software integration is complete; physical
-qualification and release remain open. Installation is deferred to the next
-operator session; the installed JC4880 image remains M2.4-61-gc4912d5b.
+qualification and release remain open. JC4880 installation and focused fault
+correction are recorded in the current hardware report; JC1060 remains uninstalled.
 The H3 hardware preview exhausted internal heap and failed Wi-Fi/USB acceptance;
 recovery and allocator verification are tracked in the H progress record.
 [Software handoff and unrun hardware gates](docs/validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)

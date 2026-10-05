@@ -6,14 +6,15 @@ Donor: [kayrozen/Pajoniiir](https://github.com/kayrozen/Pajoniiir/tree/428b97dd4
 frozen at `428b97dd4a175f03d3a172c8db9c4d5ed94195fb` (v323).
 The [2026-10-04 software handoff](validation/FORK_IMPROVEMENTS_HANDOFF_20261004.md)
 records the pushed checkpoint and hardware gates left unrun.
-That handoff is historical. The [current H candidate record](validation/JC4880_H_CANDIDATE_20261004.md)
-confirms installed JC4880 `M2.4-61-gc4912d5b`, previous design/FLX4 controls,
-AP/USB recovery and focused paused-track resource floors. Full baseline/audio/
-soak qualification remains open; JC1060/DDJ-400/Link physical gates are NOT RUN.
-The operator deferred physical audio testing and final soak until completion
-of the remaining integration packages. This changes sequencing, not acceptance
-criteria. A-L software work is complete; candidate installation and exact-image
-qualification follow in the next operator session.
+That handoff and the [H candidate record](validation/JC4880_H_CANDIDATE_20261004.md)
+are historical checkpoints. A-L software integration is complete. The
+[current JC4880 hardware record](validation/JC4880_L_CANDIDATE_20261005.md)
+retains failed packet/deadline tests and installed corrective `M2.4-77-g08996790`.
+Periodic PSRAM heap walks are removed and PCM5102A DMA matches the 256-frame
+mixer block. Focused MAIN/cue listening, resource comparison and 30-minute
+dense-status dual-loop playback pass with zero new strict faults. Full baseline,
+functional/lifecycle qualification and the final 180-minute exact-image soak
+remain open; JC1060/DDJ-400/Link physical gates are NOT RUN.
 
 ## Scope and delivery status
 
@@ -41,11 +42,11 @@ outside this branch. These are planned capabilities, not current support claims.
 | E | Board adapter, JC1060 entrypoint/BSP, dependency lock and CI | E1/E2 software verified; both clean container builds and host/simulator CI PASS on ecca351; hardware NOT RUN |
 | F | Bounded UAC formats, MAIN routing, consumer-paced USB audio | Software verified; host and both clean build CI jobs PASS on 51ac8da; physical audio/reconnect acceptance NOT RUN |
 | G | IDF 6.0.2 SD idle workaround, measurements, experimental recorder | Software verified on d902510; all six CI jobs PASS; experiments default-off; physical SD/audio/power-loss gates NOT RUN |
-| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; c4912d5b installed on JC4880. Focused AP/USB, operator design/controls and paused-track absolute resources PASS; full baseline/audio/soak acceptance open |
+| H | Previous product design with new features at 800x480 and 1024x600 | Software verified; current JC4880 correction 08996790 installed. Focused startup/resources/listening and 30-minute dual-loop timing PASS; full baseline/functional/soak acceptance open |
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
 | K | Epoch-bound network clock, controlled sync and tempo master | Software verified: session-fenced follower, explicit alignment, acknowledged handoff/status/beats and sink/rate latency scope; real phase/listening/handoff NOT RUN |
-| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; separate ordinary signed candidates and acceptance evidence; new-image installation/audio/soak NOT RUN; no public release |
+| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; JC4880 corrective image installed with focused hardware PASS; final qualification open, JC1060 hardware NOT RUN; no public release |
 
 Software verification, hardware acceptance and release are separate states.
 The [package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)
@@ -63,7 +64,8 @@ defines board-specific ordinary packaging, separate JC1060 channel generation,
 bounded signed/app identity validation and frozen exact-SHA evidence. The image
 budget remains 0x380000 inside the unchanged 0x400000 slots. Final soak allows
 zero new strict timing/USB/audio faults. Software completion leaves physical
-qualification and publication open; flashing is deferred to the next session.
+qualification and publication open; current JC4880 installation and focused
+fault-correction evidence are in the hardware record above.
 
 ## Package K
 

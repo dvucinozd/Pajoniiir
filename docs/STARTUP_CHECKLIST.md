@@ -28,7 +28,10 @@ Status: **current P4 checklist, reconciled 2026-09-29**.
   configuration; preview/recorder/SD/DMA experiments must be absent. No physical
   result from c4912d5b transfers to the new image. The [first L install](validation/JC4880_L_CANDIDATE_20261005.md)
   restored startup/AP/API/USB0/FLX4, but one USB packet loss failed strict audio
-  smoke. Resolve the fault before final qualification. Repeat absolute resource
+  smoke. Corrective `M2.4-77-g08996790` passes focused startup, MAIN/cue listening,
+  active resources and 30-minute dense-status dual-loop timing with zero new
+  strict faults. Preserve its exact SHA/hash and complete final qualification;
+  this focused run is not the 180-minute release gate. Repeat absolute resource
   floors, listening/channel isolation/reconnect/rollback and at least 180 minutes
   on the final image with zero new strict output-late/underrun/USB faults.
 
