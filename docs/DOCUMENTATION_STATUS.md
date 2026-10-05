@@ -81,9 +81,13 @@ A software-verified candidate now captures bounded actual loop-start PCM in
 the decoder after manual IN and primes the FLAC handoff before reseek, keyed
 by request/load ownership. Full host tests and both IDF 6.0.2 builds pass;
 PSRAM-only storage adds 768,000 bytes total and leaves internal/DMA policy
-unchanged. Signed exact-image manual OUT/exit and resource/listening checks
-remain required. The failed installed image is still the authoritative
-hardware result until the replacement is tested.
+unchanged. Signed candidate `M2.4-86-g753ae13f` is now installed in `ota_0`.
+The same D2 Beethoven FLAC manual IN->OUT scenario passed 181.179 seconds
+with zero new strict PCM/output-late/USB faults, confirmed prefix use in the
+journal and operator-confirmed clean MAIN/D2 cue sound. Startup and final
+resource snapshots report zero allocation failures. This closes the reproduced
+D2 OUT symptom for that scenario; manual exit, both-deck/format parity,
+resize/scratch/cancellation and final-image acceptance remain open.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
