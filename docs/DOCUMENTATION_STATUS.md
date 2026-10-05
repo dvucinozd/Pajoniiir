@@ -130,6 +130,16 @@ disappeared after 16m56s of saved samples. At the first checkpoint audit both
 decks still played with zero new strict faults; they were stopped, evidence
 preserved and heartbeat paused. No new run or credit was applied. Final-image
 soak remains open and requires a monitor independent of tool-session lifetime.
+The operator then authorized credit of the saved 1,015.8899243 seconds and
+manually launched a console monitor independent of Codex sessions. The new
+segment completed 9,785.4764933 seconds, 8,654 requests and 955 saved active
+samples, with all five scheduled checkpoints, zero new strict audio/USB
+events, stable memory/stack reserves and zero failed allocations. Both decks
+are stopped on the same v91 image; operator MAIN/D1/D2 cue listening is PASS
+and the heartbeat is paused. The requested segmented accounting target is
+complete at 10,801.3664176 seconds, while uninterrupted 180-minute release
+qualification and other unrun hardware gates remain open. Public M2.4 is
+unchanged; the original incomplete evidence is retained.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
