@@ -88,6 +88,10 @@ journal and operator-confirmed clean MAIN/D2 cue sound. Startup and final
 resource snapshots report zero allocation failures. This closes the reproduced
 D2 OUT symptom for that scenario; manual exit, both-deck/format parity,
 resize/scratch/cancellation and final-image acceptance remain open.
+The subsequent half-loop test failed on one new output-late event (24,192 us,
+MAIN phase 22,719 us), with zero new PCM underruns. The monitor stopped both
+decks after detection. Resize remains a release blocker; scheduling/write
+delay investigation is open, separately from the passed manual OUT scenario.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
