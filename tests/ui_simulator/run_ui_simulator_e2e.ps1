@@ -142,7 +142,9 @@ if ($Presentation -eq 'legacy' -or $Presentation.StartsWith('product-')) {
     $Captures += @('memory_cues', 'memory_cues_scrolled', 'overview_loading', 'overview_error',
         'network_wait','network_aligning','network_locked')
 }
-if (-not $Presentation.StartsWith('native-')) { $Captures += @('overview_empty', 'library_unavailable') }
+if (-not $Presentation.StartsWith('native-')) {
+    $Captures += @('overview_empty', 'library_unavailable', 'overview_artwork_missing')
+}
 if ($Presentation.StartsWith('native-')) {
     $Captures = @('dj_overview','dj_library','dj_hotcues','dj_settings','dj_screensaver','dj_settings_restored','dj_empty','dj_error','dj_loading')
 }

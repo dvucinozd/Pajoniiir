@@ -16,6 +16,7 @@ idf_component_register(
          "ui_artwork.c"
          "ui_artwork_jpeg.c"
          "ui_artwork_thumb.c"
+         "ui_artwork_placeholder.c"
          "ui_load_gate.c"
          "ui_overview.c"
          "ui_lvgl_backend.c"

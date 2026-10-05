@@ -6,6 +6,7 @@
 #ifndef UI_LIBRARY_HOST_TEST
 #include "ui_artwork.h"
 #include "ui_artwork_thumb.h"
+#include "ui_artwork_placeholder.h"
 #ifndef WIN32
 #include "esp_heap_caps.h"
 #endif
@@ -220,6 +221,7 @@ static uint32_t *s_browse_track_keys;
 static size_t s_browse_track_count;
 static uint32_t s_browse_generation;
 static uint32_t s_page_track_keys[UI_LIBRARY_PAGE_ROWS];
+static bool s_page_has_track[UI_LIBRARY_PAGE_ROWS];
 static bool ui_library_track_load_busy(void);
 static void ui_library_set_load_busy(bool busy,const char *hint);
 #ifdef UI_LIBRARY_LINK
@@ -259,22 +261,28 @@ static void ui_library_update_artwork(void)
     if (s_active_tab != 1) return;
     for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row) {
         uint32_t key = s_page_track_keys[row];
-        if (!key) {
+        if (!s_page_has_track[row]) {
             if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
             s_row_art_key[row] = 0;
             continue;
         }
-        const uint16_t *pixels = ui_artwork_get(key, UI_ARTWORK_ROW);
+        const uint16_t *pixels = key ? ui_artwork_get(key, UI_ARTWORK_ROW) : NULL;
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
         if (s_dj_ready) dj_ui_library_set_row_art((uint8_t)row, pixels);
 #endif
-        if (!pixels || !s_row_art_pixels || !s_row_art[row]) continue;
-        if (s_row_art_key[row] != key) {
-            memcpy(s_row_art_pixels + row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
-                   pixels, UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX * sizeof(uint16_t));
-            s_row_art_key[row] = key;
-            lv_image_set_src(s_row_art[row], &s_row_art_dsc[row]);
-            lv_obj_invalidate(s_row_art[row]);
+        if (!s_row_art[row]) continue;
+        if (pixels && s_row_art_pixels) {
+            if (s_row_art_key[row] != key) {
+                memcpy(s_row_art_pixels + row * UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX,
+                       pixels, UI_ARTWORK_ROW_PX * UI_ARTWORK_ROW_PX * sizeof(uint16_t));
+                s_row_art_key[row] = key;
+                lv_image_set_src(s_row_art[row], &s_row_art_dsc[row]);
+                lv_obj_invalidate(s_row_art[row]);
+            }
+        } else {
+            s_row_art_key[row] = 0; /* allow a later cache hit to replace the logo */
+            if (lv_image_get_src(s_row_art[row]) != &ui_artwork_placeholder_row)
+                lv_image_set_src(s_row_art[row], &ui_artwork_placeholder_row);
         }
         lv_obj_remove_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
     }
@@ -991,6 +999,7 @@ static void ui_library_populate_rows(void)
     for (int row = 0; row < UI_LIBRARY_PAGE_ROWS; ++row)
         if (s_row_art[row]) lv_obj_add_flag(s_row_art[row], LV_OBJ_FLAG_HIDDEN);
     memset(s_page_track_keys, 0, sizeof(s_page_track_keys));
+    memset(s_page_has_track, 0, sizeof(s_page_has_track));
     if (s_library_table) lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
 #ifdef UI_LIBRARY_LINK
     if (s_link_source && s_library_table)
@@ -1004,6 +1013,7 @@ static void ui_library_populate_rows(void)
             int at=view_index-(int)s_link_first;
             if (at<0 || at>=UI_LIBRARY_PAGE_ROWS) continue;
             const dj_link_peer_track_t *t=&s_link_rows[at];
+            s_page_has_track[visible_row] = t->kind == DJ_LINK_PEER_ROW_TRACK;
             ui_library_row_text_t text;
             ui_library_format_row_text(&text,t->title,
                 t->kind==DJ_LINK_PEER_ROW_FOLDER ? "FOLDER" : t->kind==DJ_LINK_PEER_ROW_PLAYLIST ? "PLAYLIST" : t->artist,
@@ -1012,7 +1022,9 @@ static void ui_library_populate_rows(void)
             s_dj_rows[visible_row]=text;
 #endif
             if (s_library_table) {
-                lv_table_set_cell_value(s_library_table,visible_row,0,text.title);
+                if (s_page_has_track[visible_row])
+                    lv_table_set_cell_value_fmt(s_library_table,visible_row,0,"        %s",text.title);
+                else lv_table_set_cell_value(s_library_table,visible_row,0,text.title);
                 lv_table_set_cell_value(s_library_table,visible_row,1,text.artist);
                 lv_table_set_cell_value(s_library_table,visible_row,2,"");
                 lv_table_set_cell_value(s_library_table,visible_row,3,t->kind ? "" : text.bpm);
@@ -1048,6 +1060,7 @@ static void ui_library_populate_rows(void)
             library_track_t *track = library_get_ptr(track_index);
             if (track) s_page_track_keys[visible_row] = library_track_key(track);
 #endif
+            s_page_has_track[visible_row] = s_page_track_keys[visible_row] != 0;
             ui_library_fill_visible_row(visible_row, track_index);
         }
     }

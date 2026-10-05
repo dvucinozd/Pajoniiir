@@ -34,6 +34,7 @@ add_executable(ui_simulator_e2e
     "${UI_DIR}/Musieer_48.c"
     "${UI_DIR}/ui_library.c"
     "${UI_DIR}/ui_artwork_thumb.c"
+    "${UI_DIR}/ui_artwork_placeholder.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/simulator_artwork.c"
     "${UI_DIR}/ui_load_gate.c"
     "${UI_DIR}/ui_overview.c"
@@ -105,7 +106,7 @@ target_link_libraries(ui_simulator_e2e PRIVATE lvgl m)
 
 foreach(layout IN ITEMS compact wide)
     add_executable(dj_ui_${layout}_e2e dj_ui_native_e2e.c "${UI_DIR}/dj_ui.c"
-        "${UI_DIR}/ui_artwork_thumb.c" "${UI_DIR}/ui_dj_bridge.c"
+        "${UI_DIR}/ui_artwork_thumb.c" "${UI_DIR}/ui_artwork_placeholder.c" "${UI_DIR}/ui_dj_bridge.c"
         "${UI_DIR}/ui_color_preview.c"
         "${UI_DIR}/ui_beat_fx_format.c"
         "${UI_DIR}/ui_position_interpolator.c"

@@ -26,6 +26,19 @@ immutable.
 
 ## Next work
 
+For M2.5, qualify JC4880/FLX4 first. Close the focused local-library cases
+below, freeze a clean regular candidate, complete automated gates and perform
+exact-image OTA/startup/audio acceptance before signing off publication.
+JC1060/DDJ-400/Link, experimental recording and APTA need not block a release
+that explicitly excludes their production support. Web Profile Builder v4
+deployment is required only if its public exporter is part of the release scope.
+
+The user-supplied Pajoniiir logo is now the development artwork fallback for
+loaded tracks and Library rows. It is stored as native 34x34/40x40 RGB565
+constants; the existing real-artwork worker/cache remains authoritative.
+Confirm real cover, missing cover, page/media change and unloaded state on the
+M2.5 device candidate; this does not change the frozen v91's acceptance.
+
 | Work | Required evidence / boundary |
 | --- | --- |
 | JC4880 maintenance | Change-driven regressions on a new exact image; do not rebuild current master and call it the accepted v91 |

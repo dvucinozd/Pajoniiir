@@ -68,6 +68,12 @@ M2.4 power-cycle observation is historical, not a universal v91 requirement.
 
 ## Maintained architecture and software scope
 
+Development `master` additionally includes the user-supplied default Pajoniiir
+artwork logo. Overview and track Library rows use pre-rendered read-only
+thumbnails when real artwork is unavailable; empty product decks and folder
+rows remain distinct. It is a new M2.5 candidate change, not present in the
+frozen v91. Physical logo/render acceptance remains NOT RUN.
+
 One authoritative P4 core serves two board entrypoints:
 
 | Configuration | Identity | Status |

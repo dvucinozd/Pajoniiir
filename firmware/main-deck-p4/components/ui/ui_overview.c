@@ -24,6 +24,7 @@
 #include "ui_waveform_model.h"
 #include "splash_screen.h"
 #include "ui_artwork.h"
+#include "ui_artwork_placeholder.h"
 #include "ui_library.h"
 #include "ui_artwork_thumb.h"
 #include "hot_cue_store.h"
@@ -2512,13 +2513,19 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
         state->network_sync==DECK_NET_SYNC_LOCKED?COL_GREEN:
         state->network_sync!=DECK_NET_SYNC_OFF?COL_AMBER:COL_TEXT_MUTED);
     deck_loaded_track_summary_t track = {0};
-    const uint16_t *pixels = deck_core_get_loaded_track(deck, &track)
-        ? ui_library_deck_artwork(deck) : NULL;
+    const bool has_track = deck_core_get_loaded_track(deck, &track) && track.valid;
+    const uint16_t *pixels = has_track ? ui_library_deck_artwork(deck) : NULL;
     if (pixels && panel->artwork_pixels) {
         if (memcmp(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size)) {
             memcpy(panel->artwork_pixels, pixels, panel->artwork_dsc.data_size);
             lv_obj_invalidate(panel->artwork);
         }
+        if (lv_image_get_src(panel->artwork) != &panel->artwork_dsc)
+            lv_image_set_src(panel->artwork, &panel->artwork_dsc);
+        lv_obj_remove_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
+    } else if (has_track) {
+        if (lv_image_get_src(panel->artwork) != &ui_artwork_placeholder_deck)
+            lv_image_set_src(panel->artwork, &ui_artwork_placeholder_deck);
         lv_obj_remove_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
     } else lv_obj_add_flag(panel->artwork, LV_OBJ_FLAG_HIDDEN);
 

@@ -10,9 +10,16 @@ static ui_artwork_thumb_work_t s_work;
 static ui_artwork_thumb_t s_quad;
 static ui_artwork_thumb_t s_gray;
 static bool s_ready;
+static bool s_available = true;
+
+void ui_simulator_artwork_set_available(bool available)
+{
+    s_available = available;
+}
 
 const uint16_t *ui_artwork_get(uint32_t track_key, ui_artwork_size_t size)
 {
+    if (!s_available) return NULL;
     if (!s_ready) {
         bool q = ui_artwork_thumb_decode(ART_FIXTURE_QUAD,
                                          sizeof ART_FIXTURE_QUAD,

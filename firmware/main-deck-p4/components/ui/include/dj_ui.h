@@ -161,8 +161,8 @@ void dj_ui_set_cue_point(uint8_t deck, bool set, uint32_t pos_ms);        /* yel
 void dj_ui_set_memory_cues(uint8_t deck, const uint32_t *pos_ms, uint8_t count);
 void dj_ui_set_loop(uint8_t deck, bool active, uint32_t start_ms, uint32_t end_ms);
 void dj_ui_set_loop_armed(uint8_t deck, bool armed, uint32_t start_ms); /* loop-in set, loop-out pending */
-void dj_ui_set_artwork(uint8_t deck, const void *src);   /* lv_image_dsc_t* or "S:/path.png", 34x34. NULL = placeholder */
-void dj_ui_set_artwork_pixels(uint8_t deck, const uint16_t *px); /* DJ_ART_DECK_PX^2 RGB565, copied. NULL = placeholder */
+void dj_ui_set_artwork(uint8_t deck, const void *src);   /* lv_image_dsc_t* or "S:/path.png", 34x34. NULL = Pajoniiir logo */
+void dj_ui_set_artwork_pixels(uint8_t deck, const uint16_t *px); /* DJ_ART_DECK_PX^2 RGB565, copied. NULL = Pajoniiir logo */
 void dj_ui_set_beat_grid_visible(bool visible);
 void dj_ui_set_transport(uint8_t deck, bool playing, bool cue_lit);
 void dj_ui_set_master_tempo(uint8_t deck, bool on);

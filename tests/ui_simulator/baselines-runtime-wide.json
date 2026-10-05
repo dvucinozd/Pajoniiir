@@ -1,21 +1,22 @@
-﻿{
-    "schema":  1,
-    "width":  1024,
-    "height":  600,
-    "lvgl_commit":  "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
-    "captures":  {
-                     "overview_deck1":  "c9e3ef02a78f5b447968ab36f6523db2dd456db7006e652c3447b156b81df533",
-                     "overview_deck2":  "3ed769f1d0006fcecae14e2f72bcbb9d849ce930c7940fd675ab1da3acb5c38b",
-                     "library":  "5b9625a643a4b965c99c1207d320c481643e9d60fa0d04e7e28c7e864a0f3342",
-                     "library_playlist_root":  "755593624c9dd2a4992d8d5eb99f68f80e1382f2dd403d99bcb59d2e12da7734",
-                     "library_playlist_folder":  "3b7eddc56139bf4f5e38ed9f74e5506fa1f07c7d0409c70fc24e545797352207",
-                     "library_playlist_tracks":  "db2fedc336025ceeb622281416763b66c835649c94da2c6a5b58dadfeb9c792a",
-                     "overview_color_pwv4":  "742c1849a1e5c613f00597b1a027c0fa43c7b6b7fd29d861b034de32c8232093",
-                     "hot_cues":  "5818032976ef0b24608368675213424233ea360d744b3dd44c76157e1c8a0941",
-                     "settings":  "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
-                     "screensaver":  "ebef1da480aca395f88c76ca69c51f63e64e793379c4ab001ba52b40e5fb51f8",
-                     "settings_restored":  "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
-                     "overview_empty":  "2a38565c64602a697287789b7f80d45f3505b3936115dcc373be851bc949c34b",
-                     "library_unavailable":  "f86c3b1b12ceaa507dd00621a30d17294245588917d537bb63034d4466d9144b"
-                 }
+{
+  "schema": 1,
+  "width": 1024,
+  "height": 600,
+  "lvgl_commit": "263ae5e13dec1e525109aed556cec1bbdfdecd5a",
+  "captures": {
+    "overview_deck1": "943f09dba2d80c62651abc543727af38e5356a3368e6654e0788e5b44c37ae79",
+    "overview_deck2": "aacb2461c10b953ed4084c0aa5114cc1536b6e762ba4a34e0e00e905ae779145",
+    "library": "6923c338f160b5f9199da6e33536ba2ebf3875b4bb47f17b54bcd5412778d48b",
+    "library_playlist_root": "8e0e9875057cc300fbe55bd98954e6c0907e12d113f375d57f0b3b592caeeba6",
+    "library_playlist_folder": "1679df6343bfda5088b3954bd3c75934702798566872c70f951cbec4948778ee",
+    "library_playlist_tracks": "db2fedc336025ceeb622281416763b66c835649c94da2c6a5b58dadfeb9c792a",
+    "overview_color_pwv4": "1b5549ccffe4e3faca7f284f1764468bc9fb9c3381ac980f773862324e7847d9",
+    "hot_cues": "5818032976ef0b24608368675213424233ea360d744b3dd44c76157e1c8a0941",
+    "settings": "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
+    "screensaver": "ebef1da480aca395f88c76ca69c51f63e64e793379c4ab001ba52b40e5fb51f8",
+    "settings_restored": "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
+    "overview_empty": "435ff2e85299b68c790c4528a141b3072ed710a6d825798661f580491b8fd8ec",
+    "library_unavailable": "f86c3b1b12ceaa507dd00621a30d17294245588917d537bb63034d4466d9144b",
+    "overview_artwork_missing": "84b447d72ced0634d4458e8dbcf98df44bdf60e5a2d7877f34c118115eae5ae4"
+  }
 }

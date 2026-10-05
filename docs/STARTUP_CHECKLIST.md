@@ -131,6 +131,10 @@ See [G procedure](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
   target(s), preserve independent locks and the `0x380000` application budget.
 - [ ] UI: run real product layouts and relevant preview/Link simulator modes,
   visually review changes before updating screenshot baselines.
+- [ ] M2.5 artwork fallback: on the exact candidate, check real artwork remains
+  visible, no-artwork tracks show the Pajoniiir logo, late cover arrival replaces
+  the logo and media/page changes retain no previous cover. Empty product decks
+  and folder rows must not display stale track artwork.
 - [ ] Capture matching idle/loaded/active resource scenarios: allocation failures,
   internal/DMA free/minimum/largest block and critical stack floors. Missing
   evidence or failed absolute floors blocks acceptance; >10% regression requires

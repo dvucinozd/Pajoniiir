@@ -22,6 +22,14 @@ events publish the deck snapshot after dispatch, matching the firmware task.
 Live-duration checks exercise the production UI getter with shorter/longer
 files, unchanged analysis span, stale session rejection and unloaded fallback.
 
+Artwork checks exercise real cover → built-in Pajoniiir logo → the same real
+cover for deck headers and Library rows. Missing covers, empty decks, unavailable
+media and remote track/folder transitions are checked separately. The SVG source
+is in `firmware/main-deck-p4/components/ui/assets/default_artwork.svg`; the
+committed RGB565 image descriptors need no SVG renderer in firmware. To regenerate
+them, run `node tools/generate_default_artwork.cjs` with `sharp` available in
+Node's module path. Optional first argument writes PNG previews outside Git.
+
 The reference is a SHA-256 manifest over the complete RGB framebuffer. A
 one-pixel change therefore fails the gate and leaves the generated PPM captures
 under `.cache/ui_simulator/screenshots` for review.
@@ -54,9 +62,10 @@ hardware acceptance.
 
 The integrated gate runs eight presentation modes. `legacy`, `product-compact` and
 `product-wide` compile the actual previous product presentation, at 800x480 or
-1024x600, with seventeen captures including the bounded memory-cue list and its
-scroll state. `runtime-compact`/`runtime-wide` compile the actual optional
-preview plus the shared product Settings (thirteen captures each). The standalone
+1024x600, with twenty-one captures including the bounded memory-cue list, its
+scroll state and the missing-artwork Overview. `runtime-compact`/`runtime-wide`
+compile the actual optional preview plus the shared product Settings
+(fourteen captures each). The standalone
 `native-compact`/`native-wide` donor demos have nine captures each and do not
 prove runtime integration.
 

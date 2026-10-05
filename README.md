@@ -49,6 +49,10 @@ The [release record](docs/validation/JC4880_V91_RELEASE_20261005.md) documents
 the tested configuration, accepted segmented-soak exception and remaining
 qualification limits.
 
+Development `master` adds a built-in Pajoniiir logo for tracks without artwork
+in Overview and Library. This is intended for the next M2.5 candidate; the
+frozen v91 image is unchanged.
+
 ## Improvements and collaboration
 
 Thanks to collaborator **[kayrozen](https://github.com/kayrozen)** for his

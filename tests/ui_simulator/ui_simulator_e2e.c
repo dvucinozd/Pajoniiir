@@ -10,12 +10,14 @@
 #include "library.h"
 #include "hot_cue_store.h"
 #include "ui_artwork_thumb.h"
+#include "ui_artwork_placeholder.h"
 #include "artwork_fixture.h"
 #include "splash_screen.h"
 #include "ui_status.h"
 #include "ui_overview.h"
 
 extern void ui_simulator_deck_set_playing(bool playing);
+extern void ui_simulator_artwork_set_available(bool available);
 extern void deck_core_test_apply_event(const ctrl_event_t *event);
 extern uint32_t audio_engine_stub_duration_ms[2];
 extern uint32_t audio_engine_stub_session_generation[2];
@@ -79,6 +81,16 @@ static void pump(uint32_t duration_ms)
         elapsed += TICK_STEP_MS;
     }
     lv_refr_now(s_display);
+}
+
+static unsigned visible_logo_count(lv_obj_t *root, const lv_image_dsc_t *logo)
+{
+    if (!root) return 0;
+    unsigned count = lv_obj_check_type(root, &lv_image_class) &&
+        lv_obj_is_visible(root) && lv_image_get_src(root) == logo;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(root); ++i)
+        count += visible_logo_count(lv_obj_get_child(root, (int32_t)i), logo);
+    return count;
 }
 
 static lv_obj_t *find_visible_label(lv_obj_t *root, const char *text)
@@ -230,7 +242,11 @@ static lv_obj_t *link_table(lv_obj_t *root)
 static void link_row(const char *expected)
 {
     lv_obj_t *table=link_table(lv_screen_active());
-    if (!table || strcmp(lv_table_get_cell_value(table,0,0),expected)) fail("Link row/page did not match owned snapshot");
+    const char *title=table ? lv_table_get_cell_value(table,0,0) : "";
+    /* Track cells reserve cover space just like local rows; ignore that layout
+     * padding when checking the owned title/selection, not its identity. */
+    title += strspn(title," ");
+    if (!table || strcmp(title,expected)) fail("Link row/page did not match owned snapshot");
 }
 static int link_scenario(const char *output)
 {
@@ -240,7 +256,10 @@ static int link_scenario(const char *output)
     deck_core_get_loaded_track(CTRL_DECK_1,&before);
     if (!click_label("LOCAL USB")) fail("Link source selector missing");
     save_ppm(output,"link_loading"); pump(256);
-    link_row("Remote track 1"); save_ppm(output,"link_tracks");
+    link_row("Remote track 1");
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row) != 8)
+        fail("remote tracks without artwork did not show default logos");
+    save_ppm(output,"link_tracks");
     ui_library_page_delta(1); pump(256);
     if (ui_link_mock_visible_first()!=8) fail("visible page did not drive metadata window");
     link_row("Remote track 9");
@@ -280,6 +299,8 @@ static int link_scenario(const char *output)
     if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_ERR_NOT_FOUND)
         fail("pending new menu admitted a stale row");
     ui_link_mock_pending(false); pump(256); link_row("Subfolder");
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row))
+        fail("remote folders kept stale track artwork logos");
     save_ppm(output,"link_folders");
     ui_library_select_delta(1);
     if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_OK) fail("controller LOAD did not open remote playlist");
@@ -367,6 +388,17 @@ int main(int argc, char **argv)
     if (!ui_is_overview_active()) {
         fail("overview is not active after boot splash");
     }
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_deck) != 1)
+        fail("missing D2 artwork did not show logo while D1 kept its real cover");
+    ui_simulator_artwork_set_available(false);
+    pump(64);
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_deck) != 2)
+        fail("cover-to-logo transition retained stale deck artwork");
+    save_ppm(argv[1], "overview_artwork_missing");
+    ui_simulator_artwork_set_available(true);
+    pump(64);
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_deck) != 1)
+        fail("restored artwork failed to replace the logo with the same prior cover");
     save_ppm(argv[1], "overview_deck1");
     uint64_t deck1_hash = framebuffer_hash();
 
@@ -415,6 +447,16 @@ int main(int argc, char **argv)
     if (!click_label("LIBRARY") || !ui_is_library_active()) {
         fail("library navigation failed");
     }
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row) != 3)
+        fail("Library missing covers did not show exactly three default logos");
+    ui_simulator_artwork_set_available(false);
+    pump(64);
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row) != 5)
+        fail("Library cover-to-logo transition kept previous artwork");
+    ui_simulator_artwork_set_available(true);
+    pump(64);
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row) != 3)
+        fail("Library restored covers did not replace logos");
     save_ppm(argv[1], "library");
 
     if (!click_label("PLAYLISTS")) fail("playlist browser did not open");
@@ -679,6 +721,8 @@ int main(int argc, char **argv)
     if (!find_visible_label(lv_screen_active(), "NO TRACK") ||
         !find_visible_label(lv_screen_active(), "EMPTY"))
         fail("unload retained product track/status state");
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_deck))
+        fail("empty product deck retained a track artwork placeholder");
     for (int y = 55; y < 130; ++y) for (int x = 90; x < 600; ++x) {
         uint32_t pixel = s_framebuffer[y * DISPLAY_WIDTH + x] & 0xffffffu;
         int r = (pixel >> 16) & 255, g = (pixel >> 8) & 255, b = pixel & 255;
@@ -699,6 +743,8 @@ int main(int argc, char **argv)
         fail("unavailable source retained Library track rows");
     if (!find_visible_label(lv_screen_active(), "EMPTY"))
         fail("empty Library deck claimed ready");
+    if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_row))
+        fail("unavailable Library retained artwork placeholders");
     save_ppm(argv[1], "library_unavailable");
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     click_label("OVERVIEW");

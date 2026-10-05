@@ -3,6 +3,7 @@
  * 428b97dd4a175f03d3a172c8db9c4d5ed94195fb; see DJ_UI_NOTICE.md.
  * Adapted for the shared P4 state owner, LVGL 9.5 and native board layouts. */
 #include "dj_ui.h"
+#include "ui_artwork_placeholder.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -168,7 +169,7 @@ static void art_buffers(void)
         s_art_px = calloc(n, sizeof(uint16_t));
 #endif
     }
-    if (!s_art_px) return;   /* thumbnails stay hidden */
+    if (!s_art_px) return;   /* real covers fall back to the immutable logo */
     for (int r = 0; r < DJ_LIB_ROWS; r++) {
         lv_image_dsc_t *i = &g.row_art_dsc[r];
         i->header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -189,16 +190,19 @@ static void art_buffers(void)
     }
 }
 
-/* Copy into the image's own buffer; same descriptor, so invalidate (an
- * uncompressed variable image is drawn straight from its data). NULL hides
- * the image. */
+/* Copy real cover art into the image's own buffer. Missing art uses the
+ * immutable logo descriptor directly, without borrowing a cache buffer. */
 static bool art_show(lv_obj_t *img, lv_image_dsc_t *dsc, const uint16_t *px, uint32_t pixels)
 {
-    if (!img || !px || !dsc->data) {
-        if (img) lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
-        return false;
+    if (!img) return false;
+    if (!px || !dsc->data) {
+        const lv_image_dsc_t *placeholder = pixels == ART_ROW_PIXELS
+            ? &ui_artwork_placeholder_row : &ui_artwork_placeholder_deck;
+        if (lv_image_get_src(img) != placeholder) lv_image_set_src(img, placeholder);
+        lv_obj_remove_flag(img, LV_OBJ_FLAG_HIDDEN);
+        return true;
     }
-    if (!lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN) &&
+    if (lv_image_get_src(img) == dsc && !lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN) &&
         memcmp(dsc->data, px, pixels * sizeof(uint16_t)) == 0) return true;
     memcpy((void *)dsc->data, px, pixels * sizeof(uint16_t));
     lv_image_set_src(img, dsc);
@@ -1937,8 +1941,9 @@ void dj_ui_set_artwork(uint8_t deck, const void *src)
         lv_obj_remove_flag(d->ft_art, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(d->ft_art_lbl, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_add_flag(d->ft_art, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(d->ft_art_lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_image_set_src(d->ft_art, &ui_artwork_placeholder_deck);
+        lv_obj_remove_flag(d->ft_art, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(d->ft_art_lbl, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
