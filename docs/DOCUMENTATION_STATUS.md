@@ -118,6 +118,12 @@ passed API and operator control/Library checks; library generation advanced
 fault deltas and failed allocations. Operator confirmed clean MAIN/D1/D2 cue,
 normal speed and cue controls after reboot/reconnect; active removal and
 repeated hotplug are not accepted by these checks.
+The local D1 test cue was then deleted with SHIFT + pad 1 and remained empty
+after reload. Normal FLX4 D1 LOAD while playing preserved `Extatique` in all
+43 active snapshots over 90.780 seconds, with operator confirmation and zero
+strict deltas/failed allocations. This closes those focused scenarios only;
+source-cue tombstone reimport/cross-media isolation and other physical load-lock
+variants remain open.
 
 The active product has one firmware and release target:
 `firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
