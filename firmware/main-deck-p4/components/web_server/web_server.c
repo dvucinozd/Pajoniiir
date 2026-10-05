@@ -1797,7 +1797,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"dma_largest_free\":%u,"
         "\"psram_free\":%u,"
         "\"psram_min_free\":%u,"
-        "\"psram_largest_free\":%u"
+        "\"psram_largest_free\":%u,"
+        "\"heap_walk_max_us\":[%u,%u,%u]"
         "}"
         "}",
         audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
@@ -1899,7 +1900,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.dma_largest_free,
         (unsigned)diagnostics.psram_free,
         (unsigned)diagnostics.psram_min_free,
-        (unsigned)diagnostics.psram_largest_free);
+        (unsigned)diagnostics.psram_largest_free,
+        (unsigned)diagnostics.heap_walk_max_us[0],
+        (unsigned)diagnostics.heap_walk_max_us[1],
+        (unsigned)diagnostics.heap_walk_max_us[2]);
     free(p4_usb_json);
     free(crash_dump_json);
     free(trace_json);

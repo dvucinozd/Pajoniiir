@@ -268,6 +268,7 @@ typedef struct {
     uint32_t psram_free;
     uint32_t psram_min_free;
     uint32_t psram_largest_free;
+    uint32_t heap_walk_max_us[3]; /* internal, DMA, PSRAM; query incl. preemption */
 } audio_engine_diagnostics_snapshot_t;
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);

@@ -2841,6 +2841,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_engine_memory"
+        Dir = "tests/audio_engine_memory"
+        Target = "test_audio_engine_memory.exe"
+        Args = @(
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-o", "test_audio_engine_memory.exe", "test_audio_engine_memory.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_engine_memory.c"
+        )
+    },
+    @{
         Name = "ui_psram_allocator"
         Dir = "tests/ui_psram_allocator"
         Target = "test_ui_psram_allocator.exe"
