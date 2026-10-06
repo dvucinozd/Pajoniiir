@@ -14,7 +14,10 @@ worst-case Campaign B timing. Legacy-image acceptance does not transfer.
 Unavailable hardware is NOT RUN. Public board-channel publication requires
 separate authorization after that board's acceptance.
 
-`M3-dev-g2fa8a6373847` is installed in M3 ota_1 with VALID health state.
+`M3-dev-g180b008c4f19` is installed in M3 ota_0 with VALID health state,
+verified against its exact clean source and ELF on 2026-10-07. The install
+script's earlier 100-second polling deadline expired; the later runtime
+observation does not establish startup timing within that deadline.
 [The current candidate record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md) separates
 the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
 operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
@@ -24,9 +27,13 @@ Both 11574f4e and the installed c698fa67 ordering repair failed on
 operator-confirmed dual waveform deformation. The latter also showed visual
 stutter while audio remained clean. The measurement candidate reproduced the
 failure: 57 coalesced refreshes in about 12 seconds of dual playback. The next
-repair removes duplicate PPA cache maintenance and unchanged frame resampling;
+repair, now installed after all three builds and exact-source CI passed,
+removes duplicate PPA cache maintenance and unchanged frame resampling;
 see [the regression record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
-The full timing gate must restart after exact-image physical retest.
+The installed repair also failed the physical retest: solo sharp, dual deformed,
+audio clean, 55 coalesced refreshes in the short dual window. Investigate the
+remaining blocking UI status reads before another candidate; the full timing
+gate must restart after a successful exact-image physical retest.
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).

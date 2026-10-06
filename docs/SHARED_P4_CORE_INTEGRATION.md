@@ -272,3 +272,14 @@ D1 sharp, dual deformed and clean sound. A roughly 12-second dual window measure
 57 coalesced refreshes and a 15.5-ms mean lower-waveform finish after refresh.
 The next focused repair removes duplicate PPA cache sync and unchanged-frame
 resampling; neither this measurement nor a successful build is visual acceptance.
+
+Repair source 180b008c passed all three clean-source ordinary builds, unchanged
+locks, existing simulator baselines, full host qualification and exact-source
+matrix/USB/documentation CI. Its signed M3 package returned HTTP 200, but the
+installation helper expired before observing VALID. On 2026-10-07 the live
+runtime confirmed the exact source/ELF, clean identity, VALID ota_0 and idle OTA.
+The later observation does not establish startup time within the earlier
+deadline. The same 324-track mixed-rate preflight is prepared for physical
+solo/dual retest. The operator confirmed solo sharp, dual deformed and clean
+sound; 55 refreshes coalesced during the short dual window. This is another
+visual FAIL. Both decks were stopped and the new full soak was NOT RUN.

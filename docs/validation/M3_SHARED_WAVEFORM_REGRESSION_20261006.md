@@ -170,3 +170,56 @@ playback avoids a second round of audio/file-mutex-backed reads. Other board
 policies retain their existing refreshed-context behavior. Panel timing,
 two-deck redraw order, cadence and geometry remain unchanged. Quantitative and
 operator retests must establish whether this repair is sufficient.
+
+## Installed cache/context repair, 2026-10-07
+
+The live runtime now confirms `M3-dev-g180b008c4f19` in VALID `ota_0`:
+
+- Clean source `180b008c4f191456b98645aaf55f324d2a33a6ae`.
+- ELF SHA-256 `791667086cc29dd7fb53119c9d89ce3fc8d8eca3f7a29b94b5913a409b8341cf`.
+- Image 2,568,304 B, SHA-256 `3ce734e567dda38abe2a103b6f5133d922325b0231aa723c4168e650c87b0728`.
+- Bundle 2,568,492 B, SHA-256 `4a56b5c0d27cb94b8d4db854813fe5f8cb33666976122905577c561ab9b29f3d`.
+
+All three clean-source ordinary ESP-IDF 6.0.2 builds, unchanged locks, signed
+packages and candidate verification passed. Full local host qualification and
+all three product simulator presentations passed without baseline changes.
+Exact-source CI passed: [12-job matrix](https://github.com/dvucinozd/Pajoniiir/actions/runs/37521456636),
+[USB](https://github.com/dvucinozd/Pajoniiir/actions/runs/37521456864),
+[documentation](https://github.com/dvucinozd/Pajoniiir/actions/runs/37521456739).
+The separate [Advanced Security review](https://github.com/dvucinozd/Pajoniiir/actions/runs/37521478181)
+failed with HTTP 402/monthly quota; no security review completed.
+
+The upload returned HTTP 200. The installation script's 100-second polling
+deadline then expired without confirming the new image. The later live check
+confirmed exact source/ELF/board/project, VALID and idle. This distinguishes
+successful current installation from an unestablished earlier startup timing;
+it does not prove that the image became VALID within the polling deadline.
+Raw upload evidence remains under `.cache/m3-migration/20261006-180b008c`;
+later runtime verification and retest evidence are under
+`.cache/m3-migration/20261007-180b008c`.
+
+The 324-track catalog and FLX4 returned. D1 44.1 kHz / +5% and D2 48 kHz / -5%
+were loaded, with the same 30-second loop starts. Both decks remain stopped
+until the operator enables MT and eight-beat zoom for the comparable retest.
+The operator enabled MT on both decks and eight-beat zoom. The same three
+approximately 12-second windows completed and automatically stopped both decks.
+
+| Measurement | Stopped | Solo D1 | Dual |
+|---|---:|---:|---:|
+| Refresh interrupts | 605 | 605 | 603 |
+| Coalesced refreshes | 0 | 0 | 55 |
+| Frame interval mean, us | 19,999.1 | 19,999.1 | 22,006.3 |
+| Wake latency mean, us | 45.5 | 149.9 | 2,702.1 |
+| Overview entry after refresh mean, us | 131.7 | 391.9 | 4,079.3 |
+| Callback duration mean, us | 412.7 | 5,599.0 | 16,613.2 |
+| D1 cache / blit mean, us | No redraw | 188.4 / 3,821.9 | 208.5 / 4,170.1 |
+| D2 cache / blit mean, us | No redraw | No redraw | 238.0 / 4,542.4 |
+| D1 finish after refresh mean, us | No redraw | 4,587.3 | 8,823.2 |
+| D2 finish after refresh mean, us | No redraw | No redraw | 15,365.6 |
+
+There were 549 dual redraws; 51 D1 and 109 D2 finishes exceeded 20 ms.
+The operator again confirmed solo sharp, dual deformed, clean MAIN/headphones
+sound. PCM underrun, UAC dropped/overflow and output-late counters remained zero
+in the short test. This candidate fails the physical visual gate; the small
+timing differences do not establish a material repair. The new 60-minute soak
+was NOT RUN. No public release/channel was modified.
