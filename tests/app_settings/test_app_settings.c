@@ -276,6 +276,13 @@ static void test_link_is_default_off_and_durable(void)
 
 int main(void)
 {
+    const esp_err_t init_errors[] = {ESP_ERR_NVS_NO_FREE_PAGES, ESP_ERR_NVS_NEW_VERSION_FOUND, ESP_FAIL};
+    for (unsigned i = 0; i < sizeof(init_errors)/sizeof(init_errors[0]); ++i) {
+        reset_all();
+        g_test_nvs.init_result = init_errors[i];
+        CHECK(app_settings_init() == init_errors[i]);
+        CHECK(g_test_nvs.erase_calls == 0 && g_test_nvs.open_calls == 0);
+    }
     test_setter_before_worker_persists_synchronously();
     test_failed_write_is_not_published();
     test_value_is_clamped();

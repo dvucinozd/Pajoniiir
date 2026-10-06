@@ -1,5 +1,28 @@
 # Pajoniiir OTA Update Procedure
 
+For the shared-core migration, all three boards have separate project identities:
+`main-deck-p4` (JC4880), `main-deck-jc1060` and `main-deck-m3`.
+M3 uses its own `/m3` pull root and `M3-*` release ancestry. A tagless clean
+development version is `M3-dev-g<12-hex-SHA>`; automatic pull discovery is disabled.
+Development packages are signed local migration candidates, not public releases.
+Explicit release versions require clean source and at most 31 UTF-8 bytes.
+
+Use `-Project main-deck-m3 -DevelopmentCandidate` to package a clean M3 development
+build. Ordinary packaging rejects recorder/UI/storage/Link experiments and OTA
+fault injection. Wrong signed project/chip is rejected before `esp_ota_begin`.
+Read [the preserving M3 wired migration procedure](M3_SHARED_CORE_MIGRATION.md)
+for the one-time project identity transition; the old runtime cannot accept the
+new project's OTA bundle. Existing tags/assets/channels remain immutable.
+
+`/api/firmware` reports `running_image_state` separately from OTA transfer state.
+An upload returning HTTP 200 does not prove health confirmation: wait for the
+expected OTA slot, exact board/source/ELF and IDF state `valid`. The factory
+state is reported as `factory`, because it is outside OTA rollback selection.
+The requested AP must have actual DHCP readiness and HTTP must be running before
+pending confirmation. If Wi-Fi was not requested, it is not a health prerequisite.
+Absent FLX4/storage does not trigger rollback. Integrated physical rejection,
+interruption and rollback gates still require the new image.
+
 Status: **current board-specific P4 procedure, reconciled 2026-10-06**.
 Published JC4880/FLX4 release `M2.5` freezes source
 `20f1c3f04a615209ae25e9bbdae649d0f5b44e8d`. The original image, not a rebuild

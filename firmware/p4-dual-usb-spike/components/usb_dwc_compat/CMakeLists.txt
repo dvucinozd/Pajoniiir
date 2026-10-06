@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "../../../main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
+    SRCS "../../../p4-core/components/usb_storage/usb_dwc_hal_compat.c"
     REQUIRES hal
 )
 

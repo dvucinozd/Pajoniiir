@@ -323,6 +323,17 @@ static void test_null_and_empty_are_inert(void)
 
 int main(void)
 {
+    assert(p4_ota_pull_release_compare("M3-52", "M3-51") == P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_release_compare("M3-51-4-g123abcd", "M3-51-3-gabcd123") == P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_release_compare("M3-51", "M3-52") == P4_OTA_PULL_RELEASE_OLDER);
+    assert(p4_ota_pull_release_compare("M2.5", "M3-51") == P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_release_compare("M3-52", "M2.5") == P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_version_supported("M3-51"));
+    assert(p4_ota_pull_version_supported("M3-51-3-gabcdef1"));
+    assert(!p4_ota_pull_version_supported("M3-dev-g123456789abc"));
+    assert(!p4_ota_pull_version_supported("M3-51-dirty"));
+    assert(!p4_ota_pull_version_supported("M3-4294967296"));
+    assert(!p4_ota_pull_version_supported(NULL));
     test_parses_the_document_the_publisher_writes();
     test_release_comparison_is_newer_only_and_monotonic();
     test_offer_freshness_is_wrap_safe();

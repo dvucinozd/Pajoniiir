@@ -18,28 +18,28 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c11 \
            -DAUDIO_ENGINE_PC_TEST \
            -DANLZ_STANDALONE_TEST \
-           -I../../firmware/main-deck-p4/components/audio_engine \
-           -I../../firmware/main-deck-p4/components/audio_engine/include \
-           -I../../firmware/main-deck-p4/components/library/include \
+           -I../../firmware/p4-core/components/audio_engine \
+           -I../../firmware/p4-core/components/audio_engine/include \
+           -I../../firmware/p4-core/components/library/include \
            -I../support/stubs
 
-AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_eq.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_filter.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c
+AUDIO_SRC = ../../firmware/p4-core/components/audio_engine/audio_engine.c \
+            ../../firmware/p4-core/components/audio_engine/audio_track_length.c \
+            ../../firmware/p4-core/components/audio_engine/audio_seek_skip.c \
+            ../../firmware/p4-core/components/audio_engine/audio_delay_fx.c \
+            ../../firmware/p4-core/components/audio_engine/audio_eq.c \
+            ../../firmware/p4-core/components/audio_engine/audio_filter.c \
+            ../../firmware/p4-core/components/audio_engine/audio_pad_fx.c \
+            ../../firmware/p4-core/components/audio_engine/audio_mixer.c \
+            ../../firmware/p4-core/components/audio_engine/audio_pcm_ring.c \
+            ../../firmware/p4-core/components/audio_engine/audio_resampler.c \
+            ../../firmware/p4-core/components/audio_engine/audio_output_mixer.c \
+            ../../firmware/p4-core/components/audio_engine/audio_compressed_cache.c \
+            ../../firmware/p4-core/components/audio_engine/audio_fw_preload.c \
+            ../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c \
+            ../../firmware/p4-core/components/audio_engine/audio_fw_task_context.c \
+            ../../firmware/p4-core/components/audio_engine/audio_fw_task_plan.c \
+            ../../firmware/p4-core/components/audio_engine/audio_smart_cfx.c
 
 SRCS    = test_audio_engine.c \
           $(AUDIO_SRC)

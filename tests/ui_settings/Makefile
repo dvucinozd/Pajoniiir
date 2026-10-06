@@ -2,10 +2,10 @@
 
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 \
-           -I../../firmware/main-deck-p4/components/ui/include
+           -I../../firmware/p4-core/components/ui/include
 
 SRCS    = test_ui_settings.c \
-          ../../firmware/main-deck-p4/components/ui/ui_settings.c
+          ../../firmware/p4-core/components/ui/ui_settings.c
 
 TARGET  = test_ui_settings
 

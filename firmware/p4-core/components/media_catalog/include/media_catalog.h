@@ -1,0 +1,101 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+#include "rekordbox_anlz.h"
+#include "media_identity.h"
+
+typedef enum { MEDIA_SOURCE_USB, MEDIA_SOURCE_DJ_LINK } media_source_t;
+
+typedef struct {
+    uint32_t track_key;
+    uint32_t rekordbox_track_id;
+    uint16_t bpm;
+    uint32_t duration_ms;
+    char title[96];
+    char artist[64];
+    char album[64];
+    char key[16];
+} media_catalog_track_t;
+
+typedef struct {
+    uint32_t track_key;
+    uint16_t bpm;
+    uint32_t duration_ms;
+    char title[96];
+    char artist[64];
+    char key[16];
+} media_catalog_row_t;
+
+typedef struct {
+    uint32_t generation;
+    size_t count;
+    media_catalog_row_t *rows;
+} media_catalog_snapshot_t;
+
+/* Mounted-medium evidence; no ANLZ load or deck state mutation. */
+typedef struct {
+    uint32_t track_key;
+    uint32_t rekordbox_track_id;
+    char path[256];
+    char title[96];
+    uint8_t export_digest[32];
+    media_persistent_id_t persistent_id;
+    uint64_t file_size;
+    int64_t mtime;
+} media_catalog_identity_record_t;
+esp_err_t media_catalog_identity_record(int index, uint32_t generation,
+                                        media_catalog_identity_record_t *out);
+
+typedef struct {
+    uint32_t track_key;
+    media_persistent_id_t persistent_id;
+    media_source_t source;
+    char audio_path[272];
+    char dat_path[272];
+    char ext_path[272];
+    char artwork_path[272];
+    uint32_t duration_ms;
+    uint32_t analysis_span_ms;
+    uint16_t bpm;
+    uint8_t waveform_low[400];
+    uint8_t has_waveform;
+    uint32_t pvbr[400];
+    uint8_t has_pvbr;
+} media_loaded_track_t;
+
+esp_err_t media_catalog_init(void);
+int media_catalog_count(void);
+uint32_t media_catalog_generation(void);
+bool media_catalog_load_in_progress(void);
+esp_err_t media_catalog_get(int index, media_catalog_track_t *out_track);
+esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row);
+esp_err_t media_catalog_snapshot_acquire(media_catalog_snapshot_t *out_snapshot);
+void media_catalog_snapshot_release(media_catalog_snapshot_t *snapshot);
+/* Identity of one row without materialising its text/waveform columns. Prefer
+ * this over media_catalog_get_row() wherever only the key is needed — notably
+ * the LVGL draw path, which asks per cell. */
+esp_err_t media_catalog_row_key(int index, uint32_t *out_key);
+/* Row index currently holding `track_key`, or -1. One pass under the library
+ * lock instead of N full-record copies. */
+int media_catalog_find_index_by_key(uint32_t track_key);
+void media_catalog_sort(int field_type, bool descending);
+
+/* Legacy index entry point retained for local UI compatibility. It snapshots the
+ * stable identity and generation, then delegates to the transactional loader. */
+esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded);
+
+/* Resolve and load a track by stable identity. Sorting is serialized against the
+ * operation. ESP_ERR_INVALID_STATE means the supplied generation is stale or the
+ * USB catalog changed before completion; callers must not reset or load a deck in
+ * that case. */
+esp_err_t media_catalog_load_by_identity(uint32_t track_key,
+                                         uint32_t expected_generation,
+                                         media_catalog_track_t *out_track,
+                                         media_loaded_track_t *out_loaded);
+
+/* Return an owned deep copy. Caller calls anlz_free(). */
+esp_err_t media_catalog_clone_loaded_anlz(anlz_metadata_t *out);

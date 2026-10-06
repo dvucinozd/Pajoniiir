@@ -1,5 +1,47 @@
 # P4 operation and release checklist
 
+For the shared-core/M3 development branch, use the exact target identity and
+[integration gates](SHARED_P4_CORE_INTEGRATION.md). Existing physical records
+remain image-specific; successful builds do not qualify the new M3 target.
+
+## Shared-core M3 first installation
+
+- [ ] Freeze clean source, successful exact-SHA CI, image/bundle/ELF hashes and
+  candidate evidence; keep the signed artifacts immutable.
+- [ ] Identify the M3 MAC, pre-v3 silicon, COM port, old slot and old image SHA.
+- [ ] Stop playback and use the [preserving migration tool](M3_SHARED_CORE_MIGRATION.md);
+  save full flash, or explicitly reuse a verified installed recovery image and
+  capture protected regions/NVS/OTA selection before any device write.
+- [ ] Verify factory write before resetting OTA selection. Preserve bootloader,
+  partitions and settings. Keep wired recovery access.
+- [ ] Verify board/project/source/ELF and operator settings, then install the
+  matching signed bundle and require `running_image_state=valid` in an OTA slot.
+- [ ] Complete [Campaign A/B](RELIABILITY_MONITORING_PLAN.md) and operator audio,
+  panel/touch/controls acceptance on this exact image. Record unrun gates explicitly.
+
+These checks do not authorize publication or qualify JC4880/JC1060 hardware.
+
+For the installed `M3-dev-ge4536de2ec6f` candidate in ota_1, see the
+[exact-image acceptance record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
+Both 11574f4e and c698fa67 failed on dual waveform deformation; c698fa67 also
+showed visual stutter without audible stutter.
+The measurement candidate also reproduced the visual failure and measured
+57 coalesced refreshes in a short dual-playback window. Follow the
+[repair/retest record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md) before
+starting a new 60-minute campaign. Exact clean source/ELF and VALID state were
+verified on 2026-10-07 after the upload helper's earlier polling deadline
+expired; this later observation is not a startup-time measurement.
+Its short retest also failed: solo sharp, dual deformed, audio clean, with 55
+coalesced refreshes. Both decks are stopped. The full soak remains NOT RUN.
+The zero-wait display-observation e4536de2 candidate passed production contention
+tests, unchanged simulator baselines, all three clean builds, CI and packaging.
+Its installed source/ELF and VALID state were observed within the helper deadline,
+but the operator again confirmed solo sharp, dual deformed and clean sound.
+The dual window coalesced 65 refreshes. Both decks are stopped; Campaign B
+cannot begin before a successful measured/operator retest. See the
+[diagnostic audit](validation/M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md) for
+remaining loop-query waits and heap/UART overhead.
+
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the
 [M2.5 release](validation/M2_5_RELEASE_20261006.md) is not a request to

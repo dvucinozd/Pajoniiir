@@ -227,6 +227,10 @@ int main(int argc, char **argv)
     };
     audio_keylock_reset(&deck_1.keylock, 0u);
     audio_keylock_reset(&deck_2.keylock, 0u);
+#ifdef M3_DSP_POLICY_TEST
+    deck_1.keylock.antialias = deck_1.keylock.dense_correlation = true;
+    deck_2.keylock.antialias = deck_2.keylock.dense_correlation = true;
+#endif
     audio_keylock_configure(&deck_1.keylock,
                             deck_1.tempo_factor,
                             deck_1.rate_ratio);

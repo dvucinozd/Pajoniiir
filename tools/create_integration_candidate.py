@@ -13,7 +13,29 @@ import shutil
 from check_board_build import verify as verify_board
 from ota_signing import inspect_bundle, _load_public, _raw_verify
 
-PROJECTS = {"main-deck-p4": "JC4880", "main-deck-jc1060": "JC1060"}
+PROJECTS = {"main-deck-p4": "JC4880", "main-deck-jc1060": "JC1060", "main-deck-m3": "M3"}
+
+MATRIX_JOBS = {"Host regression tests"}
+MATRIX_JOBS |= {f"ESP32-P4 M3 shared-core firmware ({v})" for v in ("regular", "recorder", "dj-ui", "link")}
+MATRIX_JOBS |= {f"ESP32-P4 firmware ({v})" for v in ("regular", "recorder", "dj-ui")}
+MATRIX_JOBS |= {f"ESP32-P4 JC1060 firmware ({v})" for v in ("regular", "recorder", "psram", "dj-ui")}
+ADDITIONAL_CI = {
+    "usb": ("P4 dual USB host software gates", {"Host tests and ESP32-P4 builds"}),
+    "documentation": ("Documentation integrity", {"Links, retired paths and whitespace"}),
+}
+
+
+def verify_ci(ci, commit, required_jobs, workflow=None):
+    """A green board matrix cannot stand in for the other required gates."""
+    jobs = ci.get("jobs", [])
+    names = [j.get("name") for j in jobs]
+    if (ci.get("headSha") != commit or ci.get("conclusion") != "success"
+            or not required_jobs <= set(names) or len(names) != len(set(names))
+            or any(j.get("conclusion") != "success" for j in jobs)
+            or (workflow is not None and ci.get("workflowName") != workflow)
+            or not ci.get("url", "").startswith("https://github.com/dvucinozd/Pajoniiir/actions/runs/")):
+        raise ValueError("exact candidate SHA needs every required successful CI job")
+    return {"url": ci["url"], "head_sha": commit, "jobs": len(jobs)}
 
 
 def record(path):
@@ -63,6 +85,7 @@ def verify_release_manifest(release, public, project, version, image, bundle):
         raise ValueError("wrong release manifest")
     target = info["targets"][0]
     expected = {"target": "p4", "project": project, "file": image["file"],
+                "image_elf_sha256": (release / image["file"]).read_bytes()[176:208].hex(),
                 "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
                 "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
     if any(target.get(k) != v for k, v in expected.items()):
@@ -78,6 +101,8 @@ def main():
     parser.add_argument("--project", choices=PROJECTS, required=True)
     parser.add_argument("--public-key", required=True, type=Path)
     parser.add_argument("--ci-evidence", required=True, type=Path)
+    parser.add_argument("--usb-ci-evidence", required=True, type=Path)
+    parser.add_argument("--docs-ci-evidence", required=True, type=Path)
     args = parser.parse_args()
     root, build, release = args.repo_root.resolve(), args.build.resolve(), args.release.resolve()
     if git(root, "status", "--porcelain", "--untracked-files=normal"):
@@ -85,10 +110,18 @@ def main():
     commit = git(root, "rev-parse", "HEAD")
     if git(root, "rev-parse", "@{upstream}") != commit:
         raise ValueError("candidate source is not the pushed upstream revision")
-    version = git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*")
+    identity = json.loads((build / "board_build_identity.json").read_text())
+    if identity != {"source_sha": commit, "source_dirty": 0}:
+        raise ValueError("stale or dirty compiled source identity")
+    version = json.loads((build / "project_description.json").read_text())["project_version"]
+    if args.project != "main-deck-m3" and version != git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*", "--match", "M2*"):
+        raise ValueError("stale JC version ancestry")
     ci = json.loads(args.ci_evidence.read_text(encoding="utf-8-sig"))
-    if ci["headSha"] != commit or ci["conclusion"] != "success" or len(ci["jobs"]) != 8 or any(j["conclusion"] != "success" for j in ci["jobs"]):
-        raise ValueError("exact candidate SHA needs all eight successful CI jobs")
+    ci_summary = verify_ci(ci, commit, MATRIX_JOBS, "ESP-IDF 6.0.2 migration")
+    for gate, path in (("usb", args.usb_ci_evidence), ("documentation", args.docs_ci_evidence)):
+        extra = json.loads(path.read_text(encoding="utf-8-sig"))
+        workflow, jobs = ADDITIONAL_CI[gate]
+        ci_summary[gate] = verify_ci(extra, commit, jobs, workflow)
     verify_board(build, args.project)
     config = (build / "config/sdkconfig.h").read_text()
     if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
@@ -108,6 +141,9 @@ def main():
     if idf != "v6.0.2":
         raise ValueError("candidate requires ESP-IDF v6.0.2")
     manifest, signature = verify_release_manifest(release, args.public_key, args.project, version, image, bundle)
+    signed_source = json.loads((release / "manifest.json").read_text(encoding="utf-8-sig"))
+    if signed_source.get("source_sha") != commit:
+        raise ValueError("signed release manifest has another source SHA")
     locks = [record(root / "firmware" / p / "dependencies.lock") | {"project": p} for p in PROJECTS]
     files = [record(build / "config/sdkconfig.h"), record(build / "partition_table/partition-table.bin"),
              record(build / "bootloader/bootloader.bin"), record(build / "project_description.json")]
@@ -128,8 +164,9 @@ def main():
         "version": version, "project": args.project, "board": PROJECTS[args.project],
         "idf": "6.0.2", "application_budget": 0x380000, "ota_slot_size": 0x400000,
         "software_verified": True, "hardware_accepted": False, "released": False,
-        "ci": {"url": ci["url"], "head_sha": ci["headSha"], "jobs": len(ci["jobs"])},
+        "ci": ci_summary,
         "image": image, "bundle": bundle, "locks": locks, "build_files": files,
+        "image_elf_sha256": (build / image["file"]).read_bytes()[176:208].hex(),
         "release_manifest": manifest, "release_signature": signature,
         "initial_wired_install": {"flash_files": evidence_files,
             "flash_settings": flash["flash_settings"],
@@ -137,7 +174,8 @@ def main():
             "performed": False},
         "physical_gates": {g: "NOT RUN" for g in (
             "startup_resources", "touch_render", "controller_midi_led", "main_cue_audio",
-            "seek_cue_scratch_loop", "reconnect_ota_rollback", "dual_deck_180_minutes",
+            "seek_cue_scratch_loop", "signed_ota_startup_rollback", "campaign_a_30_cycles",
+            "campaign_b_worst_case_60_minutes", "operator_audio_ui_confirmation",
             *( ("ethernet_peer_browse_download", "network_sync_phase_handoff") if args.project == "main-deck-jc1060" else () ))},
     }
     output = release / "candidate-evidence.json"

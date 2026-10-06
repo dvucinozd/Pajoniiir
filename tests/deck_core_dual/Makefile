@@ -4,22 +4,22 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -DDECK_CORE_PC_TEST \
            -Istubs \
            -I../support/stubs \
-           -I../../firmware/main-deck-p4/components/audio_engine/include \
-           -I../../firmware/main-deck-p4/components/beat_jump/include \
-           -I../../firmware/main-deck-p4/components/deck_core/include \
-           -I../../firmware/main-deck-p4/components/control_link/include \
-           -I../../firmware/main-deck-p4/components/hot_cue_store/include \
-           -I../../firmware/main-deck-p4/components/media_identity/include \
-           -I../../firmware/main-deck-p4/components/library/include
+           -I../../firmware/p4-core/components/audio_engine/include \
+           -I../../firmware/p4-core/components/beat_jump/include \
+           -I../../firmware/p4-core/components/deck_core/include \
+           -I../../firmware/p4-core/components/control_link/include \
+           -I../../firmware/p4-core/components/hot_cue_store/include \
+           -I../../firmware/p4-core/components/media_identity/include \
+           -I../../firmware/p4-core/components/library/include
 
 SRCS    = test_deck_core_dual.c \
           control_link_stub.c \
           hot_cue_store_stub.c \
           ../deck_loaded_track_store/anlz_clone_stub.c \
-          ../../firmware/main-deck-p4/components/beat_jump/beat_jump.c \
-          ../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c \
-          ../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c \
-          ../../firmware/main-deck-p4/components/media_identity/media_identity.c \
+          ../../firmware/p4-core/components/beat_jump/beat_jump.c \
+          ../../firmware/p4-core/components/control_link/flx4_led_snapshot.c \
+          ../../firmware/p4-core/components/deck_core/deck_loaded_track_store.c \
+          ../../firmware/p4-core/components/media_identity/media_identity.c \
           deck_core_test_snapshot_wrapper.c
 
 TARGET  = test_deck_core_dual

@@ -1,0 +1,891 @@
+#include "wifi_link.h"
+#include "wifi_link_control.h"
+#include "wifi_link_retry.h"
+#include "web_server.h"
+#include "service_log.h"
+#include "app_settings.h"
+#include "wifi_transition_lease.h"
+#include "esp_heap_caps.h"
+
+#include "esp_check.h"
+#include "esp_event.h"
+#include "esp_hosted.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+
+#include "board_adapter.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+
+#include <string.h>
+
+static const char *TAG = "wifi_link";
+static wifi_link_status_t s_status;
+static portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_netif_ready;          // esp_netif + event loop + handler (one-time)
+static esp_event_handler_instance_t s_wifi_event_instance;
+static esp_event_handler_instance_t s_ip_event_instance;
+static bool s_hosted_ready;         // esp_hosted transport initialised (per active cycle)
+static bool s_wifi_ready;           // esp_wifi initialised (per active cycle)
+static esp_netif_t *s_ap_netif;     // recreated each start, destroyed each stop
+
+// Async enable/disable machinery. s_active is written only by the worker task;
+// s_desired holds the latest requested state. A single worker collapses rapid
+// toggles by looping until s_active == s_desired.
+static SemaphoreHandle_t s_ctrl_lock;
+static volatile bool s_active;
+static volatile bool s_desired;
+static volatile bool s_worker_running;
+
+static void status_publish(wifi_link_mode_t mode, esp_err_t error, bool active)
+{
+    portENTER_CRITICAL(&s_status_mux);
+    s_status.initialized = s_hosted_ready && s_wifi_ready;
+    s_status.active = active;
+    s_status.last_error = error;
+    s_status.mode = mode;
+    if (mode == WIFI_LINK_MODE_AP) {
+        memcpy(s_status.address, "192.168.4.1", sizeof("192.168.4.1"));
+    } else if (mode != WIFI_LINK_MODE_STA) {
+        s_status.address[0] = '\0';
+    }
+    portEXIT_CRITICAL(&s_status_mux);
+}
+
+static void status_reset_clients(void)
+{
+    portENTER_CRITICAL(&s_status_mux);
+    s_status.ap_clients = 0u;
+    portEXIT_CRITICAL(&s_status_mux);
+}
+
+static uint8_t status_change_clients(bool connected)
+{
+    uint8_t clients;
+    portENTER_CRITICAL(&s_status_mux);
+    if (connected) {
+        if (s_status.ap_clients < UINT8_MAX) s_status.ap_clients++;
+    } else if (s_status.ap_clients > 0u) {
+        s_status.ap_clients--;
+    }
+    clients = s_status.ap_clients;
+    portEXIT_CRITICAL(&s_status_mux);
+    return clients;
+}
+
+static void status_set_sta_address(const esp_ip4_addr_t *address)
+{
+    if (!address) return;
+    char text[16] = {0};
+    snprintf(text, sizeof(text), IPSTR, IP2STR(address));
+    portENTER_CRITICAL(&s_status_mux);
+    memcpy(s_status.address, text, sizeof(s_status.address));
+    portEXIT_CRITICAL(&s_status_mux);
+}
+
+static void copy_wifi_bytes(uint8_t *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    memset(dst, 0, dst_len);
+    if (!src) {
+        return;
+    }
+    size_t n = strlen(src);
+    if (n > dst_len) {
+        n = dst_len;
+    }
+    memcpy(dst, src, n);
+}
+
+/* STA association is asynchronous, so the worker has to wait on events rather
+ * than on a return code. GOT_IP is the only success signal that means anything:
+ * associating without an address fetches nothing. */
+#define STA_BIT_GOT_IP       BIT0
+#define STA_BIT_DISCONNECTED BIT1
+#define AP_BIT_STARTED        BIT2
+
+static EventGroupHandle_t s_sta_events;
+static esp_netif_t *s_sta_netif;
+static volatile bool s_sta_mode;
+static volatile uint8_t s_sta_disconnect_reason;
+
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    (void)arg;
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        if (s_sta_events) xEventGroupSetBits(s_sta_events, STA_BIT_GOT_IP);
+        const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)event_data;
+        if (got_ip) status_set_sta_address(&got_ip->ip_info.ip);
+        return;
+    }
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        /* Reported for a refused association and for a later drop alike. The
+         * waiter treats it as failure; a drop after we already have an address
+         * is handled by the caller finishing and restoring. */
+        const wifi_event_sta_disconnected_t *event = event_data;
+        s_sta_disconnect_reason = event ? event->reason : 0u;
+        if (s_sta_events) xEventGroupSetBits(s_sta_events, STA_BIT_DISCONNECTED);
+        return;
+    }
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        if (s_sta_events) xEventGroupSetBits(s_sta_events, AP_BIT_STARTED);
+        return;
+    }
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
+        uint8_t clients = status_change_clients(true);
+        ESP_LOGI(TAG, "web client connected (%u)", (unsigned)clients);
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        uint8_t clients = status_change_clients(false);
+        ESP_LOGI(TAG, "web client disconnected (%u)", (unsigned)clients);
+    }
+}
+
+static esp_err_t ensure_wifi_stack(void)
+{
+    if (!s_netif_ready) {
+        ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "esp_netif_init");
+        esp_err_t rc = esp_event_loop_create_default();
+        if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+            return rc;
+        }
+        if (!s_sta_events) {
+            s_sta_events = xEventGroupCreate();
+            if (!s_sta_events) return ESP_ERR_NO_MEM;
+        }
+        rc = esp_event_handler_instance_register(
+            WIFI_EVENT, ESP_EVENT_ANY_ID, event_handler, NULL,
+            &s_wifi_event_instance);
+        if (rc != ESP_OK) {
+            ESP_LOGE(TAG, "register Wi-Fi events: %s", esp_err_to_name(rc));
+            return rc;
+        }
+        rc = esp_event_handler_instance_register(
+            IP_EVENT, IP_EVENT_STA_GOT_IP, event_handler, NULL,
+            &s_ip_event_instance);
+        if (rc != ESP_OK) {
+            (void)esp_event_handler_instance_unregister(
+                WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_event_instance);
+            s_wifi_event_instance = NULL;
+            ESP_LOGE(TAG, "register IP events: %s", esp_err_to_name(rc));
+            return rc;
+        }
+        s_netif_ready = true;
+    }
+
+    if (!s_hosted_ready) {
+        ESP_RETURN_ON_ERROR(esp_hosted_init(), TAG, "esp_hosted_init");
+        s_hosted_ready = true;
+    }
+    if (!s_wifi_ready) {
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "esp_wifi_init");
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_ps(WIFI_PS_NONE));
+        s_wifi_ready = true;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t start_web_ap(void)
+{
+    if (!s_ap_netif) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
+    if (!s_ap_netif) return ESP_ERR_NO_MEM;
+
+    esp_netif_ip_info_t ip_info = {0};
+    ip_info.ip.addr = ESP_IP4TOADDR(192, 168, 4, 1);
+    ip_info.gw.addr = ESP_IP4TOADDR(192, 168, 4, 1);
+    ip_info.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
+    esp_err_t rc = esp_netif_dhcps_stop(s_ap_netif);
+    if (rc != ESP_OK && rc != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        ESP_RETURN_ON_ERROR(rc, TAG, "stop AP DHCP server");
+    }
+    ESP_RETURN_ON_ERROR(esp_netif_set_ip_info(s_ap_netif, &ip_info),
+                        TAG, "set AP address");
+
+    /* Hand out an address, but do not claim to be the way to the internet.
+         *
+         * Offering ourselves as router and DNS made every client install a
+         * default route through a deck that leads nowhere, so joining this AP
+         * killed the operator's internet - on a phone completely, since it has
+         * no second interface to fall back on. The deck is a local island; it
+         * has no business being anyone's default gateway.
+         *
+         * Clients still reach 192.168.4.1 because it is on-link. The cost is
+         * that captive-portal auto-open stops working and the address is typed
+         * by hand, which the operator accepted in exchange for keeping
+         * internet, and which mDNS will make moot. */
+    uint8_t offer = 0;
+    ESP_RETURN_ON_ERROR(
+        esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET,
+                               ESP_NETIF_ROUTER_SOLICITATION_ADDRESS,
+                               &offer, sizeof(offer)),
+        TAG, "disable AP router offer");
+    ESP_RETURN_ON_ERROR(
+        esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET,
+                               ESP_NETIF_DOMAIN_NAME_SERVER,
+                               &offer, sizeof(offer)),
+        TAG, "disable AP DNS offer");
+
+    /* Mark INIT before WIFI_EVENT_AP_START. esp-netif starts DHCPS when its
+     * interface becomes live; after the event we verify that it really did.
+     * This matters on ESP-Hosted, where esp_wifi_start() only confirms that the
+     * command reached the C6, not that the P4 data path is ready. */
+    ESP_RETURN_ON_ERROR(esp_netif_dhcps_start(s_ap_netif), TAG, "arm AP DHCP server");
+
+    wifi_config_t cfg = {0};
+    copy_wifi_bytes(cfg.ap.ssid, sizeof(cfg.ap.ssid), board_capabilities_get()->softap_ssid);
+    cfg.ap.ssid_len = (uint8_t)strlen(board_capabilities_get()->softap_ssid);
+    copy_wifi_bytes(cfg.ap.password, sizeof(cfg.ap.password), WIFI_LINK_PASSWORD);
+    cfg.ap.channel = 6;
+    /* Four, not one. With a single slot the operator's browser and any second
+     * client - a laptop reading /api/status, a phone left on the page - fight
+     * over it: the loser associates, gets no DHCP lease, ends up on a 169.254
+     * address and looks like a flaky access point rather than a full one. That
+     * cost a whole session of misdiagnosed "Windows wandered off the network".
+     * The AP serves a handful of small JSON requests; four clients is not a
+     * meaningful load. */
+    cfg.ap.max_connection = 4;
+    /* Preserve each product's accepted AP security configuration. */
+    if (board_capabilities_get()->wifi_wpa3_transition) {
+        cfg.ap.authmode = WIFI_AUTH_WPA2_WPA3_PSK;
+        cfg.ap.pmf_cfg.capable = true;
+    } else {
+        cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    }
+    cfg.ap.pmf_cfg.required = false;
+
+    xEventGroupClearBits(s_sta_events, AP_BIT_STARTED);
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_AP), TAG, "set AP mode");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_AP, &cfg), TAG, "set AP config");
+    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start AP");
+
+    EventBits_t bits = xEventGroupWaitBits(s_sta_events, AP_BIT_STARTED,
+                                           pdFALSE, pdFALSE,
+                                           pdMS_TO_TICKS(5000u));
+    if ((bits & AP_BIT_STARTED) == 0u) {
+        ESP_LOGE(TAG, "AP start event timed out");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    /* Our AP_START callback is registered before the default esp-netif AP
+     * callback, so the event bit may wake this task while DHCPS is legitimately
+     * still INIT. Yield to the event loop and then verify/re-arm it. A bounded
+     * poll also covers the physical failure seen after AP->STA->AP, where the
+     * beacon returned but Windows received no lease. */
+    esp_netif_dhcp_status_t dhcp = ESP_NETIF_DHCP_INIT;
+    for (unsigned attempt = 0; attempt < 100u; ++attempt) {
+        ESP_RETURN_ON_ERROR(esp_netif_dhcps_get_status(s_ap_netif, &dhcp),
+                            TAG, "read AP DHCP state");
+        if (dhcp == ESP_NETIF_DHCP_STARTED) break;
+
+        rc = esp_netif_dhcps_start(s_ap_netif);
+        if (rc != ESP_OK && rc != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED &&
+            rc != ESP_ERR_ESP_NETIF_IF_NOT_READY) {
+            ESP_RETURN_ON_ERROR(rc, TAG, "restart AP DHCP server");
+        }
+        vTaskDelay(pdMS_TO_TICKS(10u));
+    }
+    if (dhcp != ESP_NETIF_DHCP_STARTED) {
+        ESP_LOGE(TAG, "AP DHCP server did not become ready (state=%d)", (int)dhcp);
+        return ESP_ERR_TIMEOUT;
+    }
+    ESP_LOGI(TAG, "web AP started: ssid=%s", board_capabilities_get()->softap_ssid);
+    return ESP_OK;
+}
+
+esp_err_t wifi_link_init(void)
+{
+    ESP_RETURN_ON_ERROR(bsp_wifi_quiesce(), TAG, "quiesce C6 at boot");
+    portENTER_CRITICAL(&s_status_mux);
+    memset(&s_status, 0, sizeof(s_status));
+    s_status.mode = WIFI_LINK_MODE_OFF;
+    snprintf(s_status.ssid, sizeof(s_status.ssid), "%s", board_capabilities_get()->softap_ssid);
+    portEXIT_CRITICAL(&s_status_mux);
+    if (!s_ctrl_lock) {
+        s_ctrl_lock = xSemaphoreCreateMutex();
+        if (!s_ctrl_lock) {
+            ESP_LOGE(TAG, "failed to create control mutex");
+            status_publish(WIFI_LINK_MODE_ERROR, ESP_ERR_NO_MEM, false);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    ESP_LOGI(TAG, "wifi_link ready (remote off; call wifi_link_start to enable)");
+    return ESP_OK;
+}
+
+static esp_err_t stop_under_lease(void);
+
+static esp_err_t start_under_lease(void)
+{
+    if (s_active) {
+        return ESP_OK;
+    }
+
+    status_publish(WIFI_LINK_MODE_STARTING, ESP_OK, false);
+    esp_err_t rc = ensure_wifi_stack();
+    if (rc == ESP_OK) {
+        rc = start_web_ap();
+    }
+    if (rc == ESP_OK) {
+        rc = web_server_start();
+    }
+    if (rc == ESP_OK) {
+        rc = dns_server_start();
+    }
+
+    if (rc == ESP_OK) {
+        s_active = true;
+        status_publish(WIFI_LINK_MODE_AP, ESP_OK, true);
+        ESP_LOGI(TAG, "Wi-Fi remote enabled");
+    } else {
+        ESP_LOGE(TAG, "Wi-Fi remote start failed: %s — tearing down", esp_err_to_name(rc));
+        stop_under_lease();  // roll back while retaining the transition lease
+        status_publish(WIFI_LINK_MODE_ERROR, rc, false);
+    }
+    return rc;
+}
+
+esp_err_t wifi_link_start(void)
+{
+    if (wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL) != ESP_OK)
+        return ESP_ERR_INVALID_STATE;
+    esp_err_t rc = start_under_lease();
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+    return rc;
+}
+
+/*
+ * Teardown split into independently owned steps.
+ *
+ * wifi_link_stop() still runs all four in the same order and has exactly the
+ * behaviour it always had; the split exists because an AP-to-STA transition
+ * needs the first two without the last two. Tearing down ESP-Hosted only to
+ * recreate the C6 link a moment later is both slow and an unnecessary chance
+ * for the transport to come back wrong.
+ *
+ * Each step is best-effort and idempotent, so a partial bring-up from a failed
+ * start still unwinds completely.
+ */
+
+/* Captive DNS and the HTTP service. Safe to call when they are not running. */
+static void stop_ap_services(void)
+{
+    dns_server_stop();
+    web_server_stop();
+}
+
+static void stop_wifi_stack(void)
+{
+    if (!s_wifi_ready) return;
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    s_wifi_ready = false;
+}
+
+static void stop_ap_netif(void)
+{
+    if (!s_ap_netif) return;
+    esp_netif_destroy_default_wifi(s_ap_netif);
+    s_ap_netif = NULL;
+}
+
+/* Releases the C6 link so it stops drawing RAM and radio. Deliberately the
+ * last thing to go and the one an AP/STA switch must NOT do. */
+static void stop_hosted_transport(void)
+{
+    if (s_hosted_ready) {
+        if (board_capabilities_get()->hosted_release_on_stop) {
+            (void)bsp_wifi_release_hosted();
+            s_hosted_ready = false;
+        }
+    }
+    esp_err_t rc = bsp_wifi_quiesce();
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "failed to hold C6 off after teardown: %s", esp_err_to_name(rc));
+    }
+}
+
+static void stop_sta_netif(void)
+{
+    if (!s_sta_netif) return;
+    esp_netif_destroy_default_wifi(s_sta_netif);
+    s_sta_netif = NULL;
+}
+
+/* ── Temporary STA visit ──────────────────────────────────────────────────── */
+
+esp_err_t wifi_link_switch_to_sta(const char *ssid, const char *password,
+                                  uint32_t timeout_ms)
+{
+    if (!ssid || ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+    if (!s_wifi_ready || !s_hosted_ready) return ESP_ERR_INVALID_STATE;
+    if (!s_sta_events) return ESP_ERR_INVALID_STATE;
+
+    /* Keep the AP netif, DHCP, HTTP/DNS and Hosted transport alive. A warm
+     * AP->STA->AP stop/start on the remote C6 can restore its beacon while the
+     * SDIO data path no longer carries client frames; fully deinitialising
+     * Hosted is also forbidden while microSD owns the controller's other slot.
+     * APSTA adds the service uplink without tearing either path down. The C6
+     * may move the AP to the STA channel, so clients can briefly reconnect,
+     * but their netif and lease remain valid. */
+    const bool keep_ap = board_capabilities_get()->wifi_apsta;
+    if (!keep_ap) {
+        stop_ap_services();
+        ESP_RETURN_ON_ERROR(esp_wifi_stop(), TAG, "stop before STA");
+        stop_ap_netif();
+        status_reset_clients();
+    }
+    status_publish(WIFI_LINK_MODE_STA, ESP_OK, false);
+
+    s_sta_netif = esp_netif_create_default_wifi_sta();
+    if (!s_sta_netif) return ESP_ERR_NO_MEM;
+
+    wifi_config_t cfg = {0};
+    copy_wifi_bytes(cfg.sta.ssid, sizeof(cfg.sta.ssid), ssid);
+    copy_wifi_bytes(cfg.sta.password, sizeof(cfg.sta.password), password);
+    /* An empty password means an open network; anything else was already
+     * validated against WPA2 bounds before it reached storage. */
+    cfg.sta.threshold.authmode =
+        (password && password[0]) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+
+    xEventGroupClearBits(s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED);
+
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(keep_ap ? WIFI_MODE_APSTA : WIFI_MODE_STA),
+                        TAG, "set service network mode");
+    s_sta_mode = true;
+    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &cfg), TAG, "set STA config");
+    if (!keep_ap) ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start STA");
+    ESP_LOGI(TAG, "joining service network \"%s\"", ssid);
+    wifi_link_retry_t join_retry;
+    wifi_link_retry_reset(&join_retry);
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        s_sta_disconnect_reason = 0u;
+        xEventGroupClearBits(s_sta_events,
+                             STA_BIT_GOT_IP | STA_BIT_DISCONNECTED);
+        ESP_RETURN_ON_ERROR(esp_wifi_connect(), TAG, "connect");
+
+        TickType_t elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= timeout_ticks) {
+            ESP_LOGW(TAG, "service network gave no address within %u ms",
+                     (unsigned)timeout_ms);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        /* Bounded on purpose: a wrong passphrase produces disconnects, while
+         * a network that associates and never serves DHCP produces no event.
+         * Either case must return the deck to its AP within timeout_ms. */
+        EventBits_t bits = xEventGroupWaitBits(
+            s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED,
+            pdFALSE, pdFALSE, timeout_ticks - elapsed);
+
+        if (bits & STA_BIT_GOT_IP) {
+            esp_netif_ip_info_t ip = {0};
+            if (esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
+                ESP_LOGI(TAG, "service network address " IPSTR, IP2STR(&ip.ip));
+            }
+            return ESP_OK;
+        }
+        if (!(bits & STA_BIT_DISCONNECTED)) {
+            ESP_LOGW(TAG, "service network gave no address within %u ms",
+                     (unsigned)timeout_ms);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        const uint8_t reason = s_sta_disconnect_reason;
+        uint32_t wait_ms = wifi_link_retry_note_failure(&join_retry);
+        if (wifi_link_retry_exhausted(&join_retry)) {
+            ESP_LOGW(TAG, "service network association failed after %u attempts (reason=%u)",
+                     (unsigned)wifi_link_retry_attempts(&join_retry),
+                     (unsigned)reason);
+            return ESP_ERR_WIFI_NOT_CONNECT;
+        }
+
+        elapsed = xTaskGetTickCount() - started;
+        TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms);
+        if (elapsed >= timeout_ticks || wait_ticks >= timeout_ticks - elapsed) {
+            ESP_LOGW(TAG, "service network retry budget exceeded timeout (reason=%u)",
+                     (unsigned)reason);
+            return ESP_ERR_TIMEOUT;
+        }
+        ESP_LOGW(TAG, "service network association attempt %u failed (reason=%u); retrying in %u ms",
+                 (unsigned)wifi_link_retry_attempts(&join_retry),
+                 (unsigned)reason, (unsigned)wait_ms);
+        vTaskDelay(wait_ticks);
+    }
+}
+
+esp_err_t wifi_link_restore_ap(void)
+{
+    /* Unconditional: this is the path back to being reachable at all, so it
+     * runs the same way whether the visit succeeded, failed or never got
+     * started. */
+    status_publish(WIFI_LINK_MODE_RESTORING_AP, ESP_OK, false);
+    if (!board_capabilities_get()->wifi_apsta) {
+        if (s_sta_mode) {
+            (void)esp_wifi_disconnect();
+            (void)esp_wifi_stop();
+            s_sta_mode = false;
+        }
+        stop_sta_netif();
+        esp_err_t restored = start_web_ap();
+        if (restored == ESP_OK) restored = web_server_start();
+        if (restored == ESP_OK) restored = dns_server_start();
+        s_active = restored == ESP_OK;
+        status_publish(s_active ? WIFI_LINK_MODE_AP : WIFI_LINK_MODE_ERROR,
+                       restored, s_active);
+        return restored;
+    }
+    esp_err_t rc = ESP_OK;
+    if (s_sta_mode) {
+        (void)esp_wifi_disconnect();
+        rc = esp_wifi_set_mode(WIFI_MODE_AP);
+        s_sta_mode = false;
+    }
+    stop_sta_netif();
+
+    /* The AP services were never stopped. Confirm that its DHCP server stayed
+     * live across the APSTA visit before advertising RESTORED to the caller. */
+    if (rc == ESP_OK) {
+        esp_netif_dhcp_status_t dhcp = ESP_NETIF_DHCP_INIT;
+        rc = esp_netif_dhcps_get_status(s_ap_netif, &dhcp);
+        if (rc == ESP_OK && dhcp != ESP_NETIF_DHCP_STARTED) {
+            ESP_LOGE(TAG, "AP DHCP lost during APSTA visit (state=%d)", (int)dhcp);
+            rc = ESP_ERR_INVALID_STATE;
+        }
+    }
+
+    if (rc == ESP_OK) {
+        s_active = true;
+        status_publish(WIFI_LINK_MODE_AP, ESP_OK, true);
+        ESP_LOGI(TAG, "%s restored", board_capabilities_get()->softap_ssid);
+    } else {
+        /* Nothing left to fall back to: say so loudly rather than leave a
+         * half-configured radio looking healthy. Recovery is a wired flash. */
+        ESP_LOGE(TAG, "FAILED to restore %s: %s", board_capabilities_get()->softap_ssid,
+                 esp_err_to_name(rc));
+        s_active = false;
+        status_publish(WIFI_LINK_MODE_ERROR, rc, false);
+    }
+    return rc;
+}
+
+bool wifi_link_is_sta(void)
+{
+    return s_sta_mode;
+}
+
+/* ── One-shot connectivity probe ──────────────────────────────────────────── */
+
+static wifi_link_probe_status_t s_probe;
+static volatile bool s_probe_running;
+
+static void probe_note(wifi_link_probe_state_t state, esp_err_t err,
+                       const char *detail)
+{
+    s_probe.state = state;
+    s_probe.last_error = err;
+    snprintf(s_probe.detail, sizeof(s_probe.detail), "%s", detail ? detail : "");
+}
+
+static void wifi_link_probe_task(void *arg)
+{
+    (void)arg;
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
+    app_settings_ota_get_ssid(ssid, sizeof(ssid));
+    app_settings_ota_copy_password(pass, sizeof(pass));
+
+    /* Same reason as the update check: the caller's 202 has to leave before
+     * this task tears down the server that is sending it. */
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "joining service network");
+    s_probe.address[0] = '\0';
+
+    /* 20 s: long enough for a slow DHCP lease, short enough that a network
+     * which will never answer does not strand the deck off its own AP. */
+    esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, 20000u);
+    /* The passphrase has done its job; do not leave it on this stack. */
+    memset(pass, 0, sizeof(pass));
+
+    if (rc == ESP_OK) {
+        esp_netif_ip_info_t ip = {0};
+        if (s_sta_netif && esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
+            snprintf(s_probe.address, sizeof(s_probe.address), IPSTR, IP2STR(&ip.ip));
+        }
+        probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "connected, returning to AP");
+        /* Hold briefly so the address is observable on the deck's own display
+         * before the AP comes back and the web client can read it. */
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    } else {
+        probe_note(WIFI_LINK_PROBE_RUNNING, rc,
+                   rc == ESP_ERR_TIMEOUT ? "no address from network"
+                                         : "association refused");
+    }
+
+    /* Unconditional, and the reason the whole probe exists: getting back. */
+    esp_err_t back = wifi_link_restore_ap();
+    if (back != ESP_OK) {
+        probe_note(WIFI_LINK_PROBE_FAILED, back, "AP DID NOT COME BACK");
+    } else if (rc == ESP_OK) {
+        probe_note(WIFI_LINK_PROBE_OK, ESP_OK, "round trip complete");
+    } else {
+        s_probe.state = WIFI_LINK_PROBE_FAILED;   /* keep the failure detail */
+    }
+
+    s_probe_running = false;
+    /* Released here, at the one point where the AP has been restored and this
+     * task is about to exit — not from a vTaskDelete hook applied to the whole
+     * translation unit, which also caught every unrelated task exit in this
+     * file and had to guess from s_probe_running whether it meant this one. */
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE);
+    vTaskDelete(NULL);
+}
+
+esp_err_t wifi_link_probe_start(void)
+{
+    if (s_probe_running) return ESP_ERR_INVALID_STATE;
+    if (!s_active || s_sta_mode) return ESP_ERR_INVALID_STATE;
+
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    app_settings_ota_get_ssid(ssid, sizeof(ssid));
+    if (ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+
+    /* Reserve the cross-component Wi-Fi transition before anything touches the
+     * stack: the probe and pull OTA both take the radio AP->STA->AP, and running
+     * them concurrently would tear the netif out from under each other. */
+    esp_err_t lease_rc = wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE);
+    if (lease_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
+                 (int)wifi_transition_lease_owner());
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_probe_running = true;
+    probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "starting");
+    s_probe.address[0] = '\0';
+    /* 5 KiB: the task itself does little, but wifi_link_switch_to_sta runs the
+     * netif and association work on it. */
+    if (xTaskCreate(wifi_link_probe_task, "wifi_probe", 5120, NULL, 4, NULL) != pdPASS) {
+        s_probe_running = false;
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE);
+        probe_note(WIFI_LINK_PROBE_FAILED, ESP_ERR_NO_MEM, "could not start task");
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+wifi_link_probe_status_t wifi_link_probe_status(void)
+{
+    return s_probe;
+}
+
+static esp_err_t stop_under_lease(void)
+{
+    status_publish(WIFI_LINK_MODE_STOPPING, ESP_OK, false);
+    if (s_sta_mode) {
+        esp_wifi_disconnect();
+        s_sta_mode = false;
+    }
+    stop_sta_netif();
+    stop_ap_services();
+    stop_wifi_stack();
+    stop_ap_netif();
+    stop_hosted_transport();
+
+    s_active = false;
+    status_reset_clients();
+    status_publish(WIFI_LINK_MODE_OFF, ESP_OK, false);
+    ESP_LOGI(TAG, "Wi-Fi remote disabled");
+    return ESP_OK;
+}
+
+esp_err_t wifi_link_stop(void)
+{
+    if (wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL) != ESP_OK)
+        return ESP_ERR_INVALID_STATE;
+    esp_err_t rc = stop_under_lease();
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+    return rc;
+}
+
+static void wifi_link_worker(void *arg)
+{
+    (void)arg;
+    /* Per-worker, not global: the worker exits once desired == active, so a
+     * later operator request spawns a fresh one with a fresh budget. */
+    wifi_link_retry_t retry;
+    wifi_link_retry_reset(&retry);
+    for (;;) {
+        xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+        bool desired = s_desired;
+        bool active = s_active;
+        bool transition_busy =
+            wifi_transition_lease_owner() != WIFI_TRANSITION_OWNER_NONE;
+        wifi_link_control_action_t action =
+            wifi_link_control_next(desired, active, transition_busy);
+        if (action == WIFI_LINK_CONTROL_IDLE) {
+            s_worker_running = false;
+            xSemaphoreGive(s_ctrl_lock);
+            break;
+        }
+        xSemaphoreGive(s_ctrl_lock);
+
+        if (action == WIFI_LINK_CONTROL_WAIT_TRANSITION) {
+            /* Keep the request pending but do not touch ESP-Hosted/netifs until
+             * probe or OTA has restored the AP and released its lease. */
+            vTaskDelay(pdMS_TO_TICKS(100u));
+            continue;
+        }
+
+        if (wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL) != ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(100u));
+            continue;
+        }
+        /* The desired state can change while obtaining the lease:
+         * re-sample it under the control lock before touching hardware. */
+        xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+        desired = s_desired;
+        active = s_active;
+        xSemaphoreGive(s_ctrl_lock);
+        if (desired == active) {
+            wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+            continue;
+        }
+        action = desired ? WIFI_LINK_CONTROL_START : WIFI_LINK_CONTROL_STOP;
+
+        if (action == WIFI_LINK_CONTROL_START) {
+            /* Breadcrumb before the risky part, then force it onto the card.
+             * The journal writer only syncs every few seconds, so anything
+             * still buffered is lost if the next call panics — which is
+             * exactly the failure being chased here (the P4 occasionally
+             * reboots when Wi-Fi is switched on, and the journal shows only
+             * an unrelated last record because the buffer never reached the
+             * card). Carries free internal heap, since the ESP-Hosted and
+             * Wi-Fi bring-up is the largest internal allocation the firmware
+             * ever makes. */
+            service_log_event(SERVICE_LOG_WIFI_ENABLE_REQ, SERVICE_LOG_INFO,
+                              2u,
+                              (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                              (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                              0u, 0u, "internal free/largest");
+            service_log_sync();
+
+            esp_err_t start_rc = start_under_lease();
+            wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+
+            /* Stack high-water of this worker: bringing up ESP-Hosted, Wi-Fi
+             * and httpd from a 6 KiB task is the other plausible cause of an
+             * intermittent panic here, and this is the cheapest way to see how
+             * close it runs. */
+            uint32_t hw_words = uxTaskGetStackHighWaterMark(NULL);
+            if (start_rc == ESP_OK) {
+                service_log_event(SERVICE_LOG_WIFI_STARTED, SERVICE_LOG_INFO,
+                                  2u,
+                                  (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                                  hw_words, 0u, 0u, "internal free/stack words left");
+            } else {
+                service_log_event(SERVICE_LOG_WIFI_FAILED, SERVICE_LOG_ERROR,
+                                  2u, (uint32_t)start_rc, hw_words, 0u, 0u,
+                                  "rc/stack words left");
+            }
+            service_log_sync();
+
+            if (start_rc != ESP_OK) {
+                /* Without this the loop simply comes round again - active is
+                 * still false, desired is still true - and re-runs the whole
+                 * ESP-Hosted and Wi-Fi bring-up with no delay, forever. Bound
+                 * it, back off, and after the third failure give up and leave
+                 * the radio off until the operator asks again. */
+                uint32_t wait_ms = wifi_link_retry_note_failure(&retry);
+                if (wait_ms == 0u) {
+                    ESP_LOGE(TAG, "Wi-Fi start failed %u times; giving up",
+                             (unsigned)wifi_link_retry_attempts(&retry));
+                    service_log_event(SERVICE_LOG_WIFI_FAILED, SERVICE_LOG_ERROR,
+                                      2u, (uint32_t)start_rc,
+                                      (uint32_t)wifi_link_retry_attempts(&retry),
+                                      0u, 0u, "giving up, radio stays off");
+                    service_log_sync();
+                    /* Stop asking for it, so the loop can exit rather than
+                     * spin: a further attempt needs a new operator request. */
+                    xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+                    s_desired = false;
+                    xSemaphoreGive(s_ctrl_lock);
+                    /* Leave nothing half-initialised behind. */
+                    wifi_link_stop();
+                    status_publish(WIFI_LINK_MODE_ERROR, start_rc, false);
+                    continue;
+                }
+                ESP_LOGW(TAG, "Wi-Fi start failed (attempt %u); retrying in %u ms",
+                         (unsigned)wifi_link_retry_attempts(&retry),
+                         (unsigned)wait_ms);
+                vTaskDelay(pdMS_TO_TICKS(wait_ms));
+                continue;
+            }
+            wifi_link_retry_reset(&retry);
+        } else {
+            wifi_link_retry_reset(&retry);
+            stop_under_lease();
+            wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+            service_log_event(SERVICE_LOG_WIFI_STOPPED, SERVICE_LOG_INFO,
+                              1u,
+                              (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                              0u, 0u, 0u, NULL);
+        }
+    }
+    vTaskDelete(NULL);
+}
+
+void wifi_link_request_enable(bool enable)
+{
+    if (!s_ctrl_lock) {
+        // init not run — fall back to a direct (blocking) call.
+        if (enable) {
+            wifi_link_start();
+        } else {
+            wifi_link_stop();
+        }
+        return;
+    }
+
+    xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+    s_desired = enable;
+    bool spawn = !s_worker_running;
+    if (spawn) {
+        s_worker_running = true;
+    }
+    xSemaphoreGive(s_ctrl_lock);
+
+    if (spawn) {
+        if (xTaskCreate(wifi_link_worker, "wifi_link", 6144, NULL, 4, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "failed to spawn wifi_link worker");
+            status_publish(WIFI_LINK_MODE_ERROR, ESP_ERR_NO_MEM, s_active);
+            xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+            s_worker_running = false;
+            xSemaphoreGive(s_ctrl_lock);
+        }
+    }
+}
+
+bool wifi_link_is_active(void)
+{
+    return s_active;
+}
+
+wifi_link_status_t wifi_link_get_status(void)
+{
+    wifi_link_status_t snapshot;
+    portENTER_CRITICAL(&s_status_mux);
+    snapshot = s_status;
+    portEXIT_CRITICAL(&s_status_mux);
+    return snapshot;
+}

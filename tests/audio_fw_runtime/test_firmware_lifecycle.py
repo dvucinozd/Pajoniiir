@@ -9,7 +9,7 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-COMPONENT = ROOT / "firmware/main-deck-p4/components/audio_engine"
+COMPONENT = ROOT / "firmware/p4-core/components/audio_engine"
 BUILD = Path(__file__).resolve().parent / "build/lifecycle"
 BUILD.mkdir(parents=True, exist_ok=True)
 source = (COMPONENT / "audio_engine.c").read_text(encoding="utf-8")

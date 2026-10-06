@@ -1,0 +1,1573 @@
+#ifndef WIN32
+#include "board_adapter.h"
+#endif
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
+#include "board_capabilities.h"
+#endif
+#include "ui.h"
+#include "lvgl.h"
+#include "ui_theme.h"   // centralised colour palette (COL_*); needs lvgl.h above
+#include "esp_log.h"
+#include "deck_core.h"
+#include "library.h"
+#include "ui_active_deck_leds.h"
+#include "ui_beat_indicator.h"
+#include "ui_controls.h"
+#include "ui_deck_anlz_store.h"
+#include "ui_diagnostics.h"
+#include "ui_frame_context.h"
+#include "ui_library.h"
+#include "ui_overview.h"
+#include "ui_lvgl_backend.h"
+#include "ui_overview_perf.h"
+#include "ui_performance_tabs.h"
+#include "ui_settings.h"
+#include "ui_status.h"
+#include "splash_screen.h"
+#include "ui_idle.h"
+#if CONFIG_AUDIO_RECORDER_ENABLED && !defined(WIN32)
+#include "audio_recorder.h"
+#endif
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+#include "ui_dj_bridge.h"
+#endif
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef WIN32
+// Declare mock deck functions for simulator UI actions
+void ui_simulator_deck_set_position(uint32_t position_ms);
+void ui_simulator_deck_set_playing(bool playing);
+void ui_simulator_deck_toggle_master_tempo(void);
+void ui_simulator_deck_toggle_play(void);
+void deck_core_test_apply_event(const ctrl_event_t *event);
+#endif
+
+#ifndef WIN32
+// ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
+#include "audio_engine.h"
+#include "board_capabilities.h"
+#include "control_link.h"
+#include "media_catalog.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+
+// The UI canvas is 800x480 landscape; the physical ST7701 panel is 480x800
+// portrait. LVGL renders landscape dirty rectangles, then the flush callback
+// uses the ESP32-P4 PPA (Pixel Processing Accelerator) to rotate each rectangle
+// into the panel's MIPI-DSI frame buffer. LVGL's own software rotation is
+// unusable here, so we rotate in hardware.
+#define UI_HOR_RES   (board_capabilities_get()->display_width)
+#define UI_VER_RES   (board_capabilities_get()->display_height)
+#define UI_TOPBAR_H   46
+#define UI_CONTENT_Y  UI_TOPBAR_H
+#define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
+#endif
+
+#ifndef UI_HOR_RES
+#ifdef DISPLAY_WIDTH
+#define UI_HOR_RES   DISPLAY_WIDTH
+#define UI_VER_RES   DISPLAY_HEIGHT
+#else
+#define UI_HOR_RES   800
+#define UI_VER_RES   480
+#endif
+#define UI_TOPBAR_H   46
+#define UI_CONTENT_Y  UI_TOPBAR_H
+#define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
+#endif
+
+#ifdef WIN32
+#define UI_UPDATE_PERIOD_MS 16u
+#endif
+
+/* ── Idle screensaver ─────────────────────────────────────────────────────── */
+
+/* Two minutes, matching the plan. Step 5 moves this to a persisted Settings
+ * entry with an Off position; until then it is the compile-time default so the
+ * behaviour can be exercised on hardware. */
+#define UI_IDLE_DEFAULT_TIMEOUT_MS (2u * 60u * 1000u)
+
+static ui_idle_t s_idle;
+/* Written by any task, read by the UI task. A lost concurrent set only delays
+ * the dismissal by one 16 ms tick, so a plain volatile flag is sufficient and
+ * keeps deck_core_queue_event free of locks. */
+static volatile bool s_idle_activity_flag;
+static volatile bool s_idle_shown_pub;
+
+bool ui_activity_notice(void)
+{
+    s_idle_activity_flag = true;
+    return s_idle_shown_pub;
+}
+
+static const char *TAG = "ui";
+
+typedef enum {
+    UI_TAB_OVERVIEW = 0,
+    UI_TAB_LIBRARY,
+    UI_TAB_HOT_CUES,
+    UI_TAB_SETTINGS,
+    UI_TAB_COUNT,
+} ui_tab_t;
+
+// ─── UI State and Variables ──────────────────────────────────────────────────
+static lv_obj_t *s_main_screen = NULL;
+static lv_obj_t *s_root_container = NULL;
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+static lv_obj_t *s_dj_container;
+#endif
+static lv_obj_t *s_header_container = NULL;
+static lv_obj_t *s_footer_container = NULL;
+static lv_obj_t *s_screens[UI_TAB_COUNT];
+static int       s_active_tab = 0;
+
+// Header elements
+static lv_obj_t *s_label_title = NULL;
+static lv_obj_t *s_label_artist = NULL;
+static lv_obj_t *s_label_time = NULL;          // elapsed (current position)
+static lv_obj_t *s_label_time_remain = NULL;   // remaining until end of track
+static lv_obj_t *s_label_bpm = NULL;
+static lv_obj_t *s_label_pitch = NULL;
+static lv_obj_t *s_label_status_indicator = NULL;
+
+// Sub-screen elements
+static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
+/* Published by UI callbacks under the LVGL owner lock. A library completion
+ * or clear must refresh retained frame metadata immediately; steady playback
+ * must not resample every audio/file-mutex-backed field twice per frame. */
+static uint32_t s_deck_frame_revision;
+/* UI-owned observations, cleared at track publication. A busy decoder must
+ * not move the single-buffer waveform write out of the refresh window. */
+static audio_engine_deck_status_t s_display_audio_status[DECK_CORE_DECK_COUNT];
+static bool s_display_audio_status_valid[DECK_CORE_DECK_COUNT];
+static ui_deck_anlz_store_t s_deck_anlz_store;
+static ui_controls_state_t s_controls;
+
+#ifndef WIN32
+#endif
+
+// UI update timing diagnostics
+static ui_overview_perf_counter_t s_ui_update_interval_perf;
+static ui_overview_perf_counter_t s_ui_update_duration_perf;
+
+// Footer navigation buttons
+static lv_obj_t *s_footer_buttons[UI_TAB_COUNT];
+static lv_obj_t *s_footer_active_strips[UI_TAB_COUNT];
+static const char *s_tab_names[UI_TAB_COUNT] = {
+    "OVERVIEW", "LIBRARY", "HOT CUES", "SETTINGS"
+};
+
+// ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
+static lv_style_t s_style_root;
+static lv_style_t s_style_header;
+static lv_style_t s_style_footer;
+static lv_style_t s_style_tab_btn_normal;
+static lv_style_t s_style_tab_btn_active;
+static lv_style_t s_style_tab_btn_disabled;
+static lv_style_t s_style_screen_bg;
+static lv_style_t s_style_panel_frame;
+static lv_style_t s_style_btn_primary;
+static lv_style_t s_style_btn_amber;
+static lv_style_t s_style_btn_secondary;
+static lv_style_t s_style_btn_disabled;
+static lv_style_t s_style_btn_neon;
+static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on press)
+
+static void ui_set_performance_deck(uint8_t deck);
+static void ui_load_waveform_data(uint8_t deck,
+                                  uint32_t duration_ms,
+                                  const uint8_t waveform_low[400],
+                                  bool has_waveform,
+                                  const anlz_metadata_t *meta);
+static void ui_cache_invalidate(void)
+{
+    ui_status_invalidate();
+    ui_settings_invalidate();
+}
+
+static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_t color)
+{
+    if (!label) {
+        return;
+    }
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+}
+
+static uint8_t ui_deck_index(uint8_t deck)
+{
+    return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
+}
+
+static uint8_t ui_deck_control_id(uint8_t deck, uint8_t deck1_id, uint8_t deck2_id)
+{
+    return ui_deck_index(deck) == CTRL_DECK_2 ? deck2_id : deck1_id;
+}
+
+static void ui_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
+static void ui_deck_track_info_clear(uint8_t deck)
+{
+    uint8_t idx = ui_deck_index(deck);
+    memset(&s_deck_track_info[idx], 0, sizeof(s_deck_track_info[idx]));
+    s_display_audio_status_valid[idx] = false;
+    memset(&s_display_audio_status[idx], 0, sizeof(s_display_audio_status[idx]));
+    s_deck_frame_revision++;
+}
+
+static void ui_deck_track_info_set(uint8_t deck,
+                                   const char *title,
+                                   const char *artist,
+                                   const char *key,
+                                   uint16_t bpm,
+                                   uint32_t duration_ms)
+{
+    uint8_t idx = ui_deck_index(deck);
+    ui_deck_track_info_t *info = &s_deck_track_info[idx];
+    memset(info, 0, sizeof(*info));
+    ui_copy_str(info->title,
+                sizeof(info->title),
+                title && title[0] ? title : "Unknown Title");
+    ui_copy_str(info->artist,
+                sizeof(info->artist),
+                artist && artist[0] ? artist : "Unknown Artist");
+    info->bpm = bpm;
+    ui_copy_str(info->key, sizeof(info->key), key ? key : "");
+    info->duration_ms = duration_ms;
+    info->valid = true;
+    s_display_audio_status_valid[idx] = false;
+    memset(&s_display_audio_status[idx], 0, sizeof(s_display_audio_status[idx]));
+    s_deck_frame_revision++;
+}
+
+static uint32_t ui_deck_duration_ms(uint8_t deck)
+{
+    if (!s_deck_track_info[ui_deck_index(deck)].valid) return 0;
+    uint32_t fallback = 0;
+    if (deck == CTRL_DECK_1) {
+        (void)library_get_summary(library_selected_track_index(), NULL, &fallback);
+    }
+    return ui_library_deck_duration_ms(deck, fallback);
+}
+
+static uint16_t ui_deck_bpm(uint8_t deck)
+{
+    if (!s_deck_track_info[ui_deck_index(deck)].valid) return 0;
+    uint16_t fallback = 120;
+    if (deck == CTRL_DECK_1) {
+        uint16_t bpm = 0;
+        if (library_get_summary(library_selected_track_index(), &bpm, NULL) == ESP_OK) {
+            fallback = bpm;
+        }
+    }
+    return ui_library_deck_bpm(deck, fallback);
+}
+
+static uint16_t ui_performance_bpm(void)
+{
+    return ui_deck_bpm(ui_controls_active_deck(&s_controls));
+}
+
+static anlz_snapshot_t *ui_deck_anlz_acquire(uint8_t deck)
+{
+    uint8_t idx = ui_deck_index(deck);
+    return ui_deck_anlz_store_acquire(&s_deck_anlz_store, idx);
+}
+
+static anlz_snapshot_t *ui_performance_anlz_acquire(void)
+{
+    return ui_deck_anlz_acquire(ui_controls_active_deck(&s_controls));
+}
+
+static bool ui_performance_persistent_id(media_persistent_id_t *out)
+{
+#ifndef WIN32
+    if (!out) return false;
+    deck_loaded_track_summary_t loaded = {0};
+    uint8_t deck = ui_controls_active_deck(&s_controls);
+    if (!deck_core_get_loaded_track(deck, &loaded) || !loaded.valid ||
+        !loaded.persistent_id.valid) return false;
+    *out = loaded.persistent_id;
+    return true;
+#else
+    (void)out;
+    return false;
+#endif
+}
+
+static deck_state_t ui_performance_deck_state(void)
+{
+    uint8_t deck = ui_controls_active_deck(&s_controls);
+    return deck == CTRL_DECK_1 ? deck_core_get_state()
+                               : deck_core_get_deck_state(deck);
+}
+
+static uint32_t ui_performance_deck_position_ms(uint8_t deck)
+{
+#ifndef WIN32
+    return audio_engine_deck_position_ms(deck);
+#else
+    return deck == CTRL_DECK_1 ? deck_core_get_state().position_ms
+                               : deck_core_get_deck_state(deck).position_ms;
+#endif
+}
+
+static void ui_performance_seek(uint8_t deck, uint32_t position_ms)
+{
+#ifndef WIN32
+    audio_engine_deck_seek(deck, position_ms);
+#else
+    (void)deck;
+    ui_simulator_deck_set_position(position_ms);
+#endif
+}
+
+static void ui_performance_play(uint8_t deck)
+{
+#ifndef WIN32
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY),
+        .deck  = deck,
+        .value = 1,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
+#else
+    (void)deck;
+    ui_simulator_deck_set_playing(true);
+#endif
+}
+
+static void ui_performance_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
+{
+#ifndef WIN32
+    audio_engine_deck_set_loop(deck, start_ms, end_ms);
+#else
+    (void)deck;
+    (void)start_ms;
+    (void)end_ms;
+#endif
+}
+
+static void ui_performance_clear_loop(uint8_t deck)
+{
+#ifndef WIN32
+    audio_engine_deck_clear_loop(deck);
+#else
+    (void)deck;
+#endif
+}
+
+static void ui_performance_set_jog_mode(uint8_t deck, bool cdj)
+{
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION,
+                                  CTRL_ID_DECK2_EXT_ACTION),
+        .deck = deck,
+        .value = CTRL_DECK_EXT_VALUE(cdj ? CTRL_DECK_EXT_ACTION_JOG_CDJ :
+                                    CTRL_DECK_EXT_ACTION_JOG_VINYL, true),
+    };
+#ifdef WIN32
+    deck_core_test_apply_event(&ev);
+#else
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u jog mode queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+#endif
+}
+
+static void ui_performance_restore_source_cues(uint8_t deck)
+{
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION,
+                                  CTRL_ID_DECK2_EXT_ACTION),
+        .deck = deck,
+        .value = CTRL_DECK_EXT_VALUE(
+            CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true),
+    };
+#ifndef WIN32
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u source cue restore queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+#else
+    deck_core_test_apply_event(&ev);
+#endif
+}
+
+static void ui_performance_hot_cue_pad(uint8_t deck, uint8_t pad, bool pressed, bool deleted)
+{
+    if (pad >= HOT_CUE_STORE_SLOT_COUNT) return;
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
+                                  CTRL_ID_DECK2_PAD_ACTION),
+        .deck = deck,
+        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, deleted, pressed),
+    };
+#ifdef WIN32
+    deck_core_test_apply_event(&ev);
+#else
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "D%u hot cue queue failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+#endif
+}
+
+static void ui_set_loop_shadow(uint8_t deck,
+                               bool active,
+                               uint32_t start_ms,
+                               uint32_t end_ms,
+                               int beats)
+{
+    ui_performance_tabs_set_loop_shadow(deck, active, start_ms, end_ms, beats);
+}
+
+static void ui_set_performance_deck(uint8_t deck)
+{
+    ui_overview_cancel_holds();
+    ui_performance_tabs_cancel_holds();
+    uint8_t before = ui_controls_active_deck(&s_controls);
+    ui_controls_set_active_deck(&s_controls, ui_deck_index(deck));
+    uint8_t after = ui_controls_active_deck(&s_controls);
+    if (before != after) {
+        ui_status_invalidate_header();
+    }
+
+    ui_controls_update_performance_target_visuals(&s_controls);
+    ui_performance_tabs_update_hot_cues();
+
+    if (before != after) {
+        ui_status_hold(after == CTRL_DECK_1 ? "TARGET D1" : "TARGET D2",
+                       after == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                       1200);
+    }
+}
+
+static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *meta)
+{
+    s_deck_frame_revision++;
+    uint8_t idx = ui_deck_index(deck);
+    if (!meta || !ui_deck_anlz_store_set(&s_deck_anlz_store, idx, meta)) {
+        ui_deck_anlz_store_clear(&s_deck_anlz_store, idx);
+        ESP_LOGW(TAG, "Deck %u ANLZ metadata unavailable", (unsigned)idx + 1u);
+    }
+}
+
+// ─── Event Callbacks ─────────────────────────────────────────────────────────
+
+static void ui_switch_tab(int target_idx)
+{
+    ui_overview_cancel_holds();
+    ui_performance_tabs_cancel_holds();
+    if (target_idx < 0 || target_idx >= UI_TAB_COUNT) {
+        return;
+    }
+    // Update visibility of screens
+    for (int i = 0; i < UI_TAB_COUNT; i++) {
+        if (i == target_idx) {
+            if (s_screens[i]) lv_obj_remove_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_active, LV_PART_MAIN);
+            if (s_footer_active_strips[i]) {
+                lv_obj_remove_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            if (s_screens[i]) lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_replace_style(s_footer_buttons[i], &s_style_tab_btn_active,
+                                 &s_style_tab_btn_normal, LV_PART_MAIN);
+            if (s_footer_active_strips[i]) {
+                lv_obj_add_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    s_active_tab = target_idx;
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (s_dj_container) {
+        dj_ui_show_tab((dj_tab_t)target_idx); /* cancels holds even for shared Settings */
+        if (target_idx != UI_TAB_SETTINGS) {
+            lv_obj_add_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_dj_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_root_container, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+#endif
+    ESP_LOGD(TAG, "Switched to tab %d (%s)", target_idx, s_tab_names[target_idx]);
+}
+
+// Switch screens when a footer button is tapped
+static void footer_btn_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int target_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    ui_switch_tab(target_idx);
+}
+
+
+static void ui_overview_action_play_pause(uint8_t deck)
+{
+#ifdef WIN32
+    ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
+        .id=ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY), .value=1};
+    deck_core_test_apply_event(&ev);
+#else
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY),
+        .deck  = deck,
+        .value = 1,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
+#endif
+}
+
+static void ui_overview_action_cue(uint8_t deck, bool pressed)
+{
+#ifdef WIN32
+    ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
+        .id=ui_deck_control_id(deck, CTRL_ID_DECK1_CUE, CTRL_ID_DECK2_CUE),
+        .value=pressed ? 1 : 0};
+    deck_core_test_apply_event(&ev);
+#else
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_CUE, CTRL_ID_DECK2_CUE),
+        .deck  = deck,
+        .value = pressed ? 1 : 0,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
+#endif
+}
+
+static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
+{
+#ifndef WIN32
+    audio_engine_deck_seek(deck, target_ms);
+#else
+    audio_engine_deck_seek(deck, target_ms);
+#endif
+}
+
+static void ui_overview_action_toggle_master_tempo(uint8_t deck)
+{
+    deck_core_toggle_master_tempo(deck);
+}
+
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+/* Use exactly the controller event path. The simulator applies the same event
+ * synchronously instead of substituting a Deck-1-only button emulation. */
+static void ui_dj_button(uint8_t deck, uint8_t id, uint16_t value)
+{
+    ctrl_event_t event = {.type=CTRL_EV_BUTTON,.deck=deck,.id=id,.value=value};
+#ifdef WIN32
+    deck_core_test_apply_event(&event);
+#else
+    deck_core_queue_event(&event);
+#endif
+}
+static void ui_dj_tab(dj_tab_t tab) { ui_switch_tab((int)tab); }
+static void ui_dj_library_load(uint8_t deck, uint8_t row)
+{
+    ui_library_select_visible_row(row);
+    (void)ui_library_load_selected_for_deck(deck);
+}
+static void ui_dj_library_sort(dj_sort_t sort)
+{
+    if (sort >= DJ_SORT_ARTIST && sort <= DJ_SORT_KEY)
+        ui_library_sort_column((int)sort - (int)DJ_SORT_ARTIST);
+}
+static void ui_dj_library_page(int8_t delta) { ui_library_page_delta(delta); }
+static void ui_dj_play(uint8_t deck)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY,
+                                          CTRL_ID_DECK2_PLAY), 1);
+}
+static void ui_dj_cue(uint8_t deck, bool pressed)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_CUE,
+                                          CTRL_ID_DECK2_CUE), pressed);
+}
+static void ui_dj_sync(uint8_t deck)
+{
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_SYNC,
+                                          CTRL_ID_DECK2_SYNC), 1);
+}
+static void ui_dj_hotcue(uint8_t deck, uint8_t pad, bool pressed)
+{
+    if (deck >= DJ_DECKS || pad >= DJ_HOTCUES) return;
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION,
+        CTRL_ID_DECK2_PAD_ACTION),
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, false, pressed));
+}
+static void ui_dj_hotcue_delete(uint8_t deck, uint8_t pad)
+{
+    if (deck >= DJ_DECKS || pad >= DJ_HOTCUES) return;
+    uint8_t id = ui_deck_control_id(deck, CTRL_ID_DECK1_PAD_ACTION, CTRL_ID_DECK2_PAD_ACTION);
+    ui_dj_button(deck, id, CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, true, true));
+    ui_dj_button(deck, id, CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, pad, true, false));
+}
+static void ui_dj_restore_cues(uint8_t deck)
+{
+    if (deck >= DJ_DECKS) return;
+    ui_dj_button(deck, ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION, CTRL_ID_DECK2_EXT_ACTION),
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES, true));
+}
+static void ui_dj_field(dj_field_t field)
+{
+    if (field == DJ_F_HC_TARGET || field == DJ_F_MIX_JOG) {
+        uint8_t deck = ui_controls_active_deck(&s_controls);
+        ui_performance_set_jog_mode(deck, !deck_core_get_deck_state(deck).jog_cdj_mode);
+    }
+}
+static void ui_dj_seek(uint8_t deck, uint32_t position, dj_wave_t wave)
+{
+    (void)wave;
+#ifdef WIN32
+    /* The PC audio engine exposes the same per-deck seek entry point. */
+    audio_engine_deck_seek(deck, position);
+#else
+    ui_overview_action_seek(deck, position);
+#endif
+}
+static void ui_dj_wake(void) { (void)ui_activity_notice(); }
+static void ui_dj_fx_toggle(void) { ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_ON, 1); }
+static void ui_dj_fx_select(void) { ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_SELECT_NEXT, 1); }
+static void ui_dj_fx_channel(void)
+{
+    deck_core_beat_fx_state_t fx = deck_core_get_beat_fx_state();
+    ui_dj_button(CTRL_DECK_NONE, CTRL_ID_BEAT_FX_TARGET,
+                 ((uint8_t)fx.target + 1u) % 3u);
+}
+static void ui_dj_fx_beat(uint8_t index)
+{
+    if (index >= 4u) return;
+    int delta = (int)index - (int)deck_core_get_beat_fx_state().beat;
+    for (int i = 0; i < (delta < 0 ? -delta : delta); ++i)
+        ui_dj_button(CTRL_DECK_NONE, delta < 0 ? CTRL_ID_BEAT_FX_BEAT_DEC :
+                                             CTRL_ID_BEAT_FX_BEAT_INC, 1);
+}
+static void ui_dj_fx_level(uint8_t percent)
+{
+    if (percent > 100u) percent = 100u;
+    ctrl_event_t event = {.type=CTRL_EV_PITCH,.deck=CTRL_DECK_NONE,
+        .id=CTRL_ID_BEAT_FX_DEPTH,.value=(int16_t)((uint32_t)percent * 127u / 100u)};
+#ifdef WIN32
+    deck_core_test_apply_event(&event);
+#else
+    deck_core_queue_event(&event);
+#endif
+}
+#endif
+
+// ─── Component Initialization Helpers ────────────────────────────────────────
+
+static void init_styles(void) {
+    // Root container style
+    lv_style_init(&s_style_root);
+    lv_style_set_bg_color(&s_style_root, COL_BG);
+    lv_style_set_bg_opa(&s_style_root, LV_OPA_COVER);
+    lv_style_set_pad_all(&s_style_root, 0);
+
+    // Legacy header state sink. Hidden in the Pioneered layout but kept alive
+    // because update paths still write active deck metadata into these labels.
+    lv_style_init(&s_style_header);
+    lv_style_set_bg_color(&s_style_header, COL_BG);
+    lv_style_set_bg_opa(&s_style_header, LV_OPA_TRANSP);
+    lv_style_set_border_width(&s_style_header, 0);
+    lv_style_set_border_color(&s_style_header, COL_BORDER);
+    lv_style_set_border_side(&s_style_header, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_pad_left(&s_style_header, 0);
+    lv_style_set_pad_right(&s_style_header, 0);
+
+    // Top navigation bar style.
+    lv_style_init(&s_style_footer);
+    lv_style_set_bg_color(&s_style_footer, COL_FOOTER);
+    lv_style_set_bg_opa(&s_style_footer, LV_OPA_COVER);
+    lv_style_set_border_width(&s_style_footer, 0);
+    lv_style_set_border_color(&s_style_footer, COL_BORDER);
+    lv_style_set_border_side(&s_style_footer, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_pad_all(&s_style_footer, 0);
+
+    // Tab buttons - Pioneered normal
+    lv_style_init(&s_style_tab_btn_normal);
+    lv_style_set_bg_color(&s_style_tab_btn_normal, COL_BG);
+    lv_style_set_bg_opa(&s_style_tab_btn_normal, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_normal, COL_TEXT_MUTED);
+    lv_style_set_border_width(&s_style_tab_btn_normal, 1);
+    lv_style_set_border_color(&s_style_tab_btn_normal, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_tab_btn_normal, 0);
+    lv_style_set_pad_all(&s_style_tab_btn_normal, 0);
+    
+    // Tab buttons - Pioneered active
+    lv_style_init(&s_style_tab_btn_active);
+    lv_style_set_bg_color(&s_style_tab_btn_active, COL_BG);
+    lv_style_set_bg_opa(&s_style_tab_btn_active, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_active, COL_TAB_ACTIVE);
+    lv_style_set_border_width(&s_style_tab_btn_active, 2);
+    lv_style_set_border_color(&s_style_tab_btn_active, COL_TAB_ACTIVE);
+    lv_style_set_radius(&s_style_tab_btn_active, 0);
+    lv_style_set_pad_all(&s_style_tab_btn_active, 0);
+
+    // Tab buttons - Disabled (future use)
+    lv_style_init(&s_style_tab_btn_disabled);
+    lv_style_set_bg_color(&s_style_tab_btn_disabled, COL_SURFACE);
+    lv_style_set_bg_opa(&s_style_tab_btn_disabled, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_disabled, COL_TEXT_DIM);
+    lv_style_set_border_width(&s_style_tab_btn_disabled, 1);
+    lv_style_set_border_color(&s_style_tab_btn_disabled, lv_color_hex(0x242424));
+    lv_style_set_radius(&s_style_tab_btn_disabled, 0);
+    lv_style_set_pad_all(&s_style_tab_btn_disabled, 0);
+
+    // Sub-screen generic background
+    lv_style_init(&s_style_screen_bg);
+    lv_style_set_bg_color(&s_style_screen_bg, COL_BG);
+    lv_style_set_bg_opa(&s_style_screen_bg, LV_OPA_COVER);
+    lv_style_set_pad_all(&s_style_screen_bg, 0);
+
+    lv_style_init(&s_style_panel_frame);
+    lv_style_set_bg_color(&s_style_panel_frame, COL_PANEL_DK);
+    lv_style_set_bg_opa(&s_style_panel_frame, LV_OPA_COVER);
+    lv_style_set_border_width(&s_style_panel_frame, 1);
+    lv_style_set_border_color(&s_style_panel_frame, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_panel_frame, 0);
+    lv_style_set_pad_all(&s_style_panel_frame, 0);
+
+    lv_style_init(&s_style_btn_primary);
+    lv_style_set_bg_color(&s_style_btn_primary, COL_GREEN);
+    lv_style_set_bg_opa(&s_style_btn_primary, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_primary, COL_ON_ACCENT);
+    lv_style_set_border_width(&s_style_btn_primary, 1);
+    lv_style_set_border_color(&s_style_btn_primary, lv_color_hex(0x6DFFB1));
+    lv_style_set_radius(&s_style_btn_primary, 2);
+
+    lv_style_init(&s_style_btn_amber);
+    lv_style_set_bg_color(&s_style_btn_amber, COL_AMBER);
+    lv_style_set_bg_opa(&s_style_btn_amber, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_amber, COL_ON_ACCENT);
+    lv_style_set_border_width(&s_style_btn_amber, 1);
+    lv_style_set_border_color(&s_style_btn_amber, lv_color_hex(0xFFD166));
+    lv_style_set_radius(&s_style_btn_amber, 2);
+
+    lv_style_init(&s_style_btn_secondary);
+    lv_style_set_bg_color(&s_style_btn_secondary, COL_SURFACE);
+    lv_style_set_bg_opa(&s_style_btn_secondary, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_secondary, COL_TEXT_MUTED);
+    lv_style_set_border_width(&s_style_btn_secondary, 1);
+    lv_style_set_border_color(&s_style_btn_secondary, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_btn_secondary, 2);
+
+    lv_style_init(&s_style_btn_disabled);
+    lv_style_set_bg_color(&s_style_btn_disabled, COL_DISABLED);
+    lv_style_set_bg_opa(&s_style_btn_disabled, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_disabled, COL_TEXT_DIM);
+    lv_style_set_border_width(&s_style_btn_disabled, 1);
+    lv_style_set_border_color(&s_style_btn_disabled, COL_BORDER);
+    lv_style_set_radius(&s_style_btn_disabled, 2);
+
+    // Styled Neon Action Button
+    lv_style_init(&s_style_btn_neon);
+    lv_style_set_bg_color(&s_style_btn_neon, COL_GREEN);
+    lv_style_set_bg_opa(&s_style_btn_neon, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_neon, COL_BG);
+    lv_style_set_radius(&s_style_btn_neon, 2);
+
+    // Universal touch feedback: dim + slightly shrink on press (works on any
+    // colour). Attach with LV_STATE_PRESSED to interactive elements.
+    lv_style_init(&s_style_pressed);
+    lv_style_set_opa(&s_style_pressed, LV_OPA_70);
+    lv_style_set_transform_width(&s_style_pressed, -3);
+    lv_style_set_transform_height(&s_style_pressed, -3);
+}
+
+// Build the top bar UI elements
+static void create_header(lv_obj_t *parent) {
+    s_header_container = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_header_container);
+    lv_obj_add_style(s_header_container, &s_style_header, LV_PART_MAIN);
+    lv_obj_set_size(s_header_container, UI_HOR_RES, UI_TOPBAR_H);
+    lv_obj_set_pos(s_header_container, 0, 0);
+    lv_obj_add_flag(s_header_container, LV_OBJ_FLAG_HIDDEN);
+
+    // Track Title (Left block)
+    s_label_title = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_title, "Loading...");
+    lv_obj_set_style_text_font(s_label_title, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_title, COL_TEXT, LV_PART_MAIN);
+    lv_label_set_long_mode(s_label_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_size(s_label_title, 220, 24);
+    lv_obj_set_pos(s_label_title, 10, 5);
+
+    s_label_artist = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_artist, "No Track Loaded");
+    lv_obj_set_style_text_font(s_label_artist, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_artist, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_artist, 10, 30);
+
+    // Playhead indicator
+    s_label_status_indicator = lv_label_create(s_header_container);
+    ui_label_set_small_caps(s_label_status_indicator, "PAUSE", COL_AMBER);
+    lv_obj_set_pos(s_label_status_indicator, 245, 18);
+
+    // Elapsed time (current position) — large monospace, centred, blue.
+    s_label_time = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_time, "00:00.00");
+    lv_obj_set_style_text_font(s_label_time, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_time, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_align(s_label_time, LV_ALIGN_CENTER, 0, 0);
+
+    // Remaining time (until end of track) — sits immediately to the right of the
+    // elapsed counter, slightly smaller and dimmer to read as the secondary value.
+    s_label_time_remain = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_time_remain, "-00:00.00");
+    lv_obj_set_style_text_font(s_label_time_remain, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_time_remain, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_update_layout(s_label_time);  // ensure elapsed size is known before aligning
+    lv_obj_align_to(s_label_time_remain, s_label_time, LV_ALIGN_OUT_RIGHT_MID, 14, 0);
+
+    // BPM & Pitch Info (pulled to the far right edge of the header)
+    lv_obj_t *bpm_info_container = lv_obj_create(s_header_container);
+    lv_obj_remove_style_all(bpm_info_container);
+    lv_obj_set_size(bpm_info_container, 130, 45);
+    lv_obj_align(bpm_info_container, LV_ALIGN_RIGHT_MID, -8, 0);
+
+    s_label_bpm = lv_label_create(bpm_info_container);
+    lv_label_set_text(s_label_bpm, "120.00");
+    lv_obj_set_style_text_font(s_label_bpm, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_bpm, COL_TEXT, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_bpm, 10, 2);
+
+    lv_obj_t *label_bpm_unit = lv_label_create(bpm_info_container);
+    lv_label_set_text(label_bpm_unit, "BPM");
+    lv_obj_set_style_text_font(label_bpm_unit, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label_bpm_unit, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(label_bpm_unit, 75, 7);
+
+    s_label_pitch = lv_label_create(bpm_info_container);
+    lv_label_set_text(s_label_pitch, "+0.00%");
+    lv_obj_set_style_text_font(s_label_pitch, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_pitch, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_pitch, 10, 23);
+
+    lv_obj_t *label_pitch_unit = lv_label_create(bpm_info_container);
+    lv_label_set_text(label_pitch_unit, "PITCH");
+    lv_obj_set_style_text_font(label_pitch_unit, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label_pitch_unit, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(label_pitch_unit, 75, 26);
+
+    ui_status_widgets_t status_widgets = {
+        .title = s_label_title,
+        .artist = s_label_artist,
+        .time_elapsed = s_label_time,
+        .time_remain = s_label_time_remain,
+        .bpm = s_label_bpm,
+        .pitch = s_label_pitch,
+        .status_indicator = s_label_status_indicator,
+    };
+    ui_status_init(&status_widgets);
+}
+
+// Build Pioneered-style top navigation buttons.
+static void create_footer(lv_obj_t *parent) {
+    s_footer_container = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_footer_container);
+    lv_obj_add_style(s_footer_container, &s_style_footer, LV_PART_MAIN);
+    lv_obj_set_size(s_footer_container, UI_HOR_RES, UI_TOPBAR_H);
+    lv_obj_set_pos(s_footer_container, 0, 0);
+
+    const int btn_height = 28;
+    const int spacing = 6;
+    const int offset_left = 6;
+    const int offset_top = 9;
+    const int btn_width =
+        (UI_HOR_RES - (offset_left * 2) - ((UI_TAB_COUNT - 1) * spacing)) / UI_TAB_COUNT;
+
+    for (int i = 0; i < UI_TAB_COUNT; i++) {
+        s_footer_buttons[i] = lv_button_create(s_footer_container);
+        lv_obj_remove_style_all(s_footer_buttons[i]);
+        lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_normal, LV_PART_MAIN);
+        lv_obj_add_style(s_footer_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
+        lv_obj_set_size(s_footer_buttons[i], btn_width, btn_height);
+        lv_obj_set_pos(s_footer_buttons[i], offset_left + i * (btn_width + spacing), offset_top);
+        lv_obj_clear_flag(s_footer_buttons[i], LV_OBJ_FLAG_SCROLLABLE);
+        
+        lv_obj_set_user_data(s_footer_buttons[i], (void*)(intptr_t)i);
+        lv_obj_add_event_cb(s_footer_buttons[i], footer_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+        s_footer_active_strips[i] = lv_obj_create(s_footer_buttons[i]);
+        lv_obj_remove_style_all(s_footer_active_strips[i]);
+        lv_obj_set_size(s_footer_active_strips[i], btn_width - 10, 2);
+        lv_obj_set_pos(s_footer_active_strips[i], 5, btn_height - 4);
+        lv_obj_set_style_bg_color(s_footer_active_strips[i], COL_TAB_ACTIVE, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_footer_active_strips[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_footer_active_strips[i], 0, LV_PART_MAIN);
+        lv_obj_add_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *lbl = lv_label_create(s_footer_buttons[i]);
+        lv_label_set_text(lbl, s_tab_names[i]);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    // Set first tab as active
+    lv_obj_add_style(s_footer_buttons[0], &s_style_tab_btn_active, LV_PART_MAIN);
+    lv_obj_remove_flag(s_footer_active_strips[0], LV_OBJ_FLAG_HIDDEN);
+}
+
+// Overview waveform bridge. Library/track-load code still owns cache invalidation
+// and metadata selection; the overview module owns all widgets and rendering.
+static void ui_load_waveform_data(uint8_t deck,
+                                  uint32_t duration_ms,
+                                  const uint8_t waveform_low[400],
+                                  bool has_waveform,
+                                  const anlz_metadata_t *meta)
+{
+    (void)meta;
+    ui_cache_invalidate();
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    anlz_snapshot_t *snapshot = ui_deck_anlz_acquire(deck);
+    ui_overview_load_waveform_data(deck,
+                                   duration_ms,
+                                   waveform_low,
+                                   has_waveform,
+                                   snapshot);
+    anlz_snapshot_release(snapshot);
+#else
+    (void)deck; (void)duration_ms; (void)waveform_low; (void)has_waveform;
+#endif
+}
+
+static bool ui_library_is_performance_target_active(uint8_t deck)
+{
+    return ui_controls_is_active_deck(&s_controls, deck);
+}
+
+static void ui_update_overview_cue_markers(uint8_t deck)
+{
+    /* The selected renderer refreshes the effective bank on the next frame.
+     * Do not briefly repaint raw source cues before merging local tombstones. */
+    (void)deck;
+}
+
+// ─── Global Interface Functions ──────────────────────────────────────────────
+
+#ifdef WIN32
+static void ui_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    ui_update();
+}
+#else
+static void ui_frame_cb(void *user_ctx)
+{
+    (void)user_ctx;
+    ui_update();
+}
+#endif
+
+#ifndef WIN32
+static void ui_perf_log_us(const char *label, const ui_overview_perf_report_t *report)
+{
+    if (!label || !report) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "%s: last=%u us avg=%u us max=%u us samples=%u",
+             label,
+             (unsigned)report->last_us,
+             (unsigned)report->avg_us,
+             (unsigned)report->max_us,
+             (unsigned)report->samples);
+}
+
+#endif
+
+static void ui_splash_screen_finished_cb(void)
+{
+    ESP_LOGI(TAG, "Splash screen finished, loading main UI...");
+    if (s_main_screen) {
+        lv_screen_load(s_main_screen);
+    }
+}
+
+esp_err_t ui_init(void) {
+    ESP_LOGI(TAG, "Initializing LVGL DJ UI layout (800x480 landscape)...");
+    ui_deck_anlz_store_init(&s_deck_anlz_store);
+    ui_controls_state_init(&s_controls);
+
+#ifndef WIN32
+    // On firmware, bring up LVGL on top of the BSP panel before building widgets.
+    // (On the PC simulator the HAL has already initialised LVGL + a display.)
+    esp_err_t be_rc = ui_lvgl_backend_init(UI_HOR_RES, UI_VER_RES);
+    if (be_rc != ESP_OK) {
+        return be_rc;
+    }
+#endif
+
+    // Initialize custom dark themes
+    init_styles();
+
+    ui_controls_widget_config_t controls_widget_config = {
+        .pressed = &s_style_pressed,
+        .select_deck = ui_set_performance_deck,
+        .set_overview_target = ui_overview_set_performance_target,
+    };
+    ui_controls_widgets_init(&controls_widget_config);
+
+    ui_overview_config_t overview_config = {
+        .styles = {
+            .screen_bg = &s_style_screen_bg,
+            .panel_frame = &s_style_panel_frame,
+            .btn_primary = &s_style_btn_primary,
+            .btn_amber = &s_style_btn_amber,
+            .pressed = &s_style_pressed,
+        },
+        .actions = {
+            .select_deck = ui_set_performance_deck,
+            .play_pause = ui_overview_action_play_pause,
+            .cue = ui_overview_action_cue,
+            .toggle_master_tempo = ui_overview_action_toggle_master_tempo,
+            .seek = ui_overview_action_seek,
+        },
+    };
+    ui_overview_init(&overview_config);
+
+    ui_performance_tabs_config_t performance_tabs_config = {
+        .controls = &s_controls,
+        .styles = {
+            .screen_bg = &s_style_screen_bg,
+            .panel_frame = &s_style_panel_frame,
+            .btn_secondary = &s_style_btn_secondary,
+            .pressed = &s_style_pressed,
+        },
+        .actions = {
+            .active_bpm = ui_performance_bpm,
+            .acquire_active_anlz = ui_performance_anlz_acquire,
+            .active_persistent_id = ui_performance_persistent_id,
+            .active_state = ui_performance_deck_state,
+            .deck_position_ms = ui_performance_deck_position_ms,
+            .seek = ui_performance_seek,
+            .play = ui_performance_play,
+            .set_loop = ui_performance_set_loop,
+            .clear_loop = ui_performance_clear_loop,
+            .restore_source_cues = ui_performance_restore_source_cues,
+            .set_jog_mode = ui_performance_set_jog_mode,
+            .hot_cue_pad = ui_performance_hot_cue_pad,
+            .update_overview_cue_markers = ui_update_overview_cue_markers,
+        },
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+    };
+    ui_performance_tabs_init(&performance_tabs_config);
+
+    ui_settings_config_t settings_config = {
+        .screen_bg = &s_style_screen_bg,
+        .panel_frame = &s_style_panel_frame,
+        .btn_secondary = &s_style_btn_secondary,
+        .pressed = &s_style_pressed,
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+        .settings_tab_index = UI_TAB_SETTINGS,
+    };
+    ui_settings_configure(&settings_config);
+
+    ui_library_config_t library_config = {
+        .styles = {
+            .screen_bg = &s_style_screen_bg,
+            .btn_primary = &s_style_btn_primary,
+            .btn_secondary = &s_style_btn_secondary,
+            .btn_disabled = &s_style_btn_disabled,
+            .pressed = &s_style_pressed,
+        },
+        .actions = {
+            .status_hold = ui_status_hold,
+            .status_color_for_text = ui_status_color_for_text,
+            .cache_invalidate = ui_cache_invalidate,
+            .set_header_track = ui_status_set_header_track,
+            .clear_deck_track_info = ui_deck_track_info_clear,
+            .set_deck_track_info = ui_deck_track_info_set,
+            .set_deck_anlz = ui_deck_anlz_set_from_current,
+            .load_waveform_data = ui_load_waveform_data,
+            .set_loop_shadow = ui_set_loop_shadow,
+            .is_performance_target_active = ui_library_is_performance_target_active,
+            .update_hot_cues = ui_performance_tabs_update_hot_cues,
+        },
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+    };
+    ui_library_init(&library_config);
+
+    // Create central base root container on the main screen.  The splash
+    // screen temporarily becomes active during boot, so keep an explicit
+    // handle for returning to the already-built main UI.
+    s_main_screen = lv_screen_active();
+    s_root_container = lv_obj_create(s_main_screen);
+    lv_obj_remove_style_all(s_root_container);
+    lv_obj_add_style(s_root_container, &s_style_root, LV_PART_MAIN);
+    lv_obj_set_size(s_root_container, UI_HOR_RES, UI_VER_RES);
+
+    // Initialize mock database system (if simulator)
+#ifdef WIN32
+    library_init();
+    QueueHandle_t dummy;
+    deck_core_init(&dummy);
+#else
+    ESP_ERROR_CHECK(media_catalog_init());
+#endif
+
+    // Build parts
+    create_header(s_root_container);
+    create_footer(s_root_container);
+
+    // Build the screen layers
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_screens[UI_TAB_OVERVIEW] = ui_overview_create(s_root_container);
+    s_screens[UI_TAB_LIBRARY] = ui_library_create(s_root_container);
+    s_screens[UI_TAB_HOT_CUES] = ui_performance_tabs_create_hot_cues(s_root_container);
+#endif
+    ui_controls_update_performance_target_visuals(&s_controls);
+    s_screens[UI_TAB_SETTINGS] = ui_settings_create(s_root_container);
+
+    // Switch initially to overview (index 0) and hide others
+    for (int i = 1; i < UI_TAB_COUNT; i++) {
+        if (s_screens[i]) lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    s_active_tab = 0;
+
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    s_dj_container = lv_obj_create(s_main_screen);
+    lv_obj_remove_style_all(s_dj_container);
+    lv_obj_set_size(s_dj_container, UI_HOR_RES, UI_VER_RES);
+    const dj_ui_callbacks_t dj_callbacks = {
+        .on_tab=ui_dj_tab, .on_play=ui_dj_play, .on_cue=ui_dj_cue,
+        .on_master_tempo=ui_overview_action_toggle_master_tempo,
+        .on_sync=ui_dj_sync, .on_hotcue=ui_dj_hotcue,
+        .on_hotcue_delete=ui_dj_hotcue_delete, .on_restore_cues=ui_dj_restore_cues,
+        .on_field=ui_dj_field,
+        .on_seek=ui_dj_seek, .on_target=ui_set_performance_deck,
+        .on_wake=ui_dj_wake,
+        .on_fx_toggle=ui_dj_fx_toggle, .on_fx_select=ui_dj_fx_select,
+        .on_fx_channel=ui_dj_fx_channel, .on_fx_beat=ui_dj_fx_beat,
+        .on_fx_level=ui_dj_fx_level,
+        .on_lib_select=ui_library_select_visible_row, .on_lib_load=ui_dj_library_load,
+        .on_lib_sort=ui_dj_library_sort, .on_lib_page=ui_dj_library_page,
+        .on_lib_playlists=ui_library_toggle_playlists,
+        .on_lib_source=ui_library_cycle_source,
+    };
+#ifdef WIN32
+    bool ethernet = UI_HOR_RES == 1024;
+#else
+    bool ethernet = board_capabilities_get()->ethernet;
+#endif
+    bool recorder = false;
+#if CONFIG_AUDIO_RECORDER_ENABLED
+    recorder = true;
+#endif
+    ui_dj_bridge_init(s_dj_container, &dj_callbacks, ethernet, recorder);
+    ui_library_dj_enable();
+    ui_switch_tab(UI_TAB_OVERVIEW);
+#endif
+
+    ui_library_load_initial_track();
+
+#ifndef WIN32
+    ui_idle_init(&s_idle, UI_IDLE_DEFAULT_TIMEOUT_MS,
+                 (uint32_t)(esp_timer_get_time() / 1000));
+#endif
+
+    // Keep the simulator's historical 16 ms timer. Firmware updates once per
+    // physical panel refresh so waveform work is phase-locked to DSI scanout.
+#ifdef WIN32
+    lv_timer_create(ui_timer_cb, UI_UPDATE_PERIOD_MS, NULL);
+#else
+    esp_err_t frame_cb_rc = ui_lvgl_backend_set_frame_callback(ui_frame_cb, NULL);
+    if (frame_cb_rc != ESP_OK) {
+        return frame_cb_rc;
+    }
+#endif
+
+    splash_screen_show(ui_splash_screen_finished_cb);
+
+#ifndef WIN32
+    // Start the LVGL handler task last, once all widgets exist.
+    esp_err_t start_rc = ui_lvgl_backend_start();
+    if (start_rc != ESP_OK) {
+        return start_rc;
+    }
+#endif
+
+    ESP_LOGI(TAG, "LVGL DJ UI layout successfully initialized.");
+    return ESP_OK;
+}
+
+static uint64_t ui_monotonic_time_us(void)
+{
+#ifndef WIN32
+    return (uint64_t)esp_timer_get_time();
+#else
+    return (uint64_t)lv_tick_get() * 1000u;
+#endif
+}
+
+static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
+{
+    if (!state) {
+        return 1000u;
+    }
+
+    float pitch_pct;
+#ifndef WIN32
+    pitch_pct = deck_core_pitch_percent(state);
+#else
+    pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
+#endif
+    int speed = 1000 + (int)(pitch_pct * 10.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
+    if (speed < 1) {
+        speed = 1;
+    }
+    return (uint32_t)speed;
+}
+
+static void ui_build_frame_context(ui_frame_context_t *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->now_us = ui_monotonic_time_us();
+    ctx->now_ms = lv_tick_get();
+    ctx->active_tab = s_active_tab;
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        if (audio_engine_deck_try_get_status(deck, &s_display_audio_status[deck]) == ESP_OK)
+            s_display_audio_status_valid[deck] = true;
+        ctx->deck_audio_status[deck] = s_display_audio_status[deck];
+        const audio_engine_deck_status_t *audio = &ctx->deck_audio_status[deck];
+        const bool same_session = s_display_audio_status_valid[deck] &&
+            ui_library_deck_observation_matches(deck, audio->loaded, audio->session_generation);
+        ctx->deck_loop_display[deck] = deck_core_get_loop_display_observed(deck,
+            same_session && audio->loop_active, audio->loop_start_ms, audio->loop_end_ms);
+        ctx->deck_state[deck] = deck_core_get_deck_control_state(deck);
+        if (s_display_audio_status_valid[deck])
+            ctx->deck_state[deck].position_ms = ctx->deck_audio_status[deck].position_ms;
+    }
+    ctx->active_deck = ui_controls_active_deck(&s_controls);
+    ctx->active_state = ctx->deck_state[ui_deck_index(ctx->active_deck)];
+    ctx->beat_fx_state = deck_core_get_beat_fx_state();
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        ctx->deck_duration_ms[deck] = s_deck_track_info[deck].valid ?
+            ui_library_deck_duration_observed(deck, s_deck_track_info[deck].duration_ms,
+                s_display_audio_status_valid[deck] && ctx->deck_audio_status[deck].loaded,
+                ctx->deck_audio_status[deck].session_generation,
+                ctx->deck_audio_status[deck].duration_ms) : 0;
+        ctx->deck_analysis_span_ms[deck] = ui_library_deck_analysis_span_ms(
+            deck, ctx->deck_duration_ms[deck]);
+        ctx->deck_bpm[deck] = ui_deck_bpm(deck);
+        ctx->deck_anlz[deck] = ui_deck_anlz_acquire(deck);
+        ctx->deck_meta[deck] =
+            anlz_snapshot_metadata(ctx->deck_anlz[deck]);
+        ctx->deck_info[deck] = &s_deck_track_info[deck];
+        ctx->deck_speed_permille[deck] =
+            ui_pitch_speed_permille(&ctx->deck_state[deck]);
+
+        const uint8_t *loaded_waveform_low = NULL;
+        bool loaded_has_waveform = false;
+        if (ui_library_get_loaded_waveform(deck, &loaded_waveform_low, &loaded_has_waveform)) {
+            ctx->overview_wave_source[deck] = (ui_overview_waveform_source_info_t){
+                .kind = UI_OVERVIEW_WAVEFORM_SOURCE_LOADED_MEDIA,
+                .waveform_low = loaded_waveform_low,
+                .has_waveform = loaded_has_waveform,
+            };
+        } else
+        {
+            ctx->overview_wave_source[deck] = (ui_overview_waveform_source_info_t){
+                .kind = UI_OVERVIEW_WAVEFORM_SOURCE_METADATA,
+                .waveform_low = NULL,
+                .has_waveform = false,
+            };
+        }
+    }
+
+    ctx->active_duration_ms = ctx->deck_duration_ms[ui_deck_index(ctx->active_deck)];
+    ctx->active_base_bpm = ctx->deck_bpm[ui_deck_index(ctx->active_deck)];
+    ctx->active_meta = ctx->deck_meta[ui_deck_index(ctx->active_deck)];
+    if (ctx->active_duration_ms > 0) {
+        ctx->active_beat_state =
+            ui_beat_indicator_calculate(ctx->active_state.position_ms,
+                                        ctx->active_meta ? ctx->active_meta->beats : NULL,
+                                        ctx->active_meta ? ctx->active_meta->beat_count : 0,
+                                        ctx->active_base_bpm);
+        ctx->active_beat_state_valid = ctx->active_beat_state.valid;
+    }
+
+    static uint32_t s_overview_slow_bucket = UINT32_MAX;
+    uint32_t overview_slow_bucket = ctx->now_ms / 1000u;
+    ctx->overview_slow_update = overview_slow_bucket != s_overview_slow_bucket;
+    if (ctx->overview_slow_update) {
+        s_overview_slow_bucket = overview_slow_bucket;
+    }
+
+#ifndef WIN32
+    const audio_engine_deck_status_t *audio_status =
+        &ctx->deck_audio_status[ui_deck_index(ctx->active_deck)];
+    ctx->ae_loading = (audio_status->state == AE_LOADING);
+    ctx->ae_load_pct = audio_status->load_progress;
+    audio_engine_get_mixer_snapshot(&ctx->mixer_snapshot);
+#else
+    ctx->ae_loading = false;
+    ctx->ae_load_pct = 100;
+#endif
+}
+
+static void ui_release_frame_context(ui_frame_context_t *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        anlz_snapshot_release(ctx->deck_anlz[deck]);
+        ctx->deck_anlz[deck] = NULL;
+        ctx->deck_meta[deck] = NULL;
+    }
+    ctx->active_meta = NULL;
+}
+
+
+#ifndef WIN32
+static uint32_t ui_now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static void ui_idle_service(const ui_frame_context_t *ctx)
+{
+    uint32_t now = ui_now_ms();
+    if (s_idle_activity_flag) {
+        s_idle_activity_flag = false;
+        ui_idle_notice_activity(&s_idle, now);
+    }
+
+    bool playing = false;
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+        if (ctx->deck_state[d].playing) { playing = true; break; }
+    }
+    /* The recorder is compiled out by default; the inhibit stays in the pure
+     * helper so re-enabling it needs no rediscovery here. */
+    bool recording = false;
+#if CONFIG_AUDIO_RECORDER_ENABLED
+    audio_recorder_state_t recorder_state = audio_recorder_get_state();
+    recording = recorder_state == AUDIO_RECORDER_STARTING ||
+        recorder_state == AUDIO_RECORDER_RECORDING || recorder_state == AUDIO_RECORDER_STOPPING;
+#endif
+
+    switch (ui_idle_tick(&s_idle, now, playing, recording)) {
+    case UI_IDLE_ACTION_SHOW:
+        ui_overview_cancel_holds();
+        ui_performance_tabs_cancel_holds();
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        dj_ui_set_screensaver(true);
+#else
+        splash_screen_screensaver_show();
+#endif
+        s_idle_shown_pub = true;
+        break;
+    case UI_IDLE_ACTION_HIDE:
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+        dj_ui_set_screensaver(false);
+#else
+        splash_screen_screensaver_hide();
+#endif
+        s_idle_shown_pub = false;
+        /* LVGL repaints the restored tab, which erases the direct-PPA
+         * waveforms exactly as a tab switch does. */
+        ui_overview_note_screen_restored();
+        break;
+    default:
+        break;
+    }
+}
+#endif
+
+void ui_update(void) {
+#ifndef WIN32
+    uint64_t update_start_us = 0;
+    if (ui_diagnostics_enabled()) {
+        update_start_us = (uint64_t)esp_timer_get_time();
+        static uint64_t last_update_start_us = 0;
+        if (last_update_start_us != 0) {
+            ui_overview_perf_report_t interval_report;
+            if (ui_overview_perf_record(&s_ui_update_interval_perf,
+                                        (uint32_t)(update_start_us - last_update_start_us),
+                                        &interval_report)) {
+                ui_perf_log_us("ui_update interval", &interval_report);
+            }
+        }
+        last_update_start_us = update_start_us;
+    }
+#endif
+
+    /* Controller browse/load events remain compact commands until this point.
+     * This is the LVGL task, so the resulting screen and library work has one
+     * owner and never runs on the deck-control task. */
+    deck_core_process_ui_commands();
+
+    ui_frame_context_t ctx;
+    ui_build_frame_context(&ctx);
+    uint32_t frame_revision = s_deck_frame_revision;
+#ifndef WIN32
+    ui_idle_service(&ctx);
+#endif
+    bool waveform_first = false;
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
+    waveform_first = board_capabilities_get()->waveform_first;
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (waveform_first) ui_overview_update(&ctx);
+#endif
+#endif
+    ui_library_update(&ctx);
+    ui_performance_tabs_update_jog_mode();
+#ifndef WIN32
+    static uint32_t last_hot_cue_revision;
+    uint32_t hot_cue_revision = deck_core_hot_cue_revision();
+    if (hot_cue_revision != last_hot_cue_revision) {
+        last_hot_cue_revision = hot_cue_revision;
+        ui_performance_tabs_update_hot_cues();
+    }
+#endif
+    /* Keep immediate load/USB-clear publication, without a second round of
+     * audio mutex reads on the waveform-first scanout path. Combined-update
+     * boards retain their existing refreshed-context semantics. */
+    if (!waveform_first || frame_revision != s_deck_frame_revision || ctx.active_tab != s_active_tab ||
+        ctx.active_deck != ui_controls_active_deck(&s_controls)) {
+        ui_release_frame_context(&ctx);
+        ui_build_frame_context(&ctx);
+    }
+
+#ifdef WIN32
+    deck_state_t state = ctx.deck_state[CTRL_DECK_1];
+    ui_controls_loop_state_t active_loop = ui_controls_active_loop(&s_controls);
+    if (active_loop.active) {
+        if (state.position_ms >= active_loop.end_ms) {
+            ui_simulator_deck_set_position(active_loop.start_ms);
+            ctx.deck_state[CTRL_DECK_1].position_ms = active_loop.start_ms;
+            if (ctx.active_deck == CTRL_DECK_1) {
+                ctx.active_state.position_ms = active_loop.start_ms;
+            }
+        }
+    }
+#endif
+
+    ui_status_update(&ctx);
+#if CONFIG_PAJONIIIR_DJ_OVERVIEW
+    ui_dj_bridge_update(&ctx);
+#else
+    if (!waveform_first) ui_overview_update(&ctx);
+#endif
+    ui_settings_update(&ctx);
+    ui_release_frame_context(&ctx);
+
+#ifndef WIN32
+    if (ui_diagnostics_enabled()) {
+        uint64_t update_end_us = (uint64_t)esp_timer_get_time();
+        ui_overview_perf_report_t duration_report;
+        if (ui_overview_perf_record(&s_ui_update_duration_perf,
+                                    (uint32_t)(update_end_us - update_start_us),
+                                    &duration_report)) {
+            ui_perf_log_us("ui_update duration", &duration_report);
+        }
+    }
+#endif
+}
+
+bool ui_is_overview_active(void)
+{
+    return s_active_tab == UI_TAB_OVERVIEW;
+}
+
+esp_err_t ui_show_library(void)
+{
+    if (!s_root_container || !ui_library_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    ui_switch_tab(UI_TAB_LIBRARY);
+    ui_lvgl_unlock();
+    return ESP_OK;
+}
+
+esp_err_t ui_toggle_library_view(void)
+{
+    if (!s_root_container || !ui_library_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    ui_switch_tab(s_active_tab == UI_TAB_LIBRARY ? UI_TAB_OVERVIEW : UI_TAB_LIBRARY);
+    ui_lvgl_unlock();
+    return ESP_OK;
+}
+
+void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms)
+{
+    uint8_t idx = ui_deck_index(deck);
+    if (out_title && title_max > 0) {
+        ui_copy_str(out_title,
+                    title_max,
+                    s_deck_track_info[idx].title[0] ? s_deck_track_info[idx].title : "No Track");
+    }
+    if (out_artist && artist_max > 0) {
+        ui_copy_str(out_artist,
+                    artist_max,
+                    s_deck_track_info[idx].artist[0] ? s_deck_track_info[idx].artist : "Unknown Artist");
+    }
+    if (out_bpm) {
+        *out_bpm = s_deck_track_info[idx].bpm;
+    }
+    if (out_duration_ms) {
+        *out_duration_ms = s_deck_track_info[idx].duration_ms;
+    }
+}
+
+void ui_get_deck_track_key(uint8_t deck, char *out_key, size_t key_max)
+{
+    uint8_t idx = ui_deck_index(deck);
+    ui_copy_str(out_key, key_max,
+                s_deck_track_info[idx].valid ? s_deck_track_info[idx].key : "");
+}

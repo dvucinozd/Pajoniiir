@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $BuildDir = Join-Path $PSScriptRoot "build"
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
-$Components = Join-Path $RepoRoot "firmware/main-deck-p4/components"
+$Components = Join-Path $RepoRoot "firmware/p4-core/components"
 $Includes = @("controller_profile", "controller_runtime", "controller_led_runtime", "controller_usb_host", "control_link") |
     ForEach-Object { "-I$(Join-Path $Components "$_/include")" }
 $Common = @("-std=c11", "-Wall", "-Wextra", "-Werror", "-I$(Join-Path $RepoRoot 'tests/controller_runtime/stubs')") + $Includes

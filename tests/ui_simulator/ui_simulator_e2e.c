@@ -15,6 +15,10 @@
 #include "splash_screen.h"
 #include "ui_status.h"
 #include "ui_overview.h"
+#ifdef UI_SIM_BOARD_POLICY
+#include "board_capabilities.h"
+#include "app_settings.h"
+#endif
 
 extern void ui_simulator_deck_set_playing(bool playing);
 extern void ui_simulator_artwork_set_available(bool available);
@@ -23,6 +27,7 @@ extern uint32_t audio_engine_stub_duration_ms[2];
 extern uint32_t audio_engine_stub_session_generation[2];
 extern bool audio_engine_stub_deck_loaded[2];
 extern bool ui_simulator_audio_status_override[2];
+extern bool ui_simulator_audio_status_busy[2];
 extern audio_engine_deck_status_t ui_simulator_audio_status[2];
 
 #ifndef DISPLAY_WIDTH
@@ -35,6 +40,7 @@ static uint32_t s_framebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 static lv_display_t *s_display;
 static int s_failures;
 static void fail(const char *message);
+static bool save_ppm(const char *output_dir, const char *name);
 static ui_artwork_thumb_work_t s_art_work;
 static ui_artwork_thumb_t s_art_result;
 
@@ -82,6 +88,46 @@ static void pump(uint32_t duration_ms)
     }
     lv_refr_now(s_display);
 }
+
+#ifdef CONFIG_PAJONIIIR_BOARD_M3
+static void check_m3_wave_surfaces(lv_obj_t *root, unsigned *main_count, unsigned *mini_count)
+{
+    if (lv_obj_check_type(root, &lv_canvas_class)) {
+        lv_obj_t *border = lv_obj_get_parent(root);
+        if (lv_obj_get_width(root) == 648 && lv_obj_get_height(root) == 141) {
+            int y = lv_obj_get_y(border);
+            if (lv_obj_get_x(border) != 82 || (y != 0 && y != 142))
+                fail("M3 main waveform moved from accepted geometry");
+            ++*main_count;
+        } else if (lv_obj_get_width(root) == 392 && lv_obj_get_height(root) == 45) {
+            if (lv_obj_get_x(border) != 4 && lv_obj_get_x(border) != 404)
+                fail("M3 full-track waveform moved from accepted geometry");
+            ++*mini_count;
+        }
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_count(root); ++i)
+        check_m3_wave_surfaces(lv_obj_get_child(root, (int32_t)i), main_count, mini_count);
+}
+
+static void check_m3_zoom_captures(const char *output_dir)
+{
+    ui_overview_zoom_delta(-8);
+    for (unsigned i = 0; i < 5; ++i) {
+        pump(64);
+        unsigned main_count = 0, mini_count = 0;
+        check_m3_wave_surfaces(lv_screen_active(), &main_count, &mini_count);
+        if (main_count != 2 || mini_count != 2)
+            fail("M3 zoom did not retain both main and full-track waveform canvases");
+        char name[32];
+        snprintf(name, sizeof name, "overview_zoom_%u", i);
+        save_ppm(output_dir, name);
+        ui_overview_zoom_delta(1);
+    }
+    ui_overview_zoom_delta(-8);
+    ui_overview_zoom_delta(2);
+    pump(64);
+}
+#endif
 
 static unsigned visible_logo_count(lv_obj_t *root, const lv_image_dsc_t *logo)
 {
@@ -353,6 +399,17 @@ int main(int argc, char **argv)
     lv_display_set_default(s_display);
 
     check_artwork_decoder();
+#ifdef UI_SIM_BOARD_POLICY
+    const board_capabilities_t *caps = board_capabilities_get();
+    if (caps->display_width != DISPLAY_WIDTH || caps->display_height != DISPLAY_HEIGHT)
+        fail("simulator geometry does not match selected board policy");
+#ifdef CONFIG_PAJONIIIR_BOARD_M3
+    if (!caps->waveform_first || !caps->waveform_top_to_bottom || !caps->overview_artwork_in_title)
+        fail("M3 simulator lost accepted display policies");
+    if (!app_settings_get().wifi_remote)
+        fail("M3 simulator default disabled Wi-Fi");
+#endif
+#endif
 
     if (ui_init() != ESP_OK) {
         fail("ui_init failed");
@@ -400,6 +457,9 @@ int main(int argc, char **argv)
     if (visible_logo_count(lv_screen_active(), &ui_artwork_placeholder_deck) != 1)
         fail("restored artwork failed to replace the logo with the same prior cover");
     save_ppm(argv[1], "overview_deck1");
+#ifdef CONFIG_PAJONIIIR_BOARD_M3
+    check_m3_zoom_captures(argv[1]);
+#endif
     uint64_t deck1_hash = framebuffer_hash();
 
     if (!click_deck(CTRL_DECK_2)) {
@@ -578,10 +638,29 @@ int main(int argc, char **argv)
         fail("live duration changed waveform time base or was ignored");
     if (framebuffer_hash() == metadata_hash)
         fail("live duration did not update the visible overview");
+    uint64_t observed_duration_hash = framebuffer_hash();
+    ui_simulator_audio_status_busy[0] = ui_simulator_audio_status_busy[1] = true;
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = 100u;
+    pump(64);
+    if (framebuffer_hash() != observed_duration_hash)
+        fail("busy decoder replaced retained display duration/status observation");
+    ui_simulator_audio_status_busy[0] = ui_simulator_audio_status_busy[1] = false;
+    pump(64);
+    if (framebuffer_hash() == observed_duration_hash)
+        fail("display duration did not refresh after decoder contention ended");
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = analysis_ms + 30000u;
     ++audio_engine_stub_session_generation[CTRL_DECK_1];
+    if (ui_library_deck_observation_matches(CTRL_DECK_1, true,
+            audio_engine_stub_session_generation[CTRL_DECK_1]))
+        fail("replaced audio session was accepted for waveform loop display");
     if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms)
         fail("stale audio session leaked its duration into current track");
     --audio_engine_stub_session_generation[CTRL_DECK_1];
+    if (!ui_library_deck_observation_matches(CTRL_DECK_1, true,
+            audio_engine_stub_session_generation[CTRL_DECK_1]) ||
+        ui_library_deck_observation_matches(CTRL_DECK_1, false,
+            audio_engine_stub_session_generation[CTRL_DECK_1]))
+        fail("waveform loop observation loaded/session fence is incorrect");
     audio_engine_stub_duration_ms[CTRL_DECK_1] = 100u;
     if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != 100u)
         fail("metadata duration overrode shorter decoded duration");
@@ -693,9 +772,12 @@ int main(int argc, char **argv)
     /* Actual product status rendering, not only the donor's standalone demo. */
     click_label("OVERVIEW");
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    /* Inject only lifecycle/error fields. The complete observation must keep
+     * the real position/session/duration used by the production frame path. */
+    (void)audio_engine_deck_get_status(0, &ui_simulator_audio_status[0]);
+    ui_simulator_audio_status[0].state = AE_LOADING;
+    ui_simulator_audio_status[0].load_progress = 37;
     ui_simulator_audio_status_override[0] = true;
-    ui_simulator_audio_status[0] = (audio_engine_deck_status_t){
-        .state=AE_LOADING, .load_progress=37};
     pump(512);
     if (!find_visible_label(lv_screen_active(), "LOADING 37%"))
         fail("product loading status did not use real decoder progress");

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - "codex/**"
     paths:
       - "**/*.md"
       - "**/*.html"

@@ -1,5 +1,50 @@
 # P4 post-release development plan
 
+Shared-core/M3 implementation is tracked in
+[the integration ledger](SHARED_P4_CORE_INTEGRATION.md). Portable code now lives
+under `firmware/p4-core`; hardware providers live under `firmware/boards`.
+This development branch does not extend the physical scope of M2.5.
+
+The shared-core implementation retains donor library/transport/profile features
+and accepted M3 BSP/DSP/UI policies in one runtime. Finish software variant gates,
+then use [M3 wired migration](M3_SHARED_CORE_MIGRATION.md) on the frozen candidate.
+New-image physical gates include GUI/touch, dual-deck MAIN/PFL, all five zooms,
+signed OTA/startup/rollback, 30 Campaign A cycles and at least 60 minutes of
+worst-case Campaign B timing. Legacy-image acceptance does not transfer.
+Unavailable hardware is NOT RUN. Public board-channel publication requires
+separate authorization after that board's acceptance.
+
+`M3-dev-ge4536de2ec6f` is installed in M3 ota_1 with VALID health state,
+verified against its exact clean source and ELF on 2026-10-07 within the
+installation helper's polling deadline. The preceding 180b008c helper's expired
+deadline remains a separate historical finding.
+[The current candidate record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md) separates
+the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
+operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
+touch/settings confirmations remain in the image-specific
+[95e installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
+Both 11574f4e and the installed c698fa67 ordering repair failed on
+operator-confirmed dual waveform deformation. The latter also showed visual
+stutter while audio remained clean. The measurement candidate reproduced the
+failure: 57 coalesced refreshes in about 12 seconds of dual playback. The next
+repair, now installed after all three builds and exact-source CI passed,
+removes duplicate PPA cache maintenance and unchanged frame resampling;
+see [the regression record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
+The installed repair also failed the physical retest: solo sharp, dual deformed,
+audio clean, 55 coalesced refreshes in the short dual window. Investigate the
+remaining blocking UI status reads before another candidate; the full timing
+gate must restart after a successful exact-image physical retest.
+The installed e4536de2 candidate shares one zero-wait, UI-owned audio-status observation per
+deck between position, session-checked duration and status/progress rendering.
+Busy decode retains the last observation; transport decisions keep their
+authoritative APIs. Production mutex-contention and simulator recovery tests
+and all three clean builds passed, but its physical retest still failed: solo
+sharp, dual deformed, audio clean, with 65 coalesced refreshes. Both decks are
+stopped. Remove the remaining waveform-phase loop-query waits next. The
+[diagnostic-overhead audit](validation/M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md)
+separates quiet service-file logging from recurring heap inspection and UART
+producer reports; the full soak remains NOT RUN.
+
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).
 
@@ -75,7 +120,7 @@ Repeat gates because behavior or assumptions changed, not because records aged.
 | DSP/scheduling/buffering | Reproduce/fix the failure; exact-image active timing and appropriately long audible test |
 | Partition/bootloader/trust key | Wired recovery plan, isolated signed build and supervised installation |
 
-Shared-core changes require both entrypoint builds. Use committed independent
+Shared-core changes require all three entrypoint builds. Use committed independent
 dependency locks and the fixed `0x380000` image budget. Preserve actual source,
 configuration, version, slot/boot, strict deltas and operator results.
 A host soak or simulator cannot replace physical deadlines or sound.

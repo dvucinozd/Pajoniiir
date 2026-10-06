@@ -25,7 +25,7 @@ files, unchanged analysis span, stale session rejection and unloaded fallback.
 Artwork checks exercise real cover → built-in Pajoniiir logo → the same real
 cover for deck headers and Library rows. Missing covers, empty decks, unavailable
 media and remote track/folder transitions are checked separately. The SVG source
-is in `firmware/main-deck-p4/components/ui/assets/default_artwork.svg`; the
+is in `firmware/p4-core/components/ui/assets/default_artwork.svg`; the
 committed RGB565 image descriptors need no SVG renderer in firmware. To regenerate
 them, run `node tools/generate_default_artwork.cjs` with `sharp` available in
 Node's module path. Optional first argument writes PNG previews outside Git.

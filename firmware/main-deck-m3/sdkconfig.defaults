@@ -1,0 +1,155 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# ── Chip revision ─────────────────────────────────────────────────────────────
+# The production board uses ESP32-P4 silicon revision 1.3. ESP-IDF must expose
+# the pre-v3 revision selector before REV_MIN_100 can take effect; without it a
+# clean configuration silently defaults to revision 3.1 and will not boot on the
+# production board.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_ESP32P4_REV_MIN_FULL=100
+
+# ── Flash + partitions (N16R8: 16 MB flash) ──────────────────────────────────
+# Default 2 MB / 1 MB single-app is too small for the full feature set
+# (LVGL + display + touch + USB-MSC + codec + minimp3). 16 MB flash, 4 MB app.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# RTOS – 1 kHz tick
+CONFIG_FREERTOS_HZ=1000
+
+# Console on UART0
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# ── Build optimization ────────────────────────────────────────────────────────
+# The P4 is doing real-time audio, LVGL rendering and PPA blits concurrently.
+# Use performance optimization for firmware builds; debug optimization leaves
+# too little UI headroom and can make the dual-deck overview waveform stutter.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# ── SPIRAM (32MB HEX/16-line PSRAM on JC4880P443C_I_W) ───────────────────────
+# Enables external PSRAM so large buffers (PDB index, ANLZ waveforms, the MIPI
+# DSI frame buffer) fit. CONFIG_SPIRAM_USE_MALLOC lets malloc() fall back to PSRAM.
+# 200 MHz is REQUIRED for the DPI panel: at 20 MHz the DSI engine can't fetch the
+# RGB888 frame buffer fast enough and reports "underrun" every refresh.
+# 200M speed is gated behind IDF_EXPERIMENTAL_FEATURES (same as the IDF DSI demo).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_SPIRAM_FLASH_LOAD_TO_PSRAM=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256
+
+# ── Main task stack ───────────────────────────────────────────────────────────
+# ui_init() builds the four LVGL screens synchronously on the main task; the
+# default 3.5 KB stack overflows (stack-protection panic). Give it room.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# ── USB host (Rekordbox media drive on HS port + FLX4 on FS port) ────────────
+# Allow drives presented behind an internal hub (matches the IDF P4 MSC example).
+CONFIG_USB_HOST_HUBS_SUPPORTED=y
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=4096
+CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
+
+# ── FATFS ─────────────────────────────────────────────────────────────────────
+# Long filename support is OFF by default (8.3 only) → Rekordbox paths like
+# "rekordbox/export.pdb" and "Contents/.../*.mp3" can't be opened. Enable LFN.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+# Rekordbox exports can contain non-ASCII artist/file names. The library parser
+# emits UTF-8 paths, so FatFs must accept UTF-8 API strings for LFN lookup.
+# CONFIG_FATFS_API_ENCODING_ANSI_OEM is not set
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+
+# ── LVGL rendering ────────────────────────────────────────────────────────────
+# Render natively in RGB565 to match the ST7701S panel frame buffer (16bpp, per
+# the JC4880 vendor demo), avoiding a per-frame color conversion in the flush path.
+CONFIG_LV_COLOR_DEPTH_16=y
+# Do not compile LVGL examples/demos into the firmware image.
+# CONFIG_LV_BUILD_EXAMPLES is not set
+# CONFIG_LV_BUILD_DEMOS is not set
+
+# ── LVGL fonts used by the UI ─────────────────────────────────────────────────
+# Enable the Montserrat font sizes referenced in ui.c
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+
+# ── LVGL Custom Malloc ────────────────────────────────────────────────────────
+# Use standard C library malloc/free/realloc to allocate from ESP-IDF heap.
+# This allows LVGL widgets and large table cells to utilize 32 MB of PSRAM,
+# preventing internal SRAM exhaustion.
+# CONFIG_LV_USE_BUILTIN_MALLOC is not set
+# CONFIG_LV_USE_CLIB_MALLOC is not set
+CONFIG_LV_USE_CUSTOM_MALLOC=y
+
+# ── ESP32-P4 Wi-Fi expansion via onboard ESP32-C6 (ESP-Hosted over SDIO) ─────
+# Re-enabled 2026-07-04 for the web UI mobile controller. The P4 has no native
+# radio; the onboard ESP32-C6 provides Wi-Fi over the ESP-Hosted SDIO transport
+# (slot 1, 4-bit; CLK18/CMD19/D0-D3 14-17; C6 reset GPIO54). wifi_link starts a
+# SoftAP (SSID Pajoniiir-M3) and app_main brings up web_server + dns_server.
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD=y
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM=16
+CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_AMPDU_TX_ENABLED=y
+CONFIG_WIFI_RMT_TX_BA_WIN=32
+CONFIG_WIFI_RMT_AMPDU_RX_ENABLED=y
+CONFIG_WIFI_RMT_RX_BA_WIN=32
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=65534
+CONFIG_LWIP_TCP_WND_DEFAULT=65534
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCP_SACK_OUT=y
+
+# ── FLX4 USB headphones audio — product default (merged 2026-07-10) ───────────
+# Was the separate sdkconfig.flx4_hp_e2e overlay; folded in so a plain
+# `idf.py build` produces the sound firmware. Simultaneous outputs: PCM5102A RCA
+# MAIN (I2S unit 1, paces the output loop) + FLX4 USB headphones CUE fed by the
+# monitor link (I2S unit 0). ES8311 is disabled to free unit 0.
+CONFIG_BSP_PCM5102A_MAIN_OUT=y
+# CONFIG_BSP_ES8311_MONITOR is not set
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+# Surface the monitor-link INFO diagnostics (default runtime log level is WARN).
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+
+# ── Master recorder release policy ───────────────────────────────────────────
+# The recorder remains unavailable in product firmware until its independent
+# producer/STOP/finalize ownership remediation and fault-injection suite pass.
+# CONFIG_AUDIO_RECORDER_ENABLED is not set
+# CONFIG_AUDIO_RECORDER_RING_INTERNAL is not set
+
+# ── Vinyl / scratch mode (Phase 4) ───────────────────────────────────────────
+# Touching the jog platter top while playing scratches the audio (forward +
+# reverse) via the per-deck scratch capture buffer, instead of the Phase 1
+# hold/scrub. Additive + behind the flag; flip to `is not set` to roll back to
+# the Phase 1 platter hold. See docs/VINYL_SCRATCH_PLAN.md.
+CONFIG_AUDIO_SCRATCH_ENABLED=y
+
+CONFIG_PAJONIIIR_BOARD_M3=y
+CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE=y
+CONFIG_CONTROLLER_PROFILE_MANAGER=y
+CONFIG_LV_USE_TJPGD=y
+# CONFIG_AUDIO_RECORDER_ENABLED is not set
+# CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD is not set

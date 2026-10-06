@@ -1,24 +1,32 @@
 name: P4 dual USB host software gates
 
 on:
+  push:
+    branches:
+      - master
+      - "codex/**"
   pull_request:
     paths:
       - "firmware/p4-dual-usb-spike/**"
       - "firmware/p4-only-software-harness/**"
       - "firmware/main-deck-p4/main/**"
       - "firmware/main-deck-p4/CMakeLists.txt"
-      - "firmware/main-deck-p4/cmake/**"
+      - "firmware/p4-core/cmake/**"
       - "firmware/main-deck-p4/dependencies.lock"
       - "firmware/main-deck-p4/sdkconfig.defaults"
-      - "firmware/main-deck-p4/components/usb_storage/**"
-      - "firmware/main-deck-p4/components/usb_host_manager/**"
-      - "firmware/main-deck-p4/components/controller_usb_host/**"
-      - "firmware/main-deck-p4/components/controller_profile/**"
-      - "firmware/main-deck-p4/components/controller_profile_runtime/**"
-      - "firmware/main-deck-p4/components/controller_runtime/**"
-      - "firmware/main-deck-p4/components/controller_led_runtime/**"
-      - "firmware/main-deck-p4/components/controller_usb_audio/**"
-      - "firmware/main-deck-p4/components/p4_local_controller/**"
+      - "firmware/p4-core/components/usb_storage/**"
+      - "firmware/p4-core/components/usb_host_manager/**"
+      - "firmware/p4-core/components/controller_usb_host/**"
+      - "firmware/p4-core/components/controller_profile/**"
+      - "firmware/p4-core/components/controller_profile_runtime/**"
+      - "firmware/p4-core/components/controller_runtime/**"
+      - "firmware/p4-core/components/controller_led_runtime/**"
+      - "firmware/p4-core/components/controller_usb_audio/**"
+      - "firmware/p4-core/components/board_capabilities/**"
+      - "firmware/p4-core/components/service_log/**"
+      - "firmware/p4-core/components/sd_io_gate/**"
+      - "firmware/common/firmware_health/**"
+      - "firmware/p4-core/components/p4_local_controller/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
       - "tests/controller_usb_host/**"
@@ -78,13 +86,13 @@ jobs:
       - name: Verify single Host Library owner in reusable scope
         run: |
           count=$(grep -R --include='*.c' -n 'usb_host_install(' \
-            firmware/main-deck-p4/components/usb_host_manager \
-            firmware/main-deck-p4/components/controller_usb_host \
-            firmware/main-deck-p4/components/controller_profile \
-            firmware/main-deck-p4/components/controller_profile_runtime \
-            firmware/main-deck-p4/components/controller_runtime \
-            firmware/main-deck-p4/components/controller_led_runtime \
-            firmware/main-deck-p4/components/p4_local_controller \
+            firmware/p4-core/components/usb_host_manager \
+            firmware/p4-core/components/controller_usb_host \
+            firmware/p4-core/components/controller_profile \
+            firmware/p4-core/components/controller_profile_runtime \
+            firmware/p4-core/components/controller_runtime \
+            firmware/p4-core/components/controller_led_runtime \
+            firmware/p4-core/components/p4_local_controller \
             firmware/p4-only-software-harness | wc -l)
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."

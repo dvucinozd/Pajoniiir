@@ -20,12 +20,12 @@ function Assert-FileContains {
     }
 }
 
-Assert-FileContains "firmware/main-deck-p4/components/ui/ui.c" '#include "splash_screen\.h"'
-Assert-FileContains "firmware/main-deck-p4/components/ui/ui.c" 'static lv_obj_t \*s_main_screen = NULL;'
-Assert-FileContains "firmware/main-deck-p4/components/ui/ui.c" 'lv_screen_load\(s_main_screen\);'
-Assert-FileContains "firmware/main-deck-p4/components/ui/ui.c" 'splash_screen_show\(ui_splash_screen_finished_cb\);'
-Assert-FileContains "firmware/main-deck-p4/components/ui/CMakeLists.txt" '"splash_screen\.c"'
-Assert-FileContains "firmware/main-deck-p4/components/ui/CMakeLists.txt" '"Musieer_80\.c"'
-Assert-FileContains "firmware/main-deck-p4/components/ui/include/splash_screen.h" 'void splash_screen_show\(void \(\*loaded_cb\)\(void\)\);'
-Assert-FileContains "firmware/main-deck-p4/components/ui/splash_screen.c" 'static const char \*splash_text = "Pajoniiir";'
+Assert-FileContains "firmware/p4-core/components/ui/ui.c" '#include "splash_screen\.h"'
+Assert-FileContains "firmware/p4-core/components/ui/ui.c" 'static lv_obj_t \*s_main_screen = NULL;'
+Assert-FileContains "firmware/p4-core/components/ui/ui.c" 'lv_screen_load\(s_main_screen\);'
+Assert-FileContains "firmware/p4-core/components/ui/ui.c" 'splash_screen_show\(ui_splash_screen_finished_cb\);'
+Assert-FileContains "firmware/p4-core/components/ui/CMakeLists.txt" '"splash_screen\.c"'
+Assert-FileContains "firmware/p4-core/components/ui/CMakeLists.txt" '"Musieer_80\.c"'
+Assert-FileContains "firmware/p4-core/components/ui/include/splash_screen.h" 'void splash_screen_show\(void \(\*loaded_cb\)\(void\)\);'
+Assert-FileContains "firmware/p4-core/components/ui/splash_screen.c" 'static const char \*splash_text = "Pajoniiir";'
 Write-Host "splash port tests passed"

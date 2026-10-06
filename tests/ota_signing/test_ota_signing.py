@@ -14,6 +14,30 @@ import create_integration_candidate as candidate  # noqa: E402
 
 
 class OtaSigningTests(unittest.TestCase):
+    def test_candidate_requires_all_exact_sha_ci_gates(self):
+        import copy
+        sha = "a" * 40
+        for workflow, required in ((None, candidate.MATRIX_JOBS), *candidate.ADDITIONAL_CI.values()):
+            evidence = {"headSha": sha, "conclusion": "success", "workflowName": workflow,
+                        "url": "https://github.com/dvucinozd/Pajoniiir/actions/runs/123",
+                        "jobs": [{"name": name, "conclusion": "success"} for name in sorted(required)]}
+            self.assertEqual(candidate.verify_ci(evidence, sha, required, workflow)["jobs"], len(required))
+            for field, value in (("headSha", "b" * 40), ("conclusion", "failure"),
+                                 ("conclusion", ""), ("url", "https://example.com/123"),
+                                 ("jobs", []), ("jobs", evidence["jobs"] + [evidence["jobs"][0]])):
+                with self.subTest(workflow=workflow, field=field):
+                    bad = evidence | {field: value}
+                    with self.assertRaisesRegex(ValueError, "every required"):
+                        candidate.verify_ci(bad, sha, required, workflow)
+            for result in ("failure", "skipped", "cancelled", None):
+                bad = copy.deepcopy(evidence)
+                bad["jobs"][0]["conclusion"] = result
+                with self.assertRaises(ValueError):
+                    candidate.verify_ci(bad, sha, required, workflow)
+            if workflow:
+                with self.assertRaises(ValueError):
+                    candidate.verify_ci(evidence | {"workflowName": "Another workflow"}, sha, required, workflow)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
@@ -97,7 +121,8 @@ class OtaSigningTests(unittest.TestCase):
     def test_candidates_require_matching_signed_and_embedded_board(self):
         root = Path(self.temp.name)
         version = "M2.4-70-g12345678"
-        for project, other in (("main-deck-p4", "main-deck-jc1060"), ("main-deck-jc1060", "main-deck-p4")):
+        import itertools
+        for project, other in itertools.permutations(candidate.PROJECTS, 2):
             image = self.candidate_image(project, version)
             (root / f"{project}.bin").write_bytes(image)
             bundle = root / f"{project}.ddjota"
@@ -135,8 +160,10 @@ class OtaSigningTests(unittest.TestCase):
         import json
         root = Path(self.temp.name)
         image = {"file": "main-deck-p4.bin", "size": 256, "sha256": "a" * 64}
+        (root / image["file"]).write_bytes(self.candidate_image())
         bundle = {"file": "main-deck-p4.ddjota", "size": 512, "sha256": "b" * 64}
         target = {"target": "p4", "project": "main-deck-p4", "file": image["file"],
+                  "image_elf_sha256": "00" * 32,
                   "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
                   "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
         def write(target):
@@ -149,6 +176,9 @@ class OtaSigningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
         write(target | {"bundle_sha256": "c" * 64})
+        with self.assertRaisesRegex(ValueError, "artifact mismatch"):
+            candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
+        write(target | {"image_elf_sha256": "d" * 64})
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
 

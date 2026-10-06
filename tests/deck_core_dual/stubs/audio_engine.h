@@ -35,6 +35,9 @@ typedef struct {
   uint32_t analysis_span_ms;
   uint32_t duration_ms;
   uint32_t session_generation;
+  bool loop_active;
+  uint32_t loop_start_ms;
+  uint32_t loop_end_ms;
 } audio_engine_deck_status_t;
 
 typedef enum {
@@ -261,7 +264,20 @@ audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out) {
   out->analysis_span_ms = 0u;
   out->duration_ms = audio_engine_stub_duration_ms[deck];
   out->session_generation = audio_engine_stub_session_generation[deck];
+  out->loop_active = audio_engine_stub_loop_active[deck];
+  out->loop_start_ms = audio_engine_stub_loop_start_ms[deck];
+  out->loop_end_ms = audio_engine_stub_loop_end_ms[deck];
   return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_deck_try_get_status(uint8_t deck,
+                                                       audio_engine_deck_status_t *out) {
+  if (deck >= 2 || !out) return ESP_ERR_INVALID_ARG;
+#if UI_SIMULATOR_AUDIO_STATUS
+  extern bool ui_simulator_audio_status_busy[2];
+  if (ui_simulator_audio_status_busy[deck]) return ESP_ERR_TIMEOUT;
+#endif
+  return audio_engine_deck_get_status(deck, out);
 }
 
 static inline esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,

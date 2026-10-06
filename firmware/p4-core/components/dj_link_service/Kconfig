@@ -1,0 +1,11 @@
+menu "Pajoniiir network services"
+config PAJONIIIR_DJ_LINK_SERVICE
+    bool "Build experimental Pro DJ Link network library/cache/sync service"
+    default y if PAJONIIIR_BOARD_JC1060
+    default n
+    help
+        Uses only the explicitly supplied board network interface. JC1060
+        retains its Ethernet provider. Other targets use a Wi-Fi STA provider
+        for engineering experiments only. Runtime enable remains OFF by
+        default; enabling this feature does not qualify any physical network.
+endmenu

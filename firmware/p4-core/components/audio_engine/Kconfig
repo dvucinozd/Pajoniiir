@@ -1,0 +1,32 @@
+menu "Audio engine"
+config AUDIO_ANTIALIAS_CACHE
+    bool
+    default y if PAJONIIIR_BOARD_M3
+    default n
+
+
+config AUDIO_SCRATCH_ENABLED
+    bool "Enable vinyl/scratch mode (jog platter scratches the audio)"
+    default n
+    help
+        When enabled, touching the FLX4 jog platter top while a deck plays
+        scratches the audio (forward + reverse) by driving a read head over the
+        per-deck PSRAM scratch capture buffer, instead of the Phase 1 platter
+        hold+scrub. Releasing seeks normal forward playback to the head position.
+        Additive: with this off the output path is unchanged and touching the
+        platter does the Phase 1 hold/scrub. See docs/VINYL_SCRATCH_PLAN.md.
+
+config AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
+    bool "Run one-shot PCM timeline scheduler probe"
+    default n
+    help
+        Test-build-only probe. After audio initialization, run 100 forced
+        low-word wrap and playhead handoff repetitions with a higher-priority
+        same-core reader, then measure both unhooked publications for 100
+        repetitions. The result is written as TIMELINE_SCHEDULER_PROBE in the
+        service journal.
+        This isolated scheduler probe must be paired with a live dual-deck
+        audio smoke; it does not qualify the ae_output path by itself. Keep
+        this disabled in production and release-candidate images.
+
+endmenu

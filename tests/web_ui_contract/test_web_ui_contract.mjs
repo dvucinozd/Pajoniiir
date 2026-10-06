@@ -9,7 +9,7 @@ const repoRoot = path.resolve(here, '..', '..');
 const webRoot = path.join(
     repoRoot,
     'firmware',
-    'main-deck-p4',
+    'p4-core',
     'components',
     'web_server',
     'web'

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "origin": "Owned deterministic synthetic stereo pulses; no third-party audio",
+  "encoder": "ffmpeg version 7.0.2-essentials_build-www.gyan.dev Copyright (c) 2000-2024 the FFmpeg developers",
+  "files": {
+    "onset-44100.wav": {
+      "size": 1146644,
+      "sha256": "8f7aefdf57123495db0b0ea76d7025bae8ddd248660b7d3516113b7f81ebed8e"
+    },
+    "short-48000.wav": {
+      "size": 15404,
+      "sha256": "e8781053aa46562aa13544a0d5ab92673e9417df384f943f2eb45e231426f3d1"
+    },
+    "onset-48000.flac": {
+      "size": 176542,
+      "sha256": "08388c6ab7dae539ac0d96bf8bf5b887e5b01b7bcd8812c54e039a12f55580bd"
+    },
+    "onset-44100.mp3": {
+      "size": 45938,
+      "sha256": "88f2cd04c33df6e2db1d0be84b5a1970a25c73f336d1704247c1936eb4d20a2b"
+    },
+    "export.pdb": {
+      "size": 1024,
+      "sha256": "289d1d42a591576fa9136cdbf6569c03fb64bed48b6c0194ecfb62b537f6f02d"
+    },
+    "ANLZ0000.DAT": {
+      "size": 236,
+      "sha256": "8b6182e782dbe5ff8c4aa787a6e9f9820fbc173fb1ff0e60f2fd8465a6c8ba97"
+    }
+  }
+}

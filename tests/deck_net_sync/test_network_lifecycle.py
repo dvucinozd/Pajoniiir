@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parents[2]
-source = (root / 'firmware/main-deck-p4/components/audio_engine/audio_engine.c').read_text(encoding='utf-8')
+source = (root / 'firmware/p4-core/components/audio_engine/audio_engine.c').read_text(encoding='utf-8')
 start = source.index('esp_err_t audio_engine_deck_apply_network(')
 opening = source.index('{', start)
 end, depth = opening + 1, 1

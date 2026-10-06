@@ -4,7 +4,7 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $BuildDir = Join-Path $PSScriptRoot "build"
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
-$Component = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host"
+$Component = Join-Path $RepoRoot "firmware/p4-core/components/controller_usb_host"
 $Include = Join-Path $Component "include"
 
 $CodecExe = Join-Path $BuildDir "test_usb_midi_codec"

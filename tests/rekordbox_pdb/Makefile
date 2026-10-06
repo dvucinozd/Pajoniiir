@@ -14,10 +14,10 @@ WINLIBS_BIN = $(LOCALAPPDATA)/Microsoft/WinGet/Packages/BrechtSanders.WinLibs.PO
 CC      = $(WINLIBS_BIN)/gcc.exe
 CFLAGS  = -Wall -Wextra -Wpedantic \
            -DREKORDBOX_PDB_STANDALONE_TEST \
-           -I../../firmware/main-deck-p4/components/library/include
+           -I../../firmware/p4-core/components/library/include
 
 SRCS    = test_pdb.c \
-          ../../firmware/main-deck-p4/components/library/rekordbox_pdb.c
+          ../../firmware/p4-core/components/library/rekordbox_pdb.c
 
 TARGET  = test_pdb
 

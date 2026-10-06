@@ -1,0 +1,45 @@
+menu "Pajoniiir board"
+choice PAJONIIIR_BOARD
+    prompt "P4 board target"
+    default PAJONIIIR_BOARD_JC4880
+config PAJONIIIR_BOARD_JC4880
+    bool "JC4880P443C_I_W target"
+config PAJONIIIR_BOARD_JC1060
+    bool "JC1060P470C_I_W_Y target"
+config PAJONIIIR_BOARD_M3
+    bool "JC-ESP32P4-M3-DEV target"
+endchoice
+config PAJONIIIR_DEFAULT_WIFI_REMOTE
+    bool
+    default y if PAJONIIIR_BOARD_M3
+    default n
+config PAJONIIIR_SD_INTERNAL_BOUNCE
+    bool "Force microSD PSRAM buffers through internal DMA memory"
+    default y if PAJONIIIR_BOARD_JC1060 && USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM
+    default n
+    help
+        Use one persistent 8 KiB internal aligned buffer for all SD sector reads
+        and writes. Required when testing JC1060 USB DMA in PSRAM; mount fails
+        safely if this buffer cannot be allocated. JC4880 USB DMA policy stays
+        internal. This does not change SD or media locking.
+endmenu
+
+menu "Pajoniiir JC4880 BSP"
+
+config BSP_PCM5102A_MAIN_OUT
+    bool "Enable PCM5102A main I2S output"
+    default n
+    help
+        Enable the second I2S TX channel for the external PCM5102A MAIN OUT DAC.
+        Keep disabled until GPIO50/GPIO52/GPIO51 are bench-verified on JP1.
+
+config BSP_ES8311_MONITOR
+    bool "Enable ES8311 onboard monitor codec"
+    default y
+    help
+        Bring up the ES8311 codec on I2S unit 0 for the onboard monitor
+        speaker/headphones path. Disable to free I2S unit 0 for the FLX4 USB
+        headphones monitor link (product config: PCM5102A MAIN on unit 1 +
+        monitor link on unit 0, cue/monitor delivered over USB to the FLX4).
+
+endmenu

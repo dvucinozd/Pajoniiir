@@ -8,7 +8,7 @@
 # the bundle parser is entered.
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
-    [ValidateSet("main-deck-p4", "main-deck-jc1060")]
+    [ValidateSet("main-deck-p4", "main-deck-jc1060", "main-deck-m3")]
     [string]$Project = "main-deck-p4",
     [string]$BaseUrl,
     [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
@@ -24,13 +24,25 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
 }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $BaseUrl) {
-    $BaseUrl = if ($Project -eq 'main-deck-jc1060') { 'https://ota.pajoniiir.eu/jc1060' } else { 'https://ota.pajoniiir.eu' }
+    $BaseUrl = switch ($Project) {
+        'main-deck-p4' { 'https://ota.pajoniiir.eu' }
+        'main-deck-jc1060' { 'https://ota.pajoniiir.eu/jc1060' }
+        'main-deck-m3' { 'https://ota.pajoniiir.eu/m3' }
+    }
 }
 $BaseUrl = $BaseUrl.TrimEnd('/')
 if ($Project -eq 'main-deck-jc1060' -and $BaseUrl -eq 'https://ota.pajoniiir.eu') {
     throw 'JC1060 must use its separate OTA channel'
 }
 
+if ($Project -eq 'main-deck-m3' -and ([uri]$BaseUrl).AbsolutePath.TrimEnd('/') -ne '/m3') {
+    throw 'M3 must use its separate OTA channel /m3'
+}
+if ($Project -ne 'main-deck-m3' -and ([uri]$BaseUrl).Host -eq 'ota.pajoniiir.eu' -and
+    ([uri]$BaseUrl).AbsolutePath.TrimEnd('/') -eq '/m3') { throw 'The M3 OTA channel cannot serve another board' }
+if ($Project -eq 'main-deck-p4' -and $BaseUrl -eq 'https://ota.pajoniiir.eu/jc1060') {
+    throw 'JC4880 cannot use the separate OTA channel for JC1060'
+}
 $bundleFile = "$Project.ddjota"
 $bundle = Join-Path $ReleaseDir $bundleFile
 if (-not (Test-Path -LiteralPath $bundle)) {
@@ -64,6 +76,9 @@ if ($metadata["target"] -cne "p4" -or
     throw "Verified bundle metadata is not a versioned $Project image"
 }
 $version = [string]$metadata["version"]
+if ($Project -eq 'main-deck-m3' -and $version -notmatch '^M3-[0-9]+(-[0-9]+-g[0-9a-f]{7,})*$') {
+    throw 'M3 development versions cannot generate a public pull channel'
+}
 
 $bytes = [System.IO.File]::ReadAllBytes($bundle)
 $sha = [System.BitConverter]::ToString(

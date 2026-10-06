@@ -3,11 +3,11 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 \
            -DANLZ_STANDALONE_TEST \
-           -I../../firmware/main-deck-p4/components/ui/include \
-           -I../../firmware/main-deck-p4/components/library/include
+           -I../../firmware/p4-core/components/ui/include \
+           -I../../firmware/p4-core/components/library/include
 
 SRCS    = test_ui_beat_indicator.c \
-          ../../firmware/main-deck-p4/components/ui/ui_beat_indicator.c
+          ../../firmware/p4-core/components/ui/ui_beat_indicator.c
 
 TARGET  = test_ui_beat_indicator
 

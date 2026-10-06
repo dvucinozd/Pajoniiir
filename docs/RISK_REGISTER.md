@@ -1,5 +1,17 @@
 # P4 risk register
 
+Shared-core migration adds the following open gates, independent of earlier
+accepted release images:
+
+| Status | Migration risk | Control / remaining gate |
+| --- | --- | --- |
+| OPEN | Old M3 settings/recovery are lost in identity transition | Full-flash/region backups and exact hashes, fresh-device comparison, factory readback before OTA selection; physical serial migration NOT RUN |
+| OPEN | Legacy track-ID cues attach to another export | Explicit selected export and full media identity, unique mappings only, preserved/archive legacy blobs; physical apply/set/delete/restore/reboot NOT RUN |
+| OPEN | Shared firmware regresses accepted M3 audio/scanout/topology | DSP/parser/controller tests and nine simulator variants; exact-image GUI/MAIN/PFL/MT/all-zoom and Campaign A/B NOT RUN |
+| OPEN | Source SHA alone confuses two configurations | Signed full image/bundle hashes plus embedded ELF digest, board/project identity, ordinary-config packaging and identity-fenced monitor |
+| OPEN | Software proof is mistaken for new board/controller acceptance | Separate target/controller records; unavailable hardware stays NOT RUN; publication requires explicit authorization after physical acceptance |
+| OPEN | Optional services alter M3 defaults | Recorder/UI/Link isolated build classes and package rejection; normal M3 Wi-Fi ON, Ethernet/Link/recorder/preview OFF |
+
 Status: **current M2.5 scope and development risks, reconciled 2026-10-06**.
 
 Current release is JC4880/FLX4 `M2.5` from `20f1c3f0`.

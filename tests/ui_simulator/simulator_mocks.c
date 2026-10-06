@@ -12,6 +12,7 @@ esp_err_t audio_engine_stub_deck_play_result[2] = {ESP_OK, ESP_OK};
 bool audio_engine_stub_deck_playing[2] = {false, false};
 bool audio_engine_stub_deck_loaded[2] = {true, true};
 bool ui_simulator_audio_status_override[2];
+bool ui_simulator_audio_status_busy[2];
 audio_engine_deck_status_t ui_simulator_audio_status[2];
 uint32_t audio_engine_stub_duration_ms[2];
 uint32_t audio_engine_stub_session_generation[2] = {1u, 1u};
@@ -168,7 +169,11 @@ static app_settings_t s_settings = {
     .time_remain = 1,
     .cue_mode = 0,
     .master_trim_preset = 0,
+#ifdef CONFIG_PAJONIIIR_BOARD_M3
+    .wifi_remote = 1,
+#else
     .wifi_remote = 0,
+#endif
 };
 
 esp_err_t app_settings_init(void)
@@ -187,6 +192,7 @@ void app_settings_set_time_remain(uint8_t value) { s_settings.time_remain = valu
 void app_settings_set_cue_mode(uint8_t value) { s_settings.cue_mode = value; }
 void app_settings_set_master_trim_preset(uint8_t value) { s_settings.master_trim_preset = value; }
 void app_settings_set_wifi_remote(uint8_t value) { s_settings.wifi_remote = value; }
+void app_settings_set_dj_link(uint8_t value) { s_settings.dj_link = value; }
 
 int64_t esp_timer_get_time(void)
 {

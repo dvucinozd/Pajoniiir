@@ -1,6 +1,6 @@
 /* Host-only adapter matching the production deck actor publication model. */
-#include "../../firmware/main-deck-p4/components/deck_core/include/deck_core.h"
-#include "../../firmware/main-deck-p4/components/control_link/include/flx4_led_snapshot.h"
+#include "../../firmware/p4-core/components/deck_core/include/deck_core.h"
+#include "../../firmware/p4-core/components/control_link/include/flx4_led_snapshot.h"
 
 static esp_err_t deck_core_test_live_led_publish(
     flx4_led_publisher_t *publisher,
@@ -15,7 +15,7 @@ static void deck_core_test_live_send_led_deck(led_id_t led, uint8_t state, uint8
 #define deck_core_test_get_beat_fx_state deck_core_test_get_beat_fx_state_unpublished
 #define flx4_led_publisher_publish deck_core_test_live_led_publish
 #define control_link_send_led_deck deck_core_test_live_send_led_deck
-#include "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+#include "../../firmware/p4-core/components/deck_core/deck_core.c"
 #undef control_link_send_led_deck
 #undef flx4_led_publisher_publish
 #undef deck_core_test_reset

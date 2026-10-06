@@ -41,6 +41,71 @@ static int s_lifecycle_hook_release;
 static int s_lifecycle_stop_finished;
 
 #define TELEMETRY_THREAD_ITERATIONS 50000u
+static pthread_mutex_t s_observer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_observer_cond = PTHREAD_COND_INITIALIZER;
+static bool s_observer_entered, s_observer_release, s_observer_expired;
+
+static void hold_decoder_mutex(void *context)
+{
+    (void)context;
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += 2;
+    pthread_mutex_lock(&s_observer_mutex);
+    s_observer_entered = true;
+    pthread_cond_broadcast(&s_observer_cond);
+    while (!s_observer_release) {
+        if (pthread_cond_timedwait(&s_observer_cond, &s_observer_mutex, &deadline) != 0) {
+            s_observer_expired = true;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_observer_mutex);
+}
+
+static void *observer_decoder_thread(void *context)
+{
+    audio_engine_test_with_decoder_mutex(hold_decoder_mutex, context);
+    return NULL;
+}
+
+static void test_display_status_never_waits_for_decoder(void)
+{
+    audio_engine_deck_status_t status, retained;
+    memset(&status, 0x5a, sizeof(status));
+    retained = status;
+    s_observer_entered = s_observer_release = s_observer_expired = false;
+    pthread_t thread;
+    int rc = pthread_create(&thread, NULL, observer_decoder_thread, NULL);
+    EXPECT(rc == 0, "decoder contention thread starts");
+    if (rc != 0) return;
+    pthread_mutex_lock(&s_observer_mutex);
+    while (!s_observer_entered) pthread_cond_wait(&s_observer_cond, &s_observer_mutex);
+    pthread_mutex_unlock(&s_observer_mutex);
+    EXPECT(audio_engine_deck_try_get_status(0, &status) == ESP_ERR_TIMEOUT,
+           "D1 display observation rejects held decoder mutex immediately");
+    EXPECT(!memcmp(&status, &retained, sizeof(status)), "busy D1 observation preserves caller snapshot");
+    EXPECT(audio_engine_deck_try_get_status(1, &status) == ESP_ERR_TIMEOUT,
+           "D2 display observation does not wait behind other deck decode");
+    EXPECT(!memcmp(&status, &retained, sizeof(status)), "busy D2 observation preserves caller snapshot");
+    EXPECT(audio_engine_deck_try_get_status(2, &status) == ESP_ERR_INVALID_ARG,
+           "display observation validates deck before lock");
+    EXPECT(audio_engine_deck_try_get_status(0, NULL) == ESP_ERR_INVALID_ARG,
+           "display observation validates destination before lock");
+    pthread_mutex_lock(&s_observer_mutex);
+    s_observer_release = true;
+    pthread_cond_broadcast(&s_observer_cond);
+    pthread_mutex_unlock(&s_observer_mutex);
+    pthread_join(thread, NULL);
+    EXPECT(!s_observer_expired, "display observations finish while decoder remains held");
+    for (uint8_t deck = 0; deck < 2; ++deck) {
+        EXPECT(audio_engine_deck_try_get_status(deck, &status) == ESP_OK,
+               "display snapshot resumes after decoder releases mutex");
+        EXPECT(audio_engine_deck_get_status(deck, &retained) == ESP_OK &&
+               !memcmp(&status, &retained, sizeof(status)),
+               "display observation uses production status/session/position semantics");
+    }
+}
 static int s_telemetry_writer_done;
 static uint32_t s_telemetry_snapshot_errors;
 
@@ -1518,12 +1583,18 @@ static void test_deck_loops_are_independent(void)
            "deck 1 loop read returns ESP_OK");
     EXPECT(active && start == 3000 && end == 5000,
            "deck 1 loop state is independent");
+    audio_engine_deck_status_t observed = {0};
+    EXPECT(audio_engine_deck_try_get_status(1, &observed) == ESP_OK &&
+           observed.loop_active && observed.loop_start_ms == start && observed.loop_end_ms == end,
+           "zero-wait status observes the same complete loop state");
 
     EXPECT(audio_engine_deck_clear_loop(0) == ESP_OK,
            "deck 0 loop clear returns ESP_OK");
     EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
            "deck 0 cleared loop read returns ESP_OK");
     EXPECT(!active, "deck 0 loop clears");
+    EXPECT(audio_engine_deck_try_get_status(0, &observed) == ESP_OK && !observed.loop_active,
+           "zero-wait status observes loop deletion");
 
     active = false;
     start = 0;
@@ -1624,7 +1695,97 @@ static void test_mp3_measured_eof_without_xing(void)
     remove(path);
 }
 
-/* ── Test 10: real MP3 decode to WAV (optional, skipped if no file given) ── */
+static int16_t qualification_sample(uint32_t frame, uint32_t rate)
+{
+    uint32_t within = frame % rate;
+    if (within < rate / 4 || within >= 3 * rate / 4) return 0;
+    uint32_t period = rate / 440;
+    uint32_t phase = (within - rate / 4) % period;
+    return (int16_t)(phase < period / 2 ? (int32_t)(phase * 28000 / period) - 7000
+                                      : 21000 - (int32_t)(phase * 28000 / period));
+}
+
+static void test_required_media_fixtures(void)
+{
+    printf("\n[Qualification] Required production decoder/seek fixtures\n");
+    const char *paths[] = {"../fixtures/p4/onset-44100.wav",
+                          "../fixtures/p4/onset-48000.flac",
+                          "../fixtures/p4/onset-44100.mp3"};
+    const uint32_t rates[] = {44100, 48000, 44100};
+    int16_t pcm[4608];
+    for (unsigned format = 0; format < 3; format++) {
+        EXPECT(audio_engine_init() == ESP_OK, "qualification engine reset");
+        esp_err_t loaded = audio_engine_deck_load(0, paths[format], NULL, 6500);
+        EXPECT(loaded == ESP_OK, "mandatory compressed/PCM fixture loads");
+        if (loaded != ESP_OK) continue;
+        uint32_t frames = 0, errors = 0, first_onset = UINT32_MAX;
+        for (unsigned batch = 0; batch < 1000; batch++) {
+            int n = audio_engine_test_read_pcm(0, pcm, 2304);
+            if (n < 0) break;
+            for (int i = 0; i < n; i++) {
+                if (first_onset == UINT32_MAX && abs(pcm[i * 2]) > 1000) first_onset = frames + (uint32_t)i;
+                if (format < 2) {
+                    int16_t expected = qualification_sample(frames + (uint32_t)i, rates[format]);
+                    if (pcm[i*2] != expected || pcm[i*2+1] != -expected) errors++;
+                }
+            }
+            frames += (uint32_t)n;
+        }
+        printf("  fixture=%s decoded_frames=%u onset=%u mismatches=%u\n", paths[format], frames, first_onset, errors);
+        if (format < 2) {
+            EXPECT(frames == rates[format] * 6500 / 1000 && errors == 0,
+                   "WAV/FLAC production output is exactly lossless, including final partial batch");
+        } else {
+            EXPECT(frames >= rates[format] * 6500 / 1000 && frames < rates[format] * 6650 / 1000,
+                   "VBR MP3 full decoded length remains within codec padding bound");
+        }
+        const uint32_t seek_ms[] = {1200, 4200, 6200};
+        for (unsigned seek = 0; seek < 3; seek++) {
+            EXPECT(audio_engine_deck_seek(0, seek_ms[seek]) == ESP_OK, "production seek admitted after EOF");
+            uint32_t produced = 0, onset = UINT32_MAX;
+            for (unsigned batch = 0; batch < 30 && onset == UINT32_MAX; batch++) {
+                int n = audio_engine_test_read_pcm(0, pcm, 2304);
+                if (n < 0) break;
+                for (int i = 0; i < n; i++) {
+                    if (abs(pcm[i*2]) > 1000) { onset = produced + (uint32_t)i; break; }
+                }
+                produced += (uint32_t)n;
+            }
+            // Calibrate immutable encoder/Xing delay from full decoded PCM,
+            // then require seek to retain that same source-clock mapping.
+            const uint32_t codec_delay = format == 2 && first_onset > rates[format] / 4
+                ? first_onset - rates[format] / 4 : 0;
+            const uint32_t expected = rates[format] / 20 + codec_delay;
+            uint32_t error = onset > expected ? onset - expected : expected - onset;
+            printf("  seek=%u acoustic_onset=%u expected=%u error=%u\n", seek_ms[seek], onset, expected, error);
+            EXPECT(onset != UINT32_MAX && error <= (format == 2 ? 96u : 1u),
+                   "seek position is verified by decoded PCM onset on the production path");
+        }
+        EXPECT(audio_engine_deck_stop(0) == ESP_OK, "qualification fixture retires");
+    }
+    EXPECT(audio_engine_deck_load(0, "../fixtures/p4/short-48000.wav", NULL, 1000) == ESP_OK,
+           "short EOF fixture loads despite longer metadata");
+    uint32_t frames = 0;
+    for (unsigned i = 0; i < 10; i++) {
+        int n = audio_engine_test_read_pcm(0, pcm, 2304);
+        if (n < 0) break;
+        frames += (uint32_t)n;
+    }
+    EXPECT(frames == 3840, "short 48-kHz EOF publishes every frame without waiting for analysis span");
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK, "short EOF retires");
+    // A mixed-rate pair also goes through the real load/seek/decoder path.
+    EXPECT(audio_engine_deck_load(0, paths[0], NULL, 6500) == ESP_OK &&
+           audio_engine_deck_load(1, paths[1], NULL, 6500) == ESP_OK, "44.1/48-kHz dual-deck fixtures load");
+    for (uint8_t deck = 0; deck < 2; deck++) {
+        EXPECT(audio_engine_deck_seek(deck, 1250) == ESP_OK, "mixed-rate deck seek admitted");
+        EXPECT(audio_engine_test_read_pcm(deck, pcm, 2304) > 0, "mixed-rate deck publishes actual PCM");
+        EXPECT(abs(pcm[0]) > 6000 && pcm[0] == -pcm[1], "mixed-rate deck starts on selected audible onset");
+        EXPECT(audio_engine_deck_stop(deck) == ESP_OK, "mixed-rate deck retires independently");
+    }
+}
+
+/* Full-track WAV export intentionally rewinds. Acoustic seek checks above use
+ * the production decoder rather than treating this export as a seek oracle. */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
     printf("\n[Test 10] Decode MP3 → WAV\n");
@@ -1634,7 +1795,7 @@ static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 
     esp_err_t rc = audio_engine_deck_load(0, mp3_path, NULL, 0);
     if (rc != ESP_OK) {
-        printf("  SKIP: cannot open %s (err %d)\n", mp3_path, rc);
+        EXPECT(false, "required MP3 export fixture opens");
         return;
     }
 
@@ -1669,9 +1830,9 @@ static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
     EXPECT(audio_engine_deck_seek(0, 5000) == ESP_OK, "seek(5000) returns ESP_OK");
     EXPECT(audio_engine_deck_position_ms(0) == 5000, "position_ms() == 5000 after seek");
 
-    /* Decode a short window after seek */
+    /* Export helper rewinds; it is not a post-seek PCM test. */
     rc = audio_engine_decode_to_wav("out_from5s.wav", 3000);
-    EXPECT(rc == ESP_OK, "decode_to_wav from 5 s, 3 s window returns ESP_OK");
+    EXPECT(rc == ESP_OK, "rewinding export helper decodes bounded window");
 
     (void)audio_engine_deck_stop(0);
     EXPECT(!audio_engine_deck_is_playing(0), "not playing after stop");
@@ -1684,6 +1845,7 @@ int main(int argc, char *argv[])
     printf("Build: AUDIO_ENGINE_PC_TEST\n");
 
     test_init();
+    test_display_status_never_waits_for_decoder();
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
@@ -1711,13 +1873,13 @@ int main(int argc, char *argv[])
     test_stop_waits_for_inflight_load_transaction();
     test_stale_session_cannot_stop_newer_load();
     test_transition_barrier_blocks_load_until_resume();
+    test_required_media_fixtures();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 10] Decode MP3 → WAV\n");
-        printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
+        test_decode_to_wav("../fixtures/p4/onset-44100.mp3", 0u);
     }
 
     printf("\n============================\n");

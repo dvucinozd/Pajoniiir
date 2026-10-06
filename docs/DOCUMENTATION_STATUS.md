@@ -2,6 +2,19 @@
 
 Status: **current documentation authority, reconciled 2026-10-06**.
 
+## Shared-core migration authority
+
+Canonical source is `dvucinozd/Pajoniiir`, branch `codex/shared-p4-core-m3`.
+[Integration/provenance](SHARED_P4_CORE_INTEGRATION.md),
+[board/capability policies](SHARED_P4_BOARDS.md),
+[preserving wired migration](M3_SHARED_CORE_MIGRATION.md),
+[explicit cue migration](M3_CUE_MIGRATION.md) and
+[exact-image monitoring](RELIABILITY_MONITORING_PLAN.md) govern this candidate.
+Earlier JC and M3 release/acceptance records retain their original image scope.
+Build, package, installed-device, operator acceptance and publication evidence
+must be recorded separately. Integrated physical gates remain NOT RUN.
+The M3 repository remains historical and has not been remotely archived.
+
 ## Published product
 
 The current public release is **M2.5**, frozen at

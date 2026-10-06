@@ -1,0 +1,2812 @@
+#include "web_server.h"
+#include "esp_http_server.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_app_desc.h"
+#include "esp_ota_ops.h"
+#include "board_build_identity.h"
+#include "board_capabilities.h"
+#include "audio_engine.h"
+#include "controller_usb_audio_stream.h"
+#include "audio_uac_health.h"
+#include "media_catalog.h"
+#include "ui.h"
+#include "ui_library.h"
+#include "firmware_resources.h"
+#include "ui_heap_usage.h"
+#include "ui_scanout_timing.h"
+#include "web_api_helpers.h"
+#include "deck_core.h"
+#include "control_link.h"
+#include "p4_ota.h"
+#include "web_firmware_json.h"
+#include "p4_ota_policy.h"
+#include "service_log.h"
+#include "library_load_trace.h"
+#include "library_validation_gate.h"
+#include "audio_load_validation_gate.h"
+#include "sd_io_gate.h"
+#include "sd_idle_wait.h"
+#include "sd_transfer_stats.h"
+#if CONFIG_AUDIO_RECORDER_ENABLED
+#include "audio_recorder.h"
+#endif
+#include "p4_ota_pull_config.h"
+#include "p4_ota_pull_manifest.h"
+#include "app_settings.h"
+#include <stdio.h>
+#include "sdkconfig.h"
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+#include "esp_core_dump.h"
+#endif
+#include "controller_usb_host.h"
+#include "p4_local_controller.h"
+#include "usb_host_manager.h"
+#include "usb_storage.h"
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+#include "controller_profile_manager.h"
+#endif
+#include <stdlib.h>
+#include <string.h>
+#include "esp_system.h"
+#include "esp_netif.h"
+#include "mdns.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "web_server";
+static httpd_handle_t s_web_server = NULL;
+static bool s_mdns_started;
+
+static bool api_parse_deck(const char *value, uint8_t *out_deck);
+static bool api_parse_u32(const char *value, uint32_t *out_value);
+
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+typedef struct {
+    esp_core_dump_summary_t summary;
+    char reason[192];
+    char reason_esc[384];
+    char task_esc[40];
+} crash_dump_work_t;
+#endif
+
+static void format_crash_dump_json(char *out, size_t out_size)
+{
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+    size_t image_address = 0u;
+    size_t image_size = 0u;
+    const esp_err_t check_rc = esp_core_dump_image_check();
+    esp_err_t image_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t summary_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t reason_rc = ESP_ERR_NOT_FOUND;
+    crash_dump_work_t *work = NULL;
+    if (check_rc == ESP_OK) {
+        image_rc = esp_core_dump_image_get(&image_address, &image_size);
+        work = calloc(1, sizeof(*work));
+        if (work) {
+            summary_rc = esp_core_dump_get_summary(&work->summary);
+            reason_rc = esp_core_dump_get_panic_reason(work->reason,
+                                                       sizeof(work->reason));
+            web_api_json_escape(reason_rc == ESP_OK ? work->reason : "",
+                                work->reason_esc, sizeof(work->reason_esc));
+            web_api_json_escape(summary_rc == ESP_OK ? work->summary.exc_task : "",
+                                work->task_esc, sizeof(work->task_esc));
+        } else {
+            summary_rc = ESP_ERR_NO_MEM;
+            reason_rc = ESP_ERR_NO_MEM;
+        }
+    }
+    const esp_core_dump_summary_t *summary = work ? &work->summary : NULL;
+    snprintf(
+        out, out_size,
+        "\"crash_dump\":{"
+        "\"enabled\":true,\"present\":%s,"
+        "\"check_result\":%d,\"check_result_name\":\"%s\","
+        "\"image_result\":%d,\"image_result_name\":\"%s\","
+        "\"image_size\":%u,"
+        "\"summary_result\":%d,\"summary_result_name\":\"%s\","
+        "\"panic_reason_result\":%d,"
+        "\"panic_reason\":\"%s\",\"task\":\"%s\","
+        "\"pc\":\"0x%08X\",\"ra\":\"0x%08X\","
+        "\"sp\":\"0x%08X\",\"mcause\":\"0x%08X\","
+        "\"mtval\":\"0x%08X\"}",
+        check_rc == ESP_OK ? "true" : "false",
+        (int)check_rc, esp_err_to_name(check_rc),
+        (int)image_rc, esp_err_to_name(image_rc), (unsigned)image_size,
+        (int)summary_rc, esp_err_to_name(summary_rc), (int)reason_rc,
+        work ? work->reason_esc : "", work ? work->task_esc : "",
+        summary ? (unsigned)summary->exc_pc : 0u,
+        summary ? (unsigned)summary->ex_info.ra : 0u,
+        summary ? (unsigned)summary->ex_info.sp : 0u,
+        summary ? (unsigned)summary->ex_info.mcause : 0u,
+        summary ? (unsigned)summary->ex_info.mtval : 0u);
+    free(work);
+#else
+    snprintf(out, out_size, "\"crash_dump\":{\"enabled\":false}");
+#endif
+}
+
+static void format_audio_wdt_trace_json(
+    char *out, size_t out_size,
+    const audio_engine_diagnostics_snapshot_t *diagnostics)
+{
+    const audio_wdt_trace_record_t *previous =
+        &diagnostics->wdt_trace_previous;
+    const audio_wdt_trace_record_t *current =
+        &diagnostics->wdt_trace_current;
+    uint32_t previous_no_idle_us = diagnostics->wdt_trace_previous_valid
+        ? (uint32_t)((uint32_t)previous->entered_us -
+                     (uint32_t)previous->last_idle_us)
+        : 0u;
+    uint32_t current_no_idle_us = diagnostics->wdt_trace_current_valid
+        ? (uint32_t)((uint32_t)current->entered_us -
+                     (uint32_t)current->last_idle_us)
+        : 0u;
+    snprintf(
+        out, out_size,
+        "\"audio_wdt_trace\":{"
+        "\"previous\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu},"
+        "\"current\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu}}",
+        diagnostics->wdt_trace_previous_valid ? "true" : "false",
+        (unsigned)previous->phase,
+        diagnostics->wdt_trace_previous_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)previous->phase) : "none",
+        (unsigned)previous->boot_id, (unsigned)previous->sequence,
+        (unsigned)previous->block, (unsigned)previous->mix_group,
+        (unsigned)previous->busy_blocks, (unsigned)previous->active_deck_mask,
+        previous->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)previous->entered_us,
+        (unsigned long long)previous->last_idle_us,
+        (unsigned long long)previous_no_idle_us,
+        diagnostics->wdt_trace_current_valid ? "true" : "false",
+        (unsigned)current->phase,
+        diagnostics->wdt_trace_current_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)current->phase) : "none",
+        (unsigned)current->boot_id, (unsigned)current->sequence,
+        (unsigned)current->block, (unsigned)current->mix_group,
+        (unsigned)current->busy_blocks, (unsigned)current->active_deck_mask,
+        current->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)current->entered_us,
+        (unsigned long long)current->last_idle_us,
+        (unsigned long long)current_no_idle_us);
+}
+
+static void format_library_load_trace_json(char *out, size_t out_size)
+{
+    library_load_trace_record_t previous = {0};
+    library_load_trace_record_t current = {0};
+    bool previous_valid = false;
+    bool current_valid = false;
+    library_load_trace_snapshot(&previous_valid, &previous,
+                                &current_valid, &current);
+    snprintf(out, out_size,
+             "\"library_load_trace\":{"
+             "\"previous\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u},"
+             "\"current\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u}}",
+             previous_valid ? "true" : "false", (unsigned)previous.phase,
+             previous_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)previous.phase) : "none",
+             (unsigned)previous.boot_id, (unsigned)previous.sequence,
+             (unsigned)previous.track_key, (unsigned)previous.entered_us,
+             current_valid ? "true" : "false", (unsigned)current.phase,
+             current_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)current.phase) : "none",
+             (unsigned)current.boot_id, (unsigned)current.sequence,
+             (unsigned)current.track_key, (unsigned)current.entered_us);
+}
+
+static void current_ap_ipv4(char out[16])
+{
+    snprintf(out, 16, "192.168.4.1");
+    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    esp_netif_ip_info_t info = {0};
+    if (ap && esp_netif_get_ip_info(ap, &info) == ESP_OK) {
+        (void)esp_ip4addr_ntoa(&info.ip, out, 16);
+    }
+}
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+static const char *controller_profile_state_name(controller_profile_transfer_state_t state)
+{
+    switch (state) {
+    case CPM_TRANSFER_IDLE:
+        return "idle";
+    case CPM_TRANSFER_MATCHED:
+        return "matched";
+    case CPM_TRANSFER_TRANSFERRING:
+        return "transferring";
+    case CPM_TRANSFER_ACTIVE:
+        return "active";
+    case CPM_TRANSFER_FAILED:
+        return "failed";
+    case CPM_TRANSFER_UNSUPPORTED:
+        return "unsupported";
+    default:
+        return "unknown";
+    }
+}
+#endif
+
+static const char *controller_usb_probe_stage_name(uint8_t stage)
+{
+    switch ((controller_usb_probe_stage_t)stage) {
+    case CONTROLLER_USB_PROBE_NONE:              return "none";
+    case CONTROLLER_USB_PROBE_OPEN:              return "open";
+    case CONTROLLER_USB_PROBE_DEVICE_INFO:       return "device_info";
+    case CONTROLLER_USB_PROBE_DEVICE_DESCRIPTOR: return "device_descriptor";
+    case CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR: return "config_descriptor";
+    case CONTROLLER_USB_PROBE_MIDI_DESCRIPTOR:   return "midi_descriptor";
+    case CONTROLLER_USB_PROBE_ALREADY_OWNED:     return "already_owned";
+    case CONTROLLER_USB_PROBE_INTERFACE_CLAIM:   return "interface_claim";
+    case CONTROLLER_USB_PROBE_TRANSFER_ALLOC:    return "transfer_alloc";
+    case CONTROLLER_USB_PROBE_IN_SUBMIT:         return "in_submit";
+    case CONTROLLER_USB_PROBE_READY:             return "ready";
+    default:                                     return "unknown";
+    }
+}
+
+static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *uri)
+{
+    esp_err_t rc = httpd_register_uri_handler(server, uri);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "URI handler registration failed for %s: %s",
+                 uri && uri->uri ? uri->uri : "(null)",
+                 esp_err_to_name(rc));
+        httpd_stop(server);
+        s_web_server = NULL;
+    }
+    return rc;
+}
+
+/* The captive UI is deliberately served from the fixed AP address. Enforce
+ * that host on every API request to block DNS rebinding, and require a custom
+ * header for mutations so third-party pages cannot trigger deck actions with
+ * an image, link or plain HTML form. */
+static bool api_request_allowed(httpd_req_t *req, bool mutation)
+{
+    char host[64] = {0};
+    char ap_ipv4[16] = {0};
+    current_ap_ipv4(ap_ipv4);
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
+        !web_api_host_allowed(host, ap_ipv4)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        (void)httpd_resp_send(req, "Invalid API host", HTTPD_RESP_USE_STRLEN);
+        return false;
+    }
+    if (mutation) {
+        char marker[4] = {0};
+        if (httpd_req_get_hdr_value_str(req, "X-DDJ-Control", marker,
+                                        sizeof(marker)) != ESP_OK ||
+            strcmp(marker, "1") != 0) {
+            httpd_resp_set_status(req, "403 Forbidden");
+            (void)httpd_resp_send(req, "Missing control request marker",
+                                  HTTPD_RESP_USE_STRLEN);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Simboli za ugrađene datoteke
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
+extern const uint8_t style_css_start[]  asm("_binary_style_css_start");
+extern const uint8_t style_css_end[]    asm("_binary_style_css_end");
+extern const uint8_t app_js_start[]     asm("_binary_app_js_start");
+extern const uint8_t app_js_end[]       asm("_binary_app_js_end");
+
+// Provjera i preusmjeravanje za Captive Portal
+static bool redirect_if_needed(httpd_req_t *req)
+{
+    char host[64] = {0};
+    char ap_ipv4[16] = {0};
+    current_ap_ipv4(ap_ipv4);
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) == ESP_OK) {
+        if (!web_api_host_allowed(host, ap_ipv4)) {
+            ESP_LOGD(TAG, "Redirecting Host '%s' to %s", host,
+                     WEB_API_CANONICAL_HOSTNAME);
+            httpd_resp_set_status(req, "302 Found");
+            httpd_resp_set_hdr(req, "Location",
+                               "http://" WEB_API_CANONICAL_HOSTNAME "/index.html");
+            httpd_resp_send(req, NULL, 0);
+            return true;
+        }
+    }
+    return false;
+}
+
+// GET / i /index.html
+static esp_err_t index_html_handler(httpd_req_t *req)
+{
+    ESP_LOGD(TAG, "GET index.html: %s", req->uri);
+    if (redirect_if_needed(req)) {
+        return ESP_OK;
+    }
+    size_t size = strlen((const char *)index_html_start);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    return httpd_resp_send(req, (const char *)index_html_start, size);
+}
+
+// GET /style.css
+static esp_err_t style_css_handler(httpd_req_t *req)
+{
+    ESP_LOGD(TAG, "GET style.css: %s", req->uri);
+    size_t size = strlen((const char *)style_css_start);
+    httpd_resp_set_type(req, "text/css");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    return httpd_resp_send(req, (const char *)style_css_start, size);
+}
+
+// GET /app.js
+static esp_err_t app_js_handler(httpd_req_t *req)
+{
+    ESP_LOGD(TAG, "GET app.js: %s", req->uri);
+    size_t size = strlen((const char *)app_js_start);
+    httpd_resp_set_type(req, "application/javascript");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    return httpd_resp_send(req, (const char *)app_js_start, size);
+}
+
+/* ── Web-originated deck mutations ───────────────────────────────────────── *
+ *
+ * The web UI must not reach into the audio engine directly. deck_core owns deck
+ * state: it recalculates position and BPM, updates the audio loop, remembers it
+ * for reloop, and publishes coherent UI and controller-LED state. Setting the
+ * loop straight on the engine leaves every one of those out of step, so a loop
+ * made from the phone would not light the pads and would not survive a reloop.
+ *
+ * Both actions are expressed as the same authoritative controller events the
+ * FLX4 produces, so there is exactly one code path for "set a four-beat loop".
+ */
+static esp_err_t web_queue_loop_set(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    /* Pad 8 in Beat Loop mode is the existing four-beat action. */
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_PAD_ACTION
+                                  : CTRL_ID_DECK1_PAD_ACTION,
+        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 7u, false, true),
+        .deck = deck,
+        .control = CTRL_DECK_CTL_PAD_ACTION,
+        .seq = 0u,
+    };
+    return deck_core_queue_remote_event(&ev);
+}
+
+static esp_err_t web_queue_loop_clear(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_EXT_ACTION
+                                  : CTRL_ID_DECK1_EXT_ACTION,
+        .value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RELOOP_STOP, true),
+        .deck = deck,
+        .control = CTRL_DECK_CTL_EXT_ACTION,
+        .seq = 0u,
+    };
+    return deck_core_queue_remote_event(&ev);
+}
+
+static esp_err_t web_queue_sync(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_SYNC : CTRL_ID_DECK1_SYNC,
+        .value = 1,
+        .deck = deck,
+        .control = CTRL_DECK_CTL_SYNC,
+        .seq = 0u,
+    };
+    return deck_core_queue_remote_event(&ev);
+}
+
+#define WEB_PLAY_APPLY_TIMEOUT_MS 250u
+#define WEB_PLAY_POLL_MS            5u
+
+static bool web_wait_for_play_state(uint8_t deck, bool expected_playing)
+{
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(WEB_PLAY_APPLY_TIMEOUT_MS);
+    const TickType_t poll_delay = pdMS_TO_TICKS(WEB_PLAY_POLL_MS) > 0
+        ? pdMS_TO_TICKS(WEB_PLAY_POLL_MS) : 1;
+    do {
+        if (deck_core_get_deck_state(deck).playing == expected_playing) {
+            return true;
+        }
+        vTaskDelay(poll_delay);
+    } while ((xTaskGetTickCount() - started) < timeout);
+    return deck_core_get_deck_state(deck).playing == expected_playing;
+}
+
+/* These strings end up inside a hand-formatted JSON body below. They originate
+ * from partition labels and app descriptors, so they are not
+ * attacker-controlled in normal operation — but an unescaped quote or backslash
+ * anywhere in that chain produces a response the client cannot parse, and the
+ * failure would look like a firmware bug rather than an encoding one. Escape at
+ * the point of collection so no formatting path can miss one. */
+static void web_collect_p4_ota_status(p4_ota_status_t *out)
+{
+    p4_ota_get_status(out);
+    if (!out) return;
+    web_firmware_json_escape_in_place(out->running_slot, sizeof(out->running_slot));
+    web_firmware_json_escape_in_place(out->running_version, sizeof(out->running_version));
+    web_firmware_json_escape_in_place(out->target_slot, sizeof(out->target_slot));
+    web_firmware_json_escape_in_place(out->target_version, sizeof(out->target_version));
+    web_firmware_json_escape_in_place(out->last_error, sizeof(out->last_error));
+}
+
+static esp_err_t api_firmware_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    p4_ota_status_t status;
+    web_collect_p4_ota_status(&status);
+    const board_capabilities_t *board = board_capabilities_get();
+    const esp_app_desc_t *app = esp_app_get_description();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t image_state;
+    const char *health = "unknown";
+    if (running && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        health = "factory";
+    } else if (running && esp_ota_get_state_partition(running, &image_state) == ESP_OK) {
+        switch (image_state) {
+        case ESP_OTA_IMG_NEW: health = "new"; break;
+        case ESP_OTA_IMG_PENDING_VERIFY: health = "pending_verify"; break;
+        case ESP_OTA_IMG_VALID: health = "valid"; break;
+        case ESP_OTA_IMG_INVALID: health = "invalid"; break;
+        case ESP_OTA_IMG_ABORTED: health = "aborted"; break;
+        default: break;
+        }
+    }
+    char elf_sha[65];
+    static const char hex[] = "0123456789abcdef";
+    for (unsigned i=0; i<32; ++i) {
+        elf_sha[i*2] = hex[app->app_elf_sha256[i] >> 4];
+        elf_sha[i*2+1] = hex[app->app_elf_sha256[i] & 15];
+    }
+    elf_sha[64] = 0;
+    char json[896];
+    int len = snprintf(json, sizeof(json),
+                       "{\"target\":\"p4\",\"state\":\"%s\","
+                       "\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\",\"source_dirty\":%s,"
+                       "\"image_elf_sha256\":\"%s\",\"running_image_state\":\"%s\","
+                       "\"running_slot\":\"%s\",\"running_version\":\"%s\","
+                       "\"target_slot\":\"%s\",\"target_version\":\"%s\","
+                       "\"expected_size\":%u,\"received_size\":%u,"
+                       "\"last_error\":\"%s\"}",
+                       p4_ota_state_name(status.state),
+                       board_id_name(board->id), board->project, board_build_source_sha(),
+                       board_build_source_dirty() ? "true" : "false", elf_sha, health,
+                       status.running_slot, status.running_version,
+                       status.target_slot, status.target_version,
+                       (unsigned)status.expected_size,
+                       (unsigned)status.received_size,
+                       status.last_error);
+    if (len < 0 || (size_t)len >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)len);
+}
+
+#define DELAYED_RESTART_STACK_BYTES 4096u
+#define DELAYED_RESTART_CORE 0
+
+static void delayed_restart_task(void *arg)
+{
+    (void)arg;
+    service_log_sync();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+}
+
+static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
+{
+    const unsigned max_timeouts = 5;
+    for (unsigned timeout_count = 0; timeout_count < max_timeouts; ++timeout_count) {
+        int received = httpd_req_recv(req, (char *)buffer, wanted);
+        if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
+    }
+    return HTTPD_SOCK_ERR_TIMEOUT;
+}
+
+
+/* ── Pull-OTA service-network configuration ───────────────────────────────── */
+
+/* Wired by app_main; see web_server.h for why this is not a direct call. */
+static web_server_probe_start_fn s_probe_start_fn;
+static web_server_probe_status_fn s_probe_status_fn;
+
+void web_server_set_probe_hooks(web_server_probe_start_fn start,
+                                web_server_probe_status_fn status)
+{
+    s_probe_start_fn = start;
+    s_probe_status_fn = status;
+}
+
+/* GET reports the SSID and base URL, and only WHETHER a passphrase is stored.
+ * There is deliberately no path that returns the passphrase over the network;
+ * to change it you send a new one. */
+static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
+    const bool has_password = config.password[0] != '\0';
+    memset(config.password, 0, sizeof(config.password));
+    /* The probe result rides along here rather than on its own endpoint: the
+     * httpd is capped at 24 URI handlers, and going over takes down the whole
+     * web layer including OTA, recoverable only by a wired flash. */
+    web_server_probe_status_t probe = {0};
+    if (s_probe_status_fn) s_probe_status_fn(&probe);
+    static const char *k_probe_names[] = { "idle", "running", "ok", "failed" };
+    const char *probe_name = (probe.state >= 0 && probe.state <= 3)
+        ? k_probe_names[probe.state] : "idle";
+
+    char ssid_esc[APP_SETTINGS_OTA_SSID_CAP * 2u + 1u];
+    char url_esc[APP_SETTINGS_OTA_URL_CAP * 2u + 1u];
+    char detail_esc[sizeof(probe.detail) * 2u + 1u];
+    char address_esc[sizeof(probe.address) * 2u + 1u];
+    web_api_json_escape(config.ssid, ssid_esc, sizeof(ssid_esc));
+    web_api_json_escape(config.url, url_esc, sizeof(url_esc));
+    web_api_json_escape(probe.detail, detail_esc, sizeof(detail_esc));
+    web_api_json_escape(probe.address, address_esc, sizeof(address_esc));
+
+    char json[sizeof(ssid_esc) + sizeof(url_esc) + sizeof(detail_esc) + sizeof(address_esc) + 192u];
+    int n = snprintf(json, sizeof(json),
+                     "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s,"
+                     "\"pull_supported\":%s,"
+                     "\"probe\":{\"state\":\"%s\",\"detail\":\"%s\","
+                     "\"address\":\"%s\"}}",
+                     ssid_esc, url_esc,
+                     has_password ? "true" : "false",
+                     p4_ota_pull_version_supported(esp_app_get_description()->version) ? "true" : "false",
+                     probe_name, detail_esc, address_esc);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
+/* POST body: {"ssid":..., "password":..., "url":...} or {"clear":true}.
+ *
+ * A body rather than query parameters because the passphrase must never reach
+ * a URL, where it would be logged. Omitting "password" keeps the stored one,
+ * so the SSID or URL can be corrected without retyping it.
+ */
+static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    char body[512];
+    if (req->content_len <= 0 || (size_t)req->content_len >= sizeof(body)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body size");
+    }
+    size_t len = 0u;
+    const size_t wanted = (size_t)req->content_len;
+    while (len < wanted) {
+        int got = ota_http_recv(req, (uint8_t *)body + len, wanted - len);
+        if (got <= 0) {
+            memset(body, 0, sizeof(body));
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body read failed");
+        }
+        len += (size_t)got;
+    }
+    body[len] = '\0';
+
+    /* A connectivity probe leaves the AP for up to ~25 s. Refuse while audio is
+     * playing: the check is here rather than in wifi_link because wifi_link
+     * deliberately knows nothing about decks, and because this is the layer
+     * that can tell the operator why. */
+    bool want_probe = p4_ota_cfg_extract_true(body, len, "probe");
+    bool want_check = p4_ota_cfg_extract_true(body, len, "check");
+    char install_rel[64] = {0};
+    bool want_install = p4_ota_cfg_extract_string(body, len, "install",
+                                                  install_rel, sizeof(install_rel));
+    if (want_probe || want_check || want_install) {
+        memset(body, 0, sizeof(body));
+        if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "a deck is playing");
+        }
+        if (!s_probe_start_fn) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "probe not wired");
+        }
+        esp_err_t rc = (esp_err_t)s_probe_start_fn(
+            want_install ? 2 : (want_check ? 1 : 0),
+            want_install ? install_rel : NULL);
+        if (rc == ESP_ERR_INVALID_ARG) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "no service network or update URL configured");
+        }
+        if (rc == ESP_ERR_NOT_SUPPORTED) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "automatic updates unavailable for this development version; use local signed upload");
+        }
+        if (rc != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "probe already running or Wi-Fi is off");
+        }
+        httpd_resp_set_type(req, "application/json");
+        /* 202: the AP is about to disappear for a moment, so the answer has to
+         * be sent before the work starts rather than after it. */
+        httpd_resp_set_status(req, "202 Accepted");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"probe\":\"started\"}");
+    }
+
+    if (p4_ota_cfg_extract_true(body, len, "clear")) {
+        esp_err_t clear_rc = app_settings_ota_clear();
+        memset(body, 0, sizeof(body));
+        if (clear_rc != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Failed to clear OTA configuration");
+        }
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"cleared\":true}");
+    }
+
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
+    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
+    bool have_ssid = p4_ota_cfg_extract_string(body, len, "ssid", ssid, sizeof(ssid));
+    bool have_url  = p4_ota_cfg_extract_string(body, len, "url", url, sizeof(url));
+    bool have_pass = p4_ota_cfg_extract_string(body, len, "password", pass, sizeof(pass));
+    /* The body held a passphrase; do not leave it lying in the request buffer
+     * for the next handler to reuse. */
+    memset(body, 0, sizeof(body));
+
+    const char *reject = NULL;
+    if (have_ssid) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_ssid(ssid);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    if (!reject && have_url) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_url(url);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    /* An empty password is the legitimate way to say "open network"; anything
+     * else must satisfy WPA2 bounds, because a short one would associate never
+     * and look like a firmware fault. */
+    if (!reject && have_pass && pass[0] != 0) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_password(pass);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    if (!have_ssid && !have_url && !have_pass) reject = "nothing-to-set";
+
+    if (reject) {
+        memset(pass, 0, sizeof(pass));
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, reject);
+    }
+
+    esp_err_t rc = app_settings_ota_set(have_ssid ? ssid : NULL,
+                                        have_pass ? pass : NULL,
+                                        have_url ? url : NULL);
+    memset(pass, 0, sizeof(pass));
+    if (rc != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   esp_err_to_name(rc));
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
+static esp_err_t api_p4_ota_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    char target[8] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-DDJ-OTA", target, sizeof(target)) != ESP_OK ||
+        strcmp(target, "p4") != 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: p4");
+    }
+    if (req->content_len < DDJ_OTA_HEADER_SIZE + P4_OTA_IMAGE_HEADER_SIZE) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Signed OTA bundle is too small");
+    }
+
+    uint8_t *buffer = malloc(4096);
+    if (!buffer) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
+    }
+
+    uint8_t manifest_header[DDJ_OTA_HEADER_SIZE];
+    size_t manifest_received = 0;
+    while (manifest_received < sizeof(manifest_header)) {
+        int received = ota_http_recv(req, manifest_header + manifest_received,
+                                     sizeof(manifest_header) - manifest_received);
+        if (received <= 0) {
+            free(buffer);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Manifest upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        manifest_received += (size_t)received;
+    }
+
+    ddj_ota_manifest_t manifest;
+    ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
+        manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_P4,
+        P4_OTA_ESP32P4_CHIP_ID, esp_app_get_description()->project_name, P4_OTA_MAX_IMAGE_SIZE,
+        &manifest);
+    if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   ddj_ota_manifest_result_name(manifest_rc));
+    }
+    if (!ddj_ota_manifest_verify_signature(manifest_header, sizeof(manifest_header))) {
+        free(buffer);
+        httpd_resp_set_status(req, "403 Forbidden");
+        return httpd_resp_send(req, "Invalid OTA manifest signature", HTTPD_RESP_USE_STRLEN);
+    }
+    if ((size_t)req->content_len != DDJ_OTA_HEADER_SIZE + manifest.image_size) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Bundle length does not match signed manifest");
+    }
+
+    size_t remaining = manifest.image_size;
+    size_t buffered = 0;
+    while (buffered < P4_OTA_IMAGE_HEADER_SIZE) {
+        size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
+        int received = ota_http_recv(req, buffer + buffered, wanted);
+        if (received <= 0) {
+            free(buffer);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        buffered += (size_t)received;
+        remaining -= (size_t)received;
+    }
+    if (!p4_ota_policy_header_valid(buffer, buffered)) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Not an ESP32-P4 firmware image");
+    }
+
+    esp_err_t rc = audio_engine_suspend_loads_and_stop_all();
+    if (rc != ESP_OK) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Cannot stop playback");
+    }
+    rc = p4_ota_begin(&manifest);
+    if (rc != ESP_OK) {
+        audio_engine_resume_loads();
+        free(buffer);
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
+    }
+    service_log_event(SERVICE_LOG_P4_OTA_STARTED, SERVICE_LOG_INFO,
+                      1u, (uint32_t)manifest.image_size, 0u, 0u, 0u, NULL);
+    rc = p4_ota_write(buffer, buffered);
+    if (rc != ESP_OK) {
+        free(buffer);
+        p4_ota_abort(esp_err_to_name(rc));
+        audio_engine_resume_loads();
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Flash write failed");
+    }
+    while (remaining > 0) {
+        size_t wanted = remaining < 4096u ? remaining : 4096u;
+        int received = ota_http_recv(req, buffer, wanted);
+        if (received <= 0) {
+            free(buffer);
+            p4_ota_abort("HTTP upload interrupted");
+            audio_engine_resume_loads();
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        rc = p4_ota_write(buffer, (size_t)received);
+        if (rc != ESP_OK) {
+            free(buffer);
+            p4_ota_abort(esp_err_to_name(rc));
+            audio_engine_resume_loads();
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Flash write failed");
+        }
+        remaining -= (size_t)received;
+    }
+    free(buffer);
+
+    rc = p4_ota_finish();
+    if (rc != ESP_OK) {
+        audio_engine_resume_loads();
+        service_log_event(SERVICE_LOG_P4_OTA_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)rc, 0u, 0u, 0u, "validation");
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Firmware validation failed");
+    }
+    service_log_note(SERVICE_LOG_P4_OTA_VERIFIED, SERVICE_LOG_INFO, "reboot pending");
+
+    /* Keep esp_restart() on core 0.  The production M2.2 push-OTA reboot
+     * panicked in the ESP32-P4 cache write-back register access, and the
+     * previously unpinned helper could run on either core. */
+    if (xTaskCreatePinnedToCore(delayed_restart_task, "ota_reboot",
+                                DELAYED_RESTART_STACK_BYTES, NULL, 5, NULL,
+                                DELAYED_RESTART_CORE) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create OTA reboot task");
+        audio_engine_resume_loads();
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Firmware verified but reboot scheduling failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
+                           HTTPD_RESP_USE_STRLEN);
+}
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    controller_profile_registry_t *reg = calloc(1, sizeof(*reg));
+    char *json = malloc(4096);
+    if (!reg || !json) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+    if (controller_profile_manager_get_registry_snapshot(reg) != ESP_OK) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile manager unavailable");
+    }
+    size_t used = 0;
+    int n = snprintf(json, 4096, "{\"profiles\":[");
+    if (n < 0 || n >= 4096) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile list overflow");
+    }
+    used = (size_t)n;
+    for (uint8_t i = 0; i < reg->count; i++) {
+        const controller_profile_meta_t *m = &reg->profiles[i];
+        n = snprintf(json + used, 4096 - used,
+                     "%s{\"id\":\"%s\",\"valid\":%s,\"vid\":\"0x%04X\","
+                     "\"pid\":\"0x%04X\",\"size\":%u}",
+                     i == 0 ? "" : ",", m->id,
+                     m->valid ? "true" : "false", m->vid, m->pid,
+                     (unsigned)m->size);
+        if (n < 0 || (size_t)n >= 4096 - used) {
+            free(reg);
+            free(json);
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Profile list overflow");
+        }
+        used += (size_t)n;
+    }
+    n = snprintf(json + used, 4096 - used, "],\"count\":%u}",
+                 (unsigned)reg->count);
+    if (n < 0 || (size_t)n >= 4096 - used) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile list overflow");
+    }
+    used += (size_t)n;
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t rc = httpd_resp_send(req, json, used);
+    free(reg);
+    free(json);
+    return rc;
+}
+
+static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+
+    /* A profile install is a multi-file SD swap; refuse it while the recorder
+     * owns the card rather than letting it back-pressure the writer. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_PROFILE_UPLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to install a profile",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    char id[CPM_ID_MAX] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-ID", id,
+                                    sizeof(id)) != ESP_OK ||
+        !controller_profile_id_valid(id)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid or missing X-DDJ-Profile-ID");
+    }
+    if (!web_api_profile_content_length_valid((size_t)req->content_len)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Profile size must be 32..16384 bytes");
+    }
+
+    char overwrite_header[4] = {0};
+    const char *overwrite_value = NULL;
+    size_t overwrite_len = httpd_req_get_hdr_value_len(
+        req, "X-DDJ-Profile-Overwrite");
+    if (overwrite_len > 0) {
+        if (overwrite_len >= sizeof(overwrite_header) ||
+            httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-Overwrite",
+                                        overwrite_header,
+                                        sizeof(overwrite_header)) != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "Invalid X-DDJ-Profile-Overwrite");
+        }
+        overwrite_value = overwrite_header;
+    }
+    bool overwrite = false;
+    if (!web_api_profile_overwrite_parse(overwrite_value, &overwrite)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Overwrite must be 0 or 1");
+    }
+
+    size_t expected = (size_t)req->content_len;
+    uint8_t *blob = malloc(expected);
+    if (!blob) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+    size_t received_total = 0;
+    while (received_total < expected) {
+        int received = ota_http_recv(req, blob + received_total,
+                                     expected - received_total);
+        if (received <= 0) {
+            free(blob);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Profile upload timed out",
+                                       HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        received_total += (size_t)received;
+    }
+
+    controller_profile_meta_t meta = {0};
+    esp_err_t rc = controller_profile_manager_install_profile(
+        id, blob, received_total, overwrite, &meta);
+    free(blob);
+    if (rc == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid controller profile or CRC");
+    }
+    if (rc == ESP_ERR_INVALID_STATE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req,
+                               "Profile exists or manager is busy",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "profile '%s' install failed: %s", id,
+                 esp_err_to_name(rc));
+        service_log_event(SERVICE_LOG_PROFILE_UPLOAD_FAILED, SERVICE_LOG_WARN,
+                          1u, (uint32_t)rc, 0u, 0u, 0u, id);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "SD profile install failed");
+    }
+    service_log_event(SERVICE_LOG_PROFILE_UPLOAD_DONE, SERVICE_LOG_INFO,
+                      1u, (uint32_t)received_total, 0u, 0u, 0u, id);
+
+    char json[256];
+    int n = snprintf(json, sizeof(json),
+                     "{\"ok\":true,\"id\":\"%s\",\"size\":%u,"
+                     "\"vid\":\"0x%04X\",\"pid\":\"0x%04X\"}",
+                     meta.id, (unsigned)meta.size, meta.vid, meta.pid);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile response overflow");
+    }
+    httpd_resp_set_status(req, overwrite ? "200 OK" : "201 Created");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+#endif
+
+// GET /api/status
+#if CONFIG_AUDIO_RECORDER_ENABLED
+/* ── Master-output recorder API ────────────────────────────────────────────── */
+
+static const char *recording_state_name(audio_recorder_state_t s)
+{
+    switch (s) {
+    case AUDIO_RECORDER_STARTING:  return "STARTING";
+    case AUDIO_RECORDER_RECORDING: return "RECORDING";
+    case AUDIO_RECORDER_STOPPING:  return "STOPPING";
+    case AUDIO_RECORDER_ERROR:     return "ERROR";
+    case AUDIO_RECORDER_STOPPED:
+    default:                       return "STOPPED";
+    }
+}
+
+static esp_err_t recording_send_status(httpd_req_t *req)
+{
+    audio_recorder_status_t st;
+    if (audio_recorder_get_status(&st) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Recorder status unavailable");
+    }
+    /* Sized with headroom: the fully-populated object with six-digit counters
+     * runs a little over 400 bytes, and 320 silently turned every request into
+     * a 500 the moment the gate/fwrite split was added. */
+    char json[512];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sample_rate\":%u,"
+                     "\"ring_used\":%u,\"ring_capacity\":%u,\"ring_high_water\":%u,"
+                     "\"dropped_blocks\":%u,\"dropped_frames\":%llu,"
+                     "\"bytes_written\":%llu,\"frames_written\":%llu,"
+                     "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
+                     "\"write_max_us\":%u,\"writes_over_100ms\":%u,"
+                     "\"gate_wait_max_us\":%u,\"fwrite_max_us\":%u,\"fsync_max_us\":%u,"
+                     "\"last_error\":%d}",
+                     recording_state_name(st.state), (unsigned)st.sample_rate,
+                     (unsigned)st.ring_used, (unsigned)st.ring_capacity,
+                     (unsigned)st.ring_high_water, (unsigned)st.dropped_blocks,
+                     (unsigned long long)st.dropped_frames,
+                     (unsigned long long)st.bytes_written,
+                     (unsigned long long)st.frames_written,
+                     (unsigned)st.push_count, (unsigned)st.push_max_us,
+                     (unsigned)st.push_over_100us,
+                     (unsigned)st.write_max_us, (unsigned)st.writes_over_100ms,
+                     (unsigned)st.gate_wait_max_us, (unsigned)st.fwrite_max_us, (unsigned)st.fsync_max_us,
+                     (int)st.last_error);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Recorder response overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
+// GET /api/recording — recorder status snapshot.
+static esp_err_t api_recording_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return recording_send_status(req);
+}
+
+// POST /api/recording/start — begin recording at the live MAIN output rate.
+static esp_err_t api_recording_start_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+
+    uint32_t rate = audio_engine_get_output_sample_rate();
+    if (rate == 0u) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req,
+                               "No MAIN output rate yet - load and play a track first",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    /* Start the output-block phase maxima from zero so the numbers describe
+     * this recording window rather than whatever happened since boot. */
+    audio_engine_reset_output_phase_stats();
+    esp_err_t rc = audio_engine_start_recording();
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict"
+                                                               : "500 Internal Server Error");
+        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
+    }
+    return recording_send_status(req);
+}
+
+// POST /api/recording/stop — finalize the current segment.
+static esp_err_t api_recording_stop_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    esp_err_t rc = audio_recorder_stop();
+    if (rc != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   esp_err_to_name(rc));
+    }
+    return recording_send_status(req);
+}
+#endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
+
+// GET /api/diagnostic-log — stream the active microSD service journal.
+static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+
+    /* Streaming the whole journal is heavy optional admin work; keep it off the
+     * card while the recorder is writing. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_LOG_DOWNLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to download the log",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    service_log_sync();   /* flush pending records before the snapshot */
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+
+    sd_io_gate_begin();
+    FILE *fp = fopen("/sd/logs/system.log", "rb");
+    sd_io_gate_end();
+    if (!fp) {
+        return httpd_resp_send(req, "service log unavailable\n",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    char buf[512];
+    for (;;) {
+        sd_io_gate_begin();
+        size_t n = fread(buf, 1, sizeof(buf), fp);
+        sd_io_gate_end();
+        if (n == 0) {
+            break;
+        }
+        if (httpd_resp_send_chunk(req, buf, (ssize_t)n) != ESP_OK) {
+            fclose(fp);
+            return ESP_FAIL;
+        }
+    }
+    fclose(fp);
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+static esp_err_t send_library_validation_gate_status(httpd_req_t *req)
+{
+    library_validation_gate_snapshot_t gate = {0};
+    library_validation_gate_snapshot(&gate);
+    char json[160];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sequence\":%u,\"timeout_ms\":%u}",
+                     library_validation_gate_state_name(gate.state),
+                     (unsigned)gate.sequence, (unsigned)gate.timeout_ms);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Validation status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+
+/* Service-only, one-shot barrier for the physical Group F acceptance test.
+ * It is bounded to 60 seconds and may only be armed while USB0 is absent and
+ * both decks are stopped. Normal mount/library operation never waits unless a
+ * marked local POST explicitly arms it. */
+static esp_err_t api_library_validation_gate_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return send_library_validation_gate_status(req);
+}
+
+static esp_err_t api_library_validation_gate_arm_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (usb_storage_is_mounted()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Disconnect USB0 before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    audio_engine_deck_get_status(0, &deck1);
+    audio_engine_deck_get_status(1, &deck2);
+    if (deck1.state != AE_IDLE || deck2.state != AE_IDLE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop and clear both decks before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    esp_err_t rc = library_validation_gate_arm(60000u);
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE
+                                      ? "409 Conflict"
+                                      : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc),
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    return send_library_validation_gate_status(req);
+}
+
+static esp_err_t api_library_validation_gate_cancel_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    library_validation_gate_cancel();
+    return send_library_validation_gate_status(req);
+}
+
+static esp_err_t send_audio_load_validation_gate_status(httpd_req_t *req)
+{
+    audio_load_validation_gate_snapshot_t gate = {0};
+    audio_load_validation_gate_snapshot(&gate);
+    char json[176];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sequence\":%u,"
+                     "\"timeout_ms\":%u,\"deck\":%u}",
+                     audio_load_validation_gate_state_name(gate.state),
+                     (unsigned)gate.sequence, (unsigned)gate.timeout_ms,
+                     (unsigned)gate.deck + 1u);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Validation status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+
+/* Service-only, one-shot barrier for deterministic Group G load removal.
+ * The selected loader pauses only after its first bounded compressed-cache
+ * read. Product loads never wait unless this guarded endpoint arms the gate. */
+static esp_err_t api_audio_load_validation_gate_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return send_audio_load_validation_gate_status(req);
+}
+
+static esp_err_t api_audio_load_validation_gate_arm_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (!usb_storage_is_mounted()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Connect USB0 before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    char query[32] = {0};
+    char deck_str[16] = {0};
+    uint8_t deck = CTRL_DECK_NONE;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "deck", deck_str,
+                              sizeof(deck_str)) != ESP_OK ||
+        !api_parse_deck(deck_str, &deck)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or invalid deck");
+    }
+
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    audio_engine_deck_get_status(0, &deck1);
+    audio_engine_deck_get_status(1, &deck2);
+    if (deck1.state == AE_LOADING || deck1.state == AE_PLAYING ||
+        deck2.state == AE_LOADING || deck2.state == AE_PLAYING) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    esp_err_t rc = audio_load_validation_gate_arm(deck, 60000u);
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE
+                                      ? "409 Conflict"
+                                      : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc),
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    return send_audio_load_validation_gate_status(req);
+}
+
+static esp_err_t api_audio_load_validation_gate_cancel_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    audio_load_validation_gate_cancel();
+    return send_audio_load_validation_gate_status(req);
+}
+
+/* Service-only Group K trigger. A plain power cycle is not evidence of the
+ * software-reboot lifecycle path, so expose one guarded, bodyless POST. The
+ * handler refuses to reboot during playback, loading, OTA activity or unless
+ * both physical USB product roots are already healthy. */
+static esp_err_t api_validation_reboot_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (req->content_len != 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Reboot request body must be empty");
+    }
+
+    p4_ota_status_t ota = {0};
+    p4_ota_get_status(&ota);
+    if (ota.state != P4_OTA_IDLE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "OTA service is not idle",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    controller_usb_host_audio_stats_t audio = {0};
+    controller_usb_host_get_audio_stats(&audio);
+    if (!usb_storage_is_mounted() ||
+        !controller_usb_host_is_connected() || !audio.streaming) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "USB0 and FLX4 must both be healthy",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    if (audio_engine_deck_get_status(0, &deck1) != ESP_OK ||
+        audio_engine_deck_get_status(1, &deck2) != ESP_OK ||
+        deck1.state == AE_LOADING || deck1.state == AE_PLAYING ||
+        deck2.state == AE_LOADING || deck2.state == AE_PLAYING) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before reboot",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    if (xTaskCreatePinnedToCore(delayed_restart_task, "validation_reboot",
+                                DELAYED_RESTART_STACK_BYTES, NULL, 5, NULL,
+                                DELAYED_RESTART_CORE) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create validation reboot task");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Reboot scheduling failed");
+    }
+    httpd_resp_set_status(req, "202 Accepted");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
+                           HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t api_resources_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    firmware_resources_sample_task(FW_RESOURCE_HTTP);
+    firmware_resources_t r;
+    firmware_resources_snapshot(&r);
+    uint32_t used = ui_heap_usage_bytes();
+    char lvgl_bytes[16];
+    if (used == UINT32_MAX) snprintf(lvgl_bytes, sizeof lvgl_bytes, "null");
+    else snprintf(lvgl_bytes, sizeof lvgl_bytes, "%u", (unsigned)used);
+    char json[768];
+    int n = snprintf(json, sizeof json,
+        "{\"lvgl_heap_bytes\":%s,\"allocation_failures\":%u,\"critical_allocation_failures\":%u,"
+        "\"last_failed_bytes\":%u,\"last_failed_caps\":%u,\"startup_phase\":\"%s\","
+        "\"last_failed_phase\":\"%s\","
+        "\"stack_min_bytes\":[%u,%u,%u,%u,%u,%u,%u,%u,%u],"
+        "\"stack_sample_ms\":[%u,%u,%u,%u,%u,%u,%u,%u,%u]}",
+        lvgl_bytes, (unsigned)r.allocation_failures, (unsigned)r.critical_allocation_failures,
+        (unsigned)r.last_failed_bytes, (unsigned)r.last_failed_caps, r.startup_phase, r.last_failed_phase,
+        (unsigned)r.stack_min_bytes[0], (unsigned)r.stack_min_bytes[1], (unsigned)r.stack_min_bytes[2],
+        (unsigned)r.stack_min_bytes[3], (unsigned)r.stack_min_bytes[4], (unsigned)r.stack_min_bytes[5],
+        (unsigned)r.stack_min_bytes[6], (unsigned)r.stack_min_bytes[7], (unsigned)r.stack_min_bytes[8],
+        (unsigned)r.stack_sample_ms[0], (unsigned)r.stack_sample_ms[1], (unsigned)r.stack_sample_ms[2],
+        (unsigned)r.stack_sample_ms[3], (unsigned)r.stack_sample_ms[4], (unsigned)r.stack_sample_ms[5],
+        (unsigned)r.stack_sample_ms[6], (unsigned)r.stack_sample_ms[7], (unsigned)r.stack_sample_ms[8]);
+    if (n < 0 || (size_t)n >= sizeof json) return ESP_FAIL;
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
+static esp_err_t api_ui_timing_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    ui_scanout_timing_snapshot_t timing;
+    ui_scanout_timing_snapshot(&timing);
+    static const char *names[UI_TIMING_COUNT] = {
+        "wake", "frame_interval", "overview_begin", "callback", "handler",
+        "d1_cache", "d1_blit", "d1_finish", "d2_cache", "d2_blit", "d2_finish"
+    };
+    /* Keep the snapshot and small chunk on the HTTP task stack. A single large
+     * JSON stack buffer would compromise its existing stack headroom. */
+    char chunk[384];
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    int n = snprintf(chunk, sizeof chunk,
+        "{\"unit\":\"us\",\"scope\":\"since_boot\",\"refresh_count\":%u,"
+        "\"coalesced_refreshes\":%u,\"zoom_beats\":%u,\"metrics\":{",
+        (unsigned)timing.refresh_count, (unsigned)timing.coalesced_refreshes,
+        (unsigned)timing.zoom_beats);
+    if (n < 0 || (size_t)n >= sizeof chunk) return ESP_FAIL;
+    esp_err_t rc = httpd_resp_send_chunk(req, chunk, n);
+    if (rc != ESP_OK) return rc;
+    for (unsigned i = 0; i < UI_TIMING_COUNT; ++i) {
+        const ui_scanout_timing_stat_t *s = &timing.metric[i];
+        n = snprintf(chunk, sizeof chunk,
+            "%s\"%s\":{\"count\":%u,\"last_us\":%u,\"max_us\":%u,"
+            "\"total_us\":%llu,\"histogram\":[%u,%u,%u,%u,%u,%u,%u]}",
+            i ? "," : "", names[i], (unsigned)s->count, (unsigned)s->last_us,
+            (unsigned)s->max_us, (unsigned long long)s->total_us,
+            (unsigned)s->histogram[0], (unsigned)s->histogram[1],
+            (unsigned)s->histogram[2], (unsigned)s->histogram[3],
+            (unsigned)s->histogram[4], (unsigned)s->histogram[5],
+            (unsigned)s->histogram[6]);
+        if (n < 0 || (size_t)n >= sizeof chunk) return ESP_FAIL;
+        rc = httpd_resp_send_chunk(req, chunk, n);
+        if (rc != ESP_OK) return rc;
+    }
+    rc = httpd_resp_send_chunk(req, "}}", 2);
+    return rc == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : rc;
+}
+
+static esp_err_t api_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    ESP_LOGD(TAG, "GET /api/status: %s", req->uri);
+    const board_capabilities_t *board = board_capabilities_get();
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    audio_engine_mixer_snapshot_t mixer = {0};
+    audio_engine_diagnostics_snapshot_t diagnostics = {0};
+
+    audio_engine_deck_get_status(0, &deck1);
+    audio_engine_deck_get_status(1, &deck2);
+    audio_engine_get_mixer_snapshot(&mixer);
+    audio_engine_get_diagnostics_snapshot(&diagnostics);
+
+    char title1[64] = {0};
+    char artist1[64] = {0};
+    char title2[64] = {0};
+    char artist2[64] = {0};
+    uint16_t bpm1_val = 0;
+    uint16_t bpm2_val = 0;
+    uint32_t duration1_ms = 0;
+    uint32_t duration2_ms = 0;
+
+    ui_get_deck_track_info(0, title1, sizeof(title1), artist1, sizeof(artist1), &bpm1_val, &duration1_ms);
+    ui_get_deck_track_info(1, title2, sizeof(title2), artist2, sizeof(artist2), &bpm2_val, &duration2_ms);
+
+    char title1_esc[128] = {0};
+    char artist1_esc[128] = {0};
+    char title2_esc[128] = {0};
+    char artist2_esc[128] = {0};
+    web_api_json_escape(title1, title1_esc, sizeof(title1_esc));
+    web_api_json_escape(artist1, artist1_esc, sizeof(artist1_esc));
+    web_api_json_escape(title2, title2_esc, sizeof(title2_esc));
+    web_api_json_escape(artist2, artist2_esc, sizeof(artist2_esc));
+
+    const char *state_text1 = "IDLE";
+    if (deck1.state == AE_LOADING) state_text1 = "LOADING";
+    else if (deck1.state == AE_READY) state_text1 = "READY";
+    else if (deck1.state == AE_PLAYING) state_text1 = "PLAYING";
+    else if (deck1.state == AE_ERROR) state_text1 = "ERROR";
+
+    const char *state_text2 = "IDLE";
+    if (deck2.state == AE_LOADING) state_text2 = "LOADING";
+    else if (deck2.state == AE_READY) state_text2 = "READY";
+    else if (deck2.state == AE_PLAYING) state_text2 = "PLAYING";
+    else if (deck2.state == AE_ERROR) state_text2 = "ERROR";
+
+    deck_state_t state1 = deck_core_get_deck_state(0);
+    deck_state_t state2 = deck_core_get_deck_state(1);
+    const deck_core_loop_display_t loop1 = deck_core_get_loop_display(0);
+    const deck_core_loop_display_t loop2 = deck_core_get_loop_display(1);
+    deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
+    service_log_status_t service_status = {0};
+    (void)service_log_get_status(&service_status);
+
+    float p1 = deck_core_pitch_percent(&state1);
+    float p2 = deck_core_pitch_percent(&state2);
+
+    uint32_t current_bpm1 = bpm1_val * (1.0f + p1 / 100.0f);
+    uint32_t current_bpm2 = bpm2_val * (1.0f + p2 / 100.0f);
+    char beat_fx_json[128] = {0};
+    web_api_format_beat_fx_json(beat_fx_json,
+                                sizeof(beat_fx_json),
+                                (int)beat_fx.effect,
+                                (int)beat_fx.beat,
+                                (int)beat_fx.target,
+                                (unsigned)beat_fx.depth,
+                                beat_fx.enabled);
+    char beat_fx_echo_diag_json[224] = {0};
+    web_api_format_beat_fx_echo_diag_json(beat_fx_echo_diag_json,
+                                          sizeof(beat_fx_echo_diag_json),
+                                          diagnostics.beat_fx_echo_allocated[0],
+                                          diagnostics.beat_fx_echo_allocated[1],
+                                          diagnostics.beat_fx_echo_enabled[0],
+                                          diagnostics.beat_fx_echo_enabled[1],
+                                          diagnostics.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_DELAY,
+                                          diagnostics.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
+                                          (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
+                                          (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
+
+    char controller_json[256] = {0};
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    {
+        controller_profile_registry_t *reg = calloc(1, sizeof(*reg));
+        if (!reg) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "No memory for profile status");
+        }
+        (void)controller_profile_manager_get_registry_snapshot(reg);
+        char product_esc[2 * CPM_PRODUCT_MAX + 8] = {0};
+        web_api_json_escape(reg->connected_product, product_esc, sizeof(product_esc));
+        const char *active = (reg->active_index >= 0 &&
+                              reg->active_index < (int)reg->count)
+            ? reg->profiles[reg->active_index].id : "";
+        char active_esc[2 * CPM_ID_MAX + 8] = {0};
+        web_api_json_escape(active, active_esc, sizeof(active_esc));
+        char state_esc[24] = {0};
+        web_api_json_escape(controller_profile_state_name(reg->transfer_state),
+                            state_esc, sizeof(state_esc));
+        web_api_format_controller_json(controller_json, sizeof(controller_json),
+                                       reg->controller_present,
+                                       reg->connected_vid, reg->connected_pid,
+                                       product_esc,
+                                       (reg->connected_caps & CTRL_DESC_CAP_MIDI_IN) != 0,
+                                       (reg->connected_caps & CTRL_DESC_CAP_MIDI_OUT) != 0,
+                                       (reg->connected_caps & CTRL_DESC_CAP_USB_AUDIO) != 0,
+                                       active_esc, state_esc, reg->count);
+        free(reg);
+    }
+#else
+    web_api_format_controller_json(controller_json, sizeof(controller_json),
+                                   false, 0, 0, "", false, false, false, "", "idle", 0);
+#endif
+
+    char service_log_json[256] = {0};
+    web_api_format_service_log_json(
+        service_log_json, sizeof(service_log_json),
+        service_status.available, service_status.queue_depth,
+        service_status.queue_capacity, service_status.dropped,
+        service_status.written, service_status.current_bytes,
+        service_status.last_error);
+
+    /* Keep the bounded USB status text off the 8 KiB HTTP task stack. The
+     * single request owns this PSRAM buffer through response formatting. */
+    const size_t p4_usb_json_size = 2048u;
+    char *p4_usb_json = heap_caps_calloc(1, p4_usb_json_size,
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p4_usb_json) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for USB status");
+    }
+    {
+        usb_host_manager_diagnostics_t host_diag = {0};
+        controller_usb_host_diagnostics_t controller_diag = {0};
+        p4_local_controller_diagnostics_t local_diag = {0};
+        usb_storage_diagnostics_t storage_diag = {0};
+        usb_host_manager_get_diagnostics(&host_diag);
+        controller_usb_host_get_diagnostics(&controller_diag);
+        p4_local_controller_get_diagnostics(&local_diag);
+        usb_storage_get_diagnostics(&storage_diag);
+        snprintf(
+            p4_usb_json, p4_usb_json_size,
+            "\"p4_usb\":{"
+            "\"host\":{"
+            "\"ready\":%s,\"install_result\":%d,"
+            "\"install_result_name\":\"%s\","
+            "\"peripheral_map\":%u,\"root_power_mask\":%u,"
+            "\"fs_phy_override\":%s,\"fs_phy_index\":%u,"
+            "\"daemon_iterations\":%u,\"daemon_errors\":%u,"
+            "\"recovery_requests\":%u,\"recovery_coalesced\":%u,"
+            "\"recovery_successes\":%u,\"recovery_suppressed_active\":%u,"
+            "\"recovery_failures\":%u,"
+            "\"recovery_queue_drops\":%u,"
+            "\"bna_recovered\":%u},"
+            "\"topology\":{"
+            "\"observations\":%u,\"probe_failures\":%u,"
+            "\"last_result\":%d,\"last_result_name\":\"%s\","
+            "\"last_address\":%u,\"last_parent_port\":%u,"
+            "\"last_direct_root\":%s},"
+            "\"controller\":{"
+            "\"registered\":%s,\"connected\":%s,"
+            "\"accepting_midi_out\":%s,\"devices_probed\":%u,"
+            "\"descriptor_rejects\":%u,"
+            "\"midi_descriptor_rejects\":%u,"
+            "\"interface_claim_failures\":%u,"
+            "\"transfer_alloc_failures\":%u,"
+            "\"midi_connects\":%u,\"midi_disconnects\":%u,"
+            "\"midi_packets\":%u,\"midi_bytes\":%u,"
+            "\"probe_event_drops\":%u,\"recovery_requests\":%u,"
+            "\"fault_recovery_epochs\":%u,"
+            "\"last_probe_stage\":%u,"
+            "\"last_probe_stage_name\":\"%s\","
+            "\"last_probe_result\":%d,"
+            "\"last_probe_result_name\":\"%s\","
+            "\"last_probe_address\":%u,"
+            "\"last_vid\":\"0x%04X\",\"last_pid\":\"0x%04X\","
+            "\"last_config_total_length\":%u,"
+            "\"last_parent_port\":%u,\"last_direct_root\":%s},"
+            "\"runtime\":{"
+            "\"bootstrap_started\":%s,\"bootstrap_ready\":%s,"
+            "\"bootstrap_failures\":%u,\"last_bootstrap_error\":%d,"
+            "\"local_connected\":%s,"
+            "\"semantic_events\":%u,\"queue_failures\":%u,"
+            "\"profile_activations\":%u,\"profile_fallbacks\":%u},"
+            "\"storage\":{"
+            "\"desired_connected\":%s,\"mounted\":%s,"
+            "\"connect_events\":%u,\"connect_accepted\":%u,"
+            "\"disconnect_events\":%u,\"disconnect_accepted\":%u,"
+            "\"mount_attempts\":%u,\"mount_successes\":%u,"
+            "\"last_mount_result\":%d,\"last_mount_result_name\":\"%s\","
+            "\"releases\":%u,"
+            "\"last_unmount_result\":%d,\"last_unmount_result_name\":\"%s\","
+            "\"last_uninstall_result\":%d,\"last_uninstall_result_name\":\"%s\"}"
+            "}",
+            host_diag.ready ? "true" : "false",
+            (int)host_diag.install_result,
+            esp_err_to_name(host_diag.install_result),
+            host_diag.peripheral_map,
+            (unsigned)host_diag.root_power_requested_mask,
+            host_diag.fs_phy_override_requested ? "true" : "false",
+            (unsigned)host_diag.fs_phy_index,
+            (unsigned)host_diag.daemon_iterations,
+            (unsigned)host_diag.daemon_errors,
+            (unsigned)host_diag.recovery_requests,
+            (unsigned)host_diag.recovery_coalesced_requests,
+            (unsigned)host_diag.recovery_successes,
+            (unsigned)host_diag.recovery_suppressed_active,
+            (unsigned)host_diag.recovery_failures,
+            (unsigned)host_diag.recovery_queue_drops,
+            (unsigned)usb_dwc_compat_bna_recovered_count(),
+            (unsigned)host_diag.topology_observations,
+            (unsigned)host_diag.topology_probe_failures,
+            (int)host_diag.last_topology_result,
+            esp_err_to_name((esp_err_t)host_diag.last_topology_result),
+            (unsigned)host_diag.last_topology_address,
+            (unsigned)host_diag.last_topology_parent_port,
+            host_diag.last_topology_direct_root ? "true" : "false",
+            controller_diag.registered ? "true" : "false",
+            controller_diag.connected ? "true" : "false",
+            controller_diag.accepting_midi_out ? "true" : "false",
+            (unsigned)controller_diag.devices_probed,
+            (unsigned)controller_diag.descriptor_rejects,
+            (unsigned)controller_diag.midi_descriptor_rejects,
+            (unsigned)controller_diag.interface_claim_failures,
+            (unsigned)controller_diag.transfer_alloc_failures,
+            (unsigned)controller_diag.midi_connects,
+            (unsigned)controller_diag.midi_disconnects,
+            (unsigned)controller_diag.midi_packets,
+            (unsigned)controller_diag.midi_bytes,
+            (unsigned)controller_diag.probe_event_drops,
+            (unsigned)controller_diag.recovery_requests,
+            (unsigned)controller_diag.fault_recovery_epochs,
+            (unsigned)controller_diag.last_probe_stage,
+            controller_usb_probe_stage_name(controller_diag.last_probe_stage),
+            (int)controller_diag.last_probe_result,
+            esp_err_to_name((esp_err_t)controller_diag.last_probe_result),
+            (unsigned)controller_diag.last_probe_address,
+            controller_diag.last_seen_vid, controller_diag.last_seen_pid,
+            (unsigned)controller_diag.last_config_total_length,
+            (unsigned)controller_diag.last_parent_port,
+            controller_diag.last_direct_root ? "true" : "false",
+            local_diag.bootstrap_started ? "true" : "false",
+            local_diag.bootstrap_ready ? "true" : "false",
+            (unsigned)local_diag.bootstrap_failures,
+            (int)local_diag.last_bootstrap_error,
+            local_diag.local_connected ? "true" : "false",
+            (unsigned)local_diag.local_semantic_events,
+            (unsigned)local_diag.local_queue_failures,
+            (unsigned)local_diag.profile_activations,
+            (unsigned)local_diag.profile_fallbacks,
+            storage_diag.desired_connected ? "true" : "false",
+            storage_diag.mounted ? "true" : "false",
+            (unsigned)storage_diag.connect_events,
+            (unsigned)storage_diag.connect_accepted,
+            (unsigned)storage_diag.disconnect_events,
+            (unsigned)storage_diag.disconnect_accepted,
+            (unsigned)storage_diag.mount_attempts,
+            (unsigned)storage_diag.mount_successes,
+            (int)storage_diag.last_mount_result,
+            esp_err_to_name(storage_diag.last_mount_result),
+            (unsigned)storage_diag.releases,
+            (int)storage_diag.last_unmount_result,
+            esp_err_to_name(storage_diag.last_unmount_result),
+            (int)storage_diag.last_uninstall_result,
+            esp_err_to_name(storage_diag.last_uninstall_result));
+    }
+
+    const size_t crash_dump_json_size = 1024u;
+    char *crash_dump_json = calloc(1, crash_dump_json_size);
+    if (!crash_dump_json) {
+        free(p4_usb_json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for crash status");
+    }
+    format_crash_dump_json(crash_dump_json, crash_dump_json_size);
+    const size_t trace_json_size = 1536u;
+    char *trace_json = calloc(1, trace_json_size);
+    if (!trace_json) {
+        free(p4_usb_json);
+        free(crash_dump_json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for retained trace status");
+    }
+    char *audio_wdt_trace_json = trace_json;
+    char *library_load_trace_json = trace_json + 1024u;
+    format_audio_wdt_trace_json(audio_wdt_trace_json,
+                                1024u,
+                                &diagnostics);
+    format_library_load_trace_json(library_load_trace_json,
+                                   trace_json_size - 1024u);
+
+    const bool uac_playback_active = diagnostics.deck_active[0] ||
+                                     diagnostics.deck_active[1];
+    const audio_uac_ring_state_t uac_ring_state = audio_uac_ring_state(
+        uac_playback_active,
+        diagnostics.usb_headphone_submitted_blocks,
+        diagnostics.usb_headphone_ring_queued_frames,
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_low_alarm = audio_uac_ring_low_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_high_alarm = audio_uac_ring_high_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_data_loss_flags =
+        diagnostics.usb_headphone_active_data_loss_flags;
+    const bool uac_data_loss = uac_data_loss_flags != 0u;
+
+    controller_usb_audio_stream_stats_t uac_format;
+    controller_usb_audio_stream_get_stats(&uac_format);
+    sd_idle_wait_stats_t sd_wait;
+    sd_transfer_stats_t sd_transfer;
+    sd_io_gate_stats_t sd_gate;
+    sd_idle_wait_get_stats(&sd_wait);
+    sd_transfer_get_stats(&sd_transfer);
+    sd_io_gate_get_stats(&sd_gate);
+    char *json = NULL;
+    int json_len = web_api_alloc_printf(
+        &json,
+        "{"
+        "\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\",\"source_dirty\":%s,"
+        "\"pull_update_supported\":%s,"
+        "\"uptime_ms\":%llu,"
+        "\"capabilities\":{\"wifi\":%s,\"ethernet\":%s,\"pcm5102a\":%s,"
+        "\"display_width\":%u,\"display_height\":%u,\"panel_rotation\":%u,"
+        "\"storage_root\":%u,\"controller_root\":%u,\"fixed_output_sample_rate\":%u,"
+        "\"waveform_first\":%s,\"waveform_top_to_bottom\":%s,\"dj_link\":\"%s\",\"recorder\":\"%s\"},"
+        "\"main_sink\":\"%s\","
+        "\"sd_metrics\":{\"idle_waits\":%u,\"idle_polls\":%u,\"idle_timeouts\":%u,\"idle_errors\":%u,\"idle_max_us\":%u,"
+        "\"reads\":%u,\"writes\":%u,\"transfer_errors\":%u,\"read_max_us\":%u,\"write_max_us\":%u,"
+        "\"gate_waits\":%u,\"gate_timeouts\":%u,\"gate_wait_max_us\":%u,\"gate_hold_max_us\":%u,\"activity\":%u},"
+        "\"uac_format\":{\"sample_rate\":%u,\"bits\":%u,\"consumer_paced\":%s,\"queued_us\":%u},"
+        "\"deck1\":{"
+        "\"title\":\"%s\","
+        "\"artist\":\"%s\","
+        "\"bpm\":%u,"
+        "\"pitch_percent\":%.2f,"
+        "\"raw_pitch\":%d,"
+        "\"position_ms\":%u,"
+        "\"duration_ms\":%u,"
+        "\"playing\":%s,"
+        "\"master_tempo\":%s,\"loop_active\":%s,\"loop_start_ms\":%u,\"loop_end_ms\":%u,"
+        "\"sync_enabled\":%s,"
+        "\"sync_master\":%s,"
+        "\"network_sync\":%u,\"network_player\":%u,\"network_phase_error\":%.4f,\"sink_latency_calibrated\":%s,"
+        "\"state_text\":\"%s\""
+        "},"
+        "\"deck2\":{"
+        "\"title\":\"%s\","
+        "\"artist\":\"%s\","
+        "\"bpm\":%u,"
+        "\"pitch_percent\":%.2f,"
+        "\"raw_pitch\":%d,"
+        "\"position_ms\":%u,"
+        "\"duration_ms\":%u,"
+        "\"playing\":%s,"
+        "\"master_tempo\":%s,\"loop_active\":%s,\"loop_start_ms\":%u,\"loop_end_ms\":%u,"
+        "\"sync_enabled\":%s,"
+        "\"sync_master\":%s,"
+        "\"network_sync\":%u,\"network_player\":%u,\"network_phase_error\":%.4f,\"sink_latency_calibrated\":%s,"
+        "\"state_text\":\"%s\""
+        "},"
+        "\"mixer\":{"
+        "\"volume1\":%u,"
+        "\"volume2\":%u,"
+        "\"crossfader\":%u,"
+        "\"master_volume\":%u,"
+        "\"headphone_mix\":%u,"
+        "\"pregain1\":%u,"
+        "\"pregain2\":%u,"
+        "\"pregain_gain1\":%.3f,"
+        "\"pregain_gain2\":%.3f,"
+        "\"eq1_low\":%u,"
+        "\"eq1_mid\":%u,"
+        "\"eq1_high\":%u,"
+        "\"eq2_low\":%u,"
+        "\"eq2_mid\":%u,"
+        "\"eq2_high\":%u,"
+        "\"filter1\":%u,"
+        "\"filter2\":%u,"
+        "\"smart_cfx\":%s,"
+        "\"smart_fader\":%s,"
+        "\"pfl1\":%s,"
+        "\"pfl2\":%s"
+        "},"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
+        "\"diagnostics\":{"
+        "\"output_codec_open\":%s,"
+        "\"output_sample_rate\":%u,"
+        "\"output_late_count\":%u,"
+        "\"output_late_max_us\":%u,"
+        "\"output_late_threshold_us\":%u,"
+        "\"pcm_underrun1\":%u,"
+        "\"pcm_underrun2\":%u,"
+        "\"locked_backend_reads1\":%u,"
+        "\"locked_backend_reads2\":%u,"
+        "\"locked_backend_predicted2\":%u,"
+        "\"locked_backend_actual2\":%u,"
+        "\"locked_backend_stream_after2\":%u,"
+        "\"locked_backend_delta_bytes2\":%u,"
+        "\"startup_waiting1\":%s,"
+        "\"startup_waiting2\":%s,"
+        "\"startup_wait_count1\":%u,"
+        "\"startup_wait_count2\":%u,"
+        "\"startup_prebuffer_frames\":%u,"
+        "\"loop_trim_wraps1\":%u,"
+        "\"loop_trim_dropped_max1\":%u,"
+        "\"loop_trim_dropped_total1\":%u,"
+        "\"loop_trim_clamped_total1\":%u,"
+        "\"phase_head_us\":%u,"
+        "\"phase_mix_us\":%u,"
+        "\"phase_push_us\":%u,"
+        "\"phase_monitor_us\":%u,"
+        "\"phase_main_us\":%u,"
+        "\"phase_codec_us\":%u,"
+        "\"phase_book_us\":%u,"
+        "\"ring_capacity\":%u,"
+        "\"ring_used1\":%u,"
+        "\"ring_used2\":%u,"
+        "\"deck_sample_rate1\":%u,"
+        "\"deck_sample_rate2\":%u,"
+        "\"deck_channels1\":%u,"
+        "\"deck_channels2\":%u,"
+        "\"deck_file_bytes1\":%u,"
+        "\"deck_file_bytes2\":%u,"
+        "\"deck_load_progress1\":%u,"
+        "\"deck_load_progress2\":%u,"
+        "\"deck_active1\":%s,"
+        "\"deck_active2\":%s,"
+        "\"limiter_samples\":%u,"
+        "\"limiter_positive\":%u,"
+        "\"limiter_negative\":%u,"
+        "\"limiter_peak\":%d,"
+        "\"main_meter_peak\":%u,"
+        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u,"
+        "\"ring_queued_frames\":%u,\"ring_capacity_frames\":%u,\"ring_high_water_frames\":%u,"
+        "\"ring_low_alarm_frames\":%u,\"ring_high_alarm_frames\":%u,\"ring_state\":\"%s\","
+        "\"overflow_frames\":%u,\"underflow_frames\":%u,\"data_loss\":%s,"
+        "\"data_loss_flags\":%u,\"packet_failures\":%u,\"packet_lost_frames\":%u},"
+        "%s,"
+        "\"heap_free\":%u,"
+        "\"internal_free\":%u,"
+        "\"internal_min_free\":%u,"
+        "\"internal_largest_free\":%u,"
+        "\"dma_free\":%u,"
+        "\"dma_min_free\":%u,"
+        "\"dma_largest_free\":%u,"
+        "\"psram_free\":%u,"
+        "\"psram_min_free\":%u,"
+        "\"psram_largest_free\":null,"
+        "\"heap_walk_max_us\":[%u,%u,%u]"
+        "}"
+        "}",
+        board_id_name(board->id), board->project, board_build_source_sha(),
+        board_build_source_dirty() ? "true" : "false",
+        p4_ota_pull_version_supported(esp_app_get_description()->version) ? "true" : "false",
+        (unsigned long long)(esp_timer_get_time() / 1000),
+        board->wifi ? "true" : "false", board->ethernet ? "true" : "false", board->pcm5102a ? "true" : "false",
+        board->display_width, board->display_height, board->panel_rotation,
+        board->storage_root, board->controller_root, (unsigned)board->fixed_output_sample_rate,
+        board->waveform_first ? "true" : "false", board->waveform_top_to_bottom ? "true" : "false",
+#if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
+        app_settings_get().dj_link ? "experimental" : "disabled",
+#else
+        "disabled",
+#endif
+#if CONFIG_AUDIO_RECORDER_ENABLED
+        "experimental",
+#else
+        "disabled",
+#endif
+        audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
+        sd_wait.waits, sd_wait.polls, sd_wait.timeouts, sd_wait.errors, sd_wait.max_wait_us,
+        sd_transfer.reads, sd_transfer.writes, sd_transfer.errors, sd_transfer.read_max_us, sd_transfer.write_max_us,
+        sd_gate.waits, sd_gate.timeouts, sd_gate.max_wait_us, sd_gate.max_hold_us, (unsigned)sd_io_gate_activity(),
+        (unsigned)uac_format.sample_rate, (unsigned)uac_format.bits_per_sample,
+        uac_format.consumer_paced ? "true" : "false",
+        uac_format.sample_rate ? (unsigned)((uint64_t)uac_format.ring_queued_frames * 1000000u / uac_format.sample_rate) : 0u,
+        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false",
+        state1.master_tempo ? "true" : "false", loop1.active ? "true" : "false", (unsigned)loop1.start_ms, (unsigned)loop1.end_ms,
+        state1.sync_enabled ? "true" : "false", state1.sync_master ? "true" : "false", (unsigned)state1.network_sync,(unsigned)state1.network_player,(double)state1.network_phase_error,state1.sink_latency_calibrated?"true":"false",state_text1,
+        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false",
+        state2.master_tempo ? "true" : "false", loop2.active ? "true" : "false", (unsigned)loop2.start_ms, (unsigned)loop2.end_ms,
+        state2.sync_enabled ? "true" : "false", state2.sync_master ? "true" : "false", (unsigned)state2.network_sync,(unsigned)state2.network_player,(double)state2.network_phase_error,state2.sink_latency_calibrated?"true":"false",state_text2,
+        mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
+        mixer.master_volume,
+        mixer.headphone_mix,
+        mixer.pregain[0], mixer.pregain[1],
+        (double)mixer.pregain_gain[0], (double)mixer.pregain_gain[1],
+        mixer.eq[0][AUDIO_EQ_BAND_LOW], mixer.eq[0][AUDIO_EQ_BAND_MID], mixer.eq[0][AUDIO_EQ_BAND_HIGH],
+        mixer.eq[1][AUDIO_EQ_BAND_LOW], mixer.eq[1][AUDIO_EQ_BAND_MID], mixer.eq[1][AUDIO_EQ_BAND_HIGH],
+        mixer.filter[0], mixer.filter[1],
+        mixer.smart_cfx_enabled ? "true" : "false",
+        mixer.smart_fader_enabled ? "true" : "false",
+        mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
+        beat_fx_json,
+        controller_json,
+        service_log_json,
+        p4_usb_json,
+        crash_dump_json,
+        audio_wdt_trace_json,
+        library_load_trace_json,
+        diagnostics.output_codec_open ? "true" : "false",
+        (unsigned)diagnostics.output_sample_rate,
+        (unsigned)diagnostics.output_late_count,
+        (unsigned)diagnostics.output_late_max_us,
+        (unsigned)diagnostics.output_late_threshold_us,
+        (unsigned)diagnostics.pcm_underrun_count[0],
+        (unsigned)diagnostics.pcm_underrun_count[1],
+        (unsigned)diagnostics.locked_backend_read_count[0],
+        (unsigned)diagnostics.locked_backend_read_count[1],
+        (unsigned)diagnostics.locked_backend_predicted_offset[1],
+        (unsigned)diagnostics.locked_backend_actual_offset[1],
+        (unsigned)diagnostics.locked_backend_stream_after[1],
+        (unsigned)diagnostics.locked_backend_delta_bytes[1],
+        diagnostics.startup_waiting[0] ? "true" : "false",
+        diagnostics.startup_waiting[1] ? "true" : "false",
+        (unsigned)diagnostics.startup_wait_count[0],
+        (unsigned)diagnostics.startup_wait_count[1],
+        (unsigned)diagnostics.startup_prebuffer_frames,
+        (unsigned)diagnostics.loop_trim_wraps[0],
+        (unsigned)diagnostics.loop_trim_dropped_max[0],
+        (unsigned)diagnostics.loop_trim_dropped_total[0],
+        (unsigned)diagnostics.loop_trim_clamped_total[0],
+        (unsigned)diagnostics.phase_head_max_us,
+        (unsigned)diagnostics.phase_mix_max_us,
+        (unsigned)diagnostics.phase_push_max_us,
+        (unsigned)diagnostics.phase_monitor_max_us,
+        (unsigned)diagnostics.phase_main_max_us,
+        (unsigned)diagnostics.phase_codec_max_us,
+        (unsigned)diagnostics.phase_book_max_us,
+        (unsigned)diagnostics.ring_capacity,
+        (unsigned)diagnostics.ring_used[0],
+        (unsigned)diagnostics.ring_used[1],
+        (unsigned)diagnostics.deck_sample_rate[0],
+        (unsigned)diagnostics.deck_sample_rate[1],
+        (unsigned)diagnostics.deck_channels[0],
+        (unsigned)diagnostics.deck_channels[1],
+        (unsigned)diagnostics.deck_file_bytes[0],
+        (unsigned)diagnostics.deck_file_bytes[1],
+        (unsigned)diagnostics.deck_load_progress[0],
+        (unsigned)diagnostics.deck_load_progress[1],
+        diagnostics.deck_active[0] ? "true" : "false",
+        diagnostics.deck_active[1] ? "true" : "false",
+        (unsigned)diagnostics.limiter.limited_samples,
+        (unsigned)diagnostics.limiter.positive_overloads,
+        (unsigned)diagnostics.limiter.negative_overloads,
+        (int)diagnostics.limiter.peak_input_abs,
+        (unsigned)diagnostics.main_meter_peak,
+        (unsigned)diagnostics.usb_headphone_submitted_blocks,
+        (unsigned)diagnostics.usb_headphone_dropped_blocks,
+        (unsigned)diagnostics.usb_headphone_submitted_frames,
+        (unsigned)diagnostics.usb_headphone_ring_queued_frames,
+        (unsigned)diagnostics.usb_headphone_ring_capacity_frames,
+        (unsigned)diagnostics.usb_headphone_ring_high_water_frames,
+        (unsigned)uac_ring_low_alarm,
+        (unsigned)uac_ring_high_alarm,
+        audio_uac_ring_state_name(uac_ring_state),
+        (unsigned)diagnostics.usb_headphone_overflow_frames,
+        (unsigned)diagnostics.usb_headphone_underflow_frames,
+        uac_data_loss ? "true" : "false",
+        (unsigned)uac_data_loss_flags,
+        (unsigned)diagnostics.usb_headphone_packet_failures,
+        (unsigned)diagnostics.usb_headphone_packet_lost_frames,
+        beat_fx_echo_diag_json,
+        (unsigned)diagnostics.heap_free,
+        (unsigned)diagnostics.internal_free,
+        (unsigned)diagnostics.internal_min_free,
+        (unsigned)diagnostics.internal_largest_free,
+        (unsigned)diagnostics.dma_free,
+        (unsigned)diagnostics.dma_min_free,
+        (unsigned)diagnostics.dma_largest_free,
+        (unsigned)diagnostics.psram_free,
+        (unsigned)diagnostics.psram_min_free,
+        (unsigned)diagnostics.heap_walk_max_us[0],
+        (unsigned)diagnostics.heap_walk_max_us[1],
+        (unsigned)diagnostics.heap_walk_max_us[2]);
+    free(p4_usb_json);
+    free(crash_dump_json);
+    free(trace_json);
+    if (!json || json_len < 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, (size_t)json_len);
+    free(json);
+    return ESP_OK;
+}
+
+/* Bounded, read-only evidence for offline legacy-cue migration. Refuse stale
+ * pages before sending any body. Missing audio remains an explicit row. */
+static esp_err_t api_cue_migration_catalog_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before exporting cue identities", HTTPD_RESP_USE_STRLEN);
+    }
+    char query[64] = {0}, value[24] = {0};
+    uint32_t offset = 0, expected = 0;
+    if (httpd_req_get_url_query_len(req) > 0) {
+        if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "query too long");
+        if (httpd_query_key_value(query, "offset", value, sizeof(value)) == ESP_OK &&
+            !api_parse_u32(value, &offset))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid offset");
+        if (httpd_query_key_value(query, "generation", value, sizeof(value)) == ESP_OK &&
+            !api_parse_u32(value, &expected))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid generation");
+    }
+    const uint32_t generation = media_catalog_generation();
+    const int count = media_catalog_count();
+    if ((expected && expected != generation) || count <= 0 || offset > (uint32_t)count) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Catalog unavailable or changed", HTTPD_RESP_USE_STRLEN);
+    }
+    typedef struct {
+        media_catalog_identity_record_t row;
+        char path[1537], title[577], id[65], digest[65];
+        char json[24576];
+    } migration_work_t;
+    migration_work_t *w = heap_caps_calloc(1, sizeof(*w), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!w) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No PSRAM");
+    const board_capabilities_t *board = board_capabilities_get();
+    int used = snprintf(w->json, sizeof(w->json),
+        "{\"schema\":1,\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\","
+        "\"generation\":%u,\"count\":%d,\"offset\":%u,\"tracks\":[",
+        board_id_name(board->id), board->project, board_build_source_sha(),
+        (unsigned)generation, count, (unsigned)offset);
+    uint32_t end = offset + 8u;
+    if (end > (uint32_t)count) end = (uint32_t)count;
+    bool failed = used < 0;
+    for (uint32_t i = offset; i < end && !failed; i++) {
+        esp_err_t rc = media_catalog_identity_record((int)i, generation, &w->row);
+        if (rc != ESP_OK && rc != ESP_ERR_NOT_FOUND) { failed = true; break; }
+        web_api_json_escape(w->row.path, w->path, sizeof(w->path));
+        web_api_json_escape(w->row.title, w->title, sizeof(w->title));
+        for (unsigned j = 0; j < 32; j++) {
+            snprintf(w->id + 2*j, 3, "%02x", w->row.persistent_id.bytes[j]);
+            snprintf(w->digest + 2*j, 3, "%02x", w->row.export_digest[j]);
+        }
+        int n = snprintf(w->json + used, sizeof(w->json) - (size_t)used,
+            "%s{\"index\":%u,\"legacy_key\":%u,\"track_id\":%u,\"path\":\"%s\",\"title\":\"%s\","
+            "\"status\":\"%s\",\"export_digest\":\"%s\",\"persistent_id\":\"%s\",\"file_size\":%llu,\"mtime\":%lld}",
+            i == offset ? "" : ",", (unsigned)i, (unsigned)w->row.track_key,
+            (unsigned)w->row.rekordbox_track_id, w->path, w->title,
+            rc == ESP_OK ? "ok" : "missing", w->digest, w->id,
+            (unsigned long long)w->row.file_size, (long long)w->row.mtime);
+        if (n < 0 || (size_t)n >= sizeof(w->json) - (size_t)used) failed = true;
+        else used += n;
+    }
+    if (media_catalog_generation() != generation || media_catalog_count() != count) failed = true;
+    esp_err_t result;
+    if (failed) {
+        httpd_resp_set_status(req, "409 Conflict");
+        result = httpd_resp_send(req, "Catalog changed; restart export", HTTPD_RESP_USE_STRLEN);
+    } else {
+        snprintf(w->json + used, sizeof(w->json) - (size_t)used, "],\"next_offset\":%u}", (unsigned)end);
+        httpd_resp_set_type(req, "application/json");
+        result = httpd_resp_send(req, w->json, HTTPD_RESP_USE_STRLEN);
+    }
+    free(w);
+    return result;
+}
+
+// GET /api/library
+static esp_err_t api_library_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    ESP_LOGD(TAG, "GET /api/library: %s", req->uri);
+    media_catalog_snapshot_t snapshot;
+    esp_err_t snapshot_rc = media_catalog_snapshot_acquire(&snapshot);
+    if (snapshot_rc != ESP_OK) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "Library snapshot unavailable",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    // Alociramo manji buffer u RAM-u za chunkove
+    size_t chunk_sz = 4096;
+    char *chunk = malloc(chunk_sz);
+    if (!chunk) {
+        media_catalog_snapshot_release(&snapshot);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    // Publish one catalog generation for every row in this response.
+    const uint32_t generation = snapshot.generation;
+    char header[64];
+    int header_len = snprintf(header, sizeof(header),
+                              "{\"generation\":%u,\"tracks\":[",
+                              (unsigned)generation);
+    if (header_len < 0 || (size_t)header_len >= sizeof(header)) {
+        free(chunk);
+        media_catalog_snapshot_release(&snapshot);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
+    }
+    esp_err_t send_rc = httpd_resp_send_chunk(req, header, (size_t)header_len);
+    if (send_rc != ESP_OK) {
+        free(chunk);
+        media_catalog_snapshot_release(&snapshot);
+        return send_rc;
+    }
+
+    int chunk_len = 0;
+    bool first = true;
+
+    for (size_t i = 0; i < snapshot.count; i++) {
+        const media_catalog_row_t row = snapshot.rows[i];
+        {
+            char title_esc[256];
+            char artist_esc[256];
+            char item[768];
+            web_api_json_escape(row.title, title_esc, sizeof(title_esc));
+            web_api_json_escape(row.artist, artist_esc, sizeof(artist_esc));
+            int item_len = snprintf(item, sizeof(item),
+                                    "%s{\"index\":%d,\"track_key\":%u,\"title\":\"%s\",\"artist\":\"%s\",\"bpm\":%u,\"duration_ms\":%u}",
+                                    first ? "" : ",",
+                                    (int)i, (unsigned)row.track_key, title_esc, artist_esc,
+                                    row.bpm, (unsigned)row.duration_ms);
+            if (item_len < 0 || (size_t)item_len >= sizeof(item)) {
+                ESP_LOGW(TAG, "Skipping oversized library JSON row index=%u", (unsigned)i);
+                continue;
+            }
+
+            // Ako bi dodavanje ovog stavka premašilo sigurnosnu granicu chunka, pošalji trenutni chunk
+            if (chunk_len + item_len >= chunk_sz - 10) {
+                send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);
+                chunk_len = 0;
+                // Klijent je prekinuo vezu: prestani slati ostatak liste.
+                if (send_rc != ESP_OK) {
+                    break;
+                }
+            }
+
+            memcpy(chunk + chunk_len, item, item_len);
+            chunk_len += item_len;
+            first = false;
+        }
+    }
+
+    // Pošalji preostali dio chunka
+    if (send_rc == ESP_OK && chunk_len > 0) {
+        send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);
+    }
+
+    free(chunk);
+    media_catalog_snapshot_release(&snapshot);
+
+    if (send_rc != ESP_OK) {
+        // Veza je pukla; abortaj prijenos (ne šalji footer ni terminating chunk).
+        ESP_LOGW(TAG, "library JSON send aborted: %s", esp_err_to_name(send_rc));
+        return send_rc;
+    }
+
+    // Pošalji kraj JSON-a
+    const char *footer = "]}";
+    send_rc = httpd_resp_send_chunk(req, footer, strlen(footer));
+    if (send_rc != ESP_OK) {
+        return send_rc;
+    }
+
+    // Pošalji prazan chunk za označavanje kraja prijenosa
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+// POST /api/control (query parameters, protected by X-DDJ-Control)
+static bool api_parse_u32(const char *value, uint32_t *out_value)
+{
+    if (!value || !value[0] || !out_value) {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (!end || *end != '\0' || parsed > UINT32_MAX) {
+        return false;
+    }
+    *out_value = (uint32_t)parsed;
+    return true;
+}
+
+static bool api_parse_deck(const char *value, uint8_t *out_deck)
+{
+    int32_t parsed = 0;
+    if (!out_deck || !web_api_parse_int32(value, 1, 2, &parsed)) {
+        return false;
+    }
+    *out_deck = parsed == 2 ? CTRL_DECK_2 : CTRL_DECK_1;
+    return true;
+}
+
+static esp_err_t api_control_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    char query[128] = {0};
+    char deck_str[16] = {0};
+    char action[32] = {0};
+    char value_str[32] = {0};
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "action", action, sizeof(action)) != ESP_OK ||
+        action[0] == '\0') {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or oversized action");
+    }
+    bool has_deck = httpd_query_key_value(query, "deck", deck_str,
+                                           sizeof(deck_str)) == ESP_OK;
+    bool has_value = httpd_query_key_value(query, "value", value_str,
+                                            sizeof(value_str)) == ESP_OK;
+
+    uint8_t deck = CTRL_DECK_NONE;
+    if (strcmp(action, "main_sink") == 0) {
+        if (!has_value || (strcmp(value_str, "usb") != 0 && strcmp(value_str, "pcm5102a") != 0))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Sink must be usb or pcm5102a");
+        esp_err_t rc = audio_engine_set_main_sink(strcmp(value_str, "usb") == 0 ?
+                            AUDIO_MAIN_SINK_USB : AUDIO_MAIN_SINK_PCM5102A);
+        if (rc != ESP_OK) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Sink unavailable or transport/recorder busy", HTTPD_RESP_USE_STRLEN);
+        }
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    }
+    bool deck_required = strcmp(action, "crossfader") != 0;
+    if ((deck_required && !has_deck) ||
+        (has_deck && !api_parse_deck(deck_str, &deck))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Deck must be 1 or 2");
+    }
+
+    int32_t value = 0;
+    bool control_value_required = strcmp(action, "volume") == 0 ||
+                                  strcmp(action, "crossfader") == 0 ||
+                                  strcmp(action, "pitch") == 0;
+    bool seek_value_required = strcmp(action, "seek") == 0;
+    if (control_value_required &&
+        (!has_value || !web_api_parse_int32(value_str, 0,
+                                             AUDIO_MIXER_CONTROL_MAX, &value))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Control value must be 0..16383");
+    }
+    if (seek_value_required &&
+        (!has_value || !web_api_parse_int32(value_str, 0, INT32_MAX, &value))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Seek value must be a non-negative integer");
+    }
+
+    ESP_LOGI(TAG, "Control action: deck=%d, action=%s, value=%ld", deck,
+             action, (long)value);
+
+    esp_err_t queue_rc = ESP_OK;
+    if (strcmp(action, "play_pause") == 0) {
+        const bool expected_playing = !deck_core_get_deck_state(deck).playing;
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_BUTTON,
+            .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_PLAY : CTRL_ID_DECK1_PLAY,
+            .deck  = deck,
+            .value = 1,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+        if (queue_rc == ESP_OK &&
+            !web_wait_for_play_state(deck, expected_playing)) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Play state unchanged",
+                                   HTTPD_RESP_USE_STRLEN);
+        }
+    } else if (strcmp(action, "cue") == 0) {
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_BUTTON,
+            .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_CUE : CTRL_ID_DECK1_CUE,
+            .deck  = deck,
+            .value = 1,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "pfl") == 0) {
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_BUTTON,
+            .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_PFL : CTRL_ID_DECK1_PFL,
+            .deck  = deck,
+            .value = 1,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "volume") == 0) {
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_BUTTON,
+            .id    = (deck == CTRL_DECK_2) ? CTRL_ID_CH2_VOLUME : CTRL_ID_CH1_VOLUME,
+            .deck  = deck,
+            .value = (int16_t)value,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "crossfader") == 0) {
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_BUTTON,
+            .id    = CTRL_ID_CROSSFADER,
+            .deck  = CTRL_DECK_NONE,
+            .value = (int16_t)value,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "pitch") == 0) {
+        ctrl_event_t ev = {
+            .type  = CTRL_EV_PITCH,
+            .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_TEMPO : CTRL_ID_DECK1_TEMPO,
+            .deck  = deck,
+            .value = (int16_t)value,
+            .seq   = 0
+        };
+        queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "sync") == 0) {
+        queue_rc = web_queue_sync(deck);
+    } else if (strcmp(action, "loop_4") == 0) {
+        audio_engine_deck_status_t status = {0};
+        esp_err_t rc = audio_engine_deck_get_status(deck, &status);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid deck");
+            return ESP_FAIL;
+        }
+        (void)status;
+        rc = web_queue_loop_set(deck);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop failed");
+            return ESP_FAIL;
+        }
+    } else if (strcmp(action, "loop_clear") == 0) {
+        esp_err_t rc = web_queue_loop_clear(deck);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop clear failed");
+            return ESP_FAIL;
+        }
+    } else if (strcmp(action, "seek") == 0) {
+        (void)ui_activity_notice();
+        audio_engine_deck_status_t status = {0};
+        if (audio_engine_deck_get_status(deck, &status) != ESP_OK ||
+            !status.loaded ||
+            status.state == AE_ERROR) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Deck not seekable");
+            return ESP_FAIL;
+        }
+        uint32_t duration_ms = 0;
+        ui_get_deck_track_info(deck, NULL, 0, NULL, 0, NULL, &duration_ms);
+        uint32_t pos_ms = web_api_clamp_seek_ms(value, duration_ms, duration_ms > 0u);
+        esp_err_t rc = audio_engine_deck_seek(deck, pos_ms);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Seek failed");
+            return ESP_FAIL;
+        }
+    } else {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown action");
+        return ESP_FAIL;
+    }
+
+    if (queue_rc != ESP_OK) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "Control queue busy", HTTPD_RESP_USE_STRLEN);
+    }
+    httpd_resp_send(req, "OK", 2);
+    return ESP_OK;
+}
+
+// POST /api/load (stable track identity, protected by X-DDJ-Control)
+static esp_err_t api_load_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    char query[128] = {0};
+    char track_key_str[16] = {0};
+    char generation_str[16] = {0};
+    char deck_str[16] = {0};
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "track_key", track_key_str,
+                              sizeof(track_key_str)) != ESP_OK ||
+        httpd_query_key_value(query, "generation", generation_str,
+                              sizeof(generation_str)) != ESP_OK ||
+        httpd_query_key_value(query, "deck", deck_str,
+                              sizeof(deck_str)) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or oversized load parameters");
+    }
+
+    uint32_t track_key = 0u;
+    uint32_t generation = 0u;
+    uint8_t deck = CTRL_DECK_NONE;
+    if (!api_parse_u32(track_key_str, &track_key) || track_key == 0u ||
+        !api_parse_u32(generation_str, &generation) ||
+        !api_parse_deck(deck_str, &deck)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid track identity or deck");
+    }
+    if (generation != media_catalog_generation()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Library generation changed", HTTPD_RESP_USE_STRLEN);
+    }
+
+    ESP_LOGI(TAG, "API Load Request: key=0x%08x generation=%u deck=%d",
+             (unsigned)track_key, (unsigned)generation, deck);
+
+    if (!deck_core_load_allowed(deck)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Deck is playing (load lock)",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    esp_err_t rc = ui_library_load_track_identity_for_deck(track_key, generation, deck);
+    if (rc != ESP_OK) {
+        service_log_event(SERVICE_LOG_WEB_LOAD_REQ_FAILED, SERVICE_LOG_WARN,
+                          4u, track_key, generation, (uint32_t)deck, (uint32_t)rc, NULL);
+        if (rc == ESP_ERR_INVALID_STATE) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Library changed or load busy", HTTPD_RESP_USE_STRLEN);
+        }
+        if (rc == ESP_ERR_NOT_FOUND) {
+            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Track not found");
+        }
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Load failed");
+    }
+
+    return httpd_resp_send(req, "OK", 2);
+}
+
+// Catch-all handler za Captive Portal
+static esp_err_t catch_all_handler(httpd_req_t *req)
+{
+    // Ako klijent traži bilo što, a mi smo u Captive Portal modu, preusmjeri na index.html
+    ESP_LOGD(TAG, "Catch-all request: %s", req->uri);
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location",
+                       "http://" WEB_API_CANONICAL_HOSTNAME "/index.html");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+esp_err_t web_server_start(void)
+{
+    if (s_web_server != NULL) {
+        return ESP_OK;
+    }
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_open_sockets = 5;
+    /* Evict the least-recently-used socket instead of refusing the connection.
+     * The controller page holds keep-alive sockets while it polls /api/status,
+     * so without this a single busy browser can occupy all five and lock every
+     * other client out completely — including the OTA endpoint, from a device
+     * that still answers ping and looks perfectly healthy. */
+    config.lru_purge_enable = true;
+    config.stack_size = 8192;
+    config.ctrl_port = 32768; // pomaknuto da ne bude u konfliktu
+    config.uri_match_fn = httpd_uri_match_wildcard;
+    /* Must stay above the number of register_uri_or_stop() calls below: a single
+     * failed registration stops the whole server, so an over-tight limit takes
+     * every endpoint (including OTA) down with it. */
+    config.max_uri_handlers = 30; /* includes migration and recorder routes */
+    config.task_priority = 3;
+    config.core_id = 0;
+
+    // Pokreni poslužitelj
+    ESP_LOGI(TAG, "Pokretanje HTTP poslužitelja na portu %d...", config.server_port);
+    esp_err_t rc = httpd_start(&s_web_server, &config);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "Ne mogu pokrenuti HTTP poslužitelj: %s", esp_err_to_name(rc));
+        return rc;
+    }
+
+    // Registracija URI handlera
+    httpd_uri_t index_uri = {
+        .uri = "/",
+        .method = HTTP_GET,
+        .handler = index_html_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &index_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t index_html_uri = {
+        .uri = "/index.html*",
+        .method = HTTP_GET,
+        .handler = index_html_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &index_html_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t style_uri = {
+        .uri = "/style.css*",
+        .method = HTTP_GET,
+        .handler = style_css_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &style_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t js_uri = {
+        .uri = "/app.js*",
+        .method = HTTP_GET,
+        .handler = app_js_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &js_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t status_uri = {
+        .uri = "/api/status*",
+        .method = HTTP_GET,
+        .handler = api_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t resources_uri = {.uri="/api/resources", .method=HTTP_GET,
+                                 .handler=api_resources_handler};
+    rc = register_uri_or_stop(s_web_server, &resources_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t timing_uri = {.uri="/api/ui-timing", .method=HTTP_GET,
+                              .handler=api_ui_timing_handler};
+    rc = register_uri_or_stop(s_web_server, &timing_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t cue_migration_uri = {.uri="/api/cue-migration/catalog*", .method=HTTP_GET,
+                                    .handler=api_cue_migration_catalog_handler};
+    rc = register_uri_or_stop(s_web_server, &cue_migration_uri);
+    if (rc != ESP_OK) return rc;
+
+#if CONFIG_AUDIO_RECORDER_ENABLED
+    httpd_uri_t recording_status_uri = {
+        .uri = "/api/recording",
+        .method = HTTP_GET,
+        .handler = api_recording_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t recording_start_uri = {
+        .uri = "/api/recording/start",
+        .method = HTTP_POST,
+        .handler = api_recording_start_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_start_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t recording_stop_uri = {
+        .uri = "/api/recording/stop",
+        .method = HTTP_POST,
+        .handler = api_recording_stop_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_stop_uri);
+    if (rc != ESP_OK) return rc;
+
+#endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
+
+    httpd_uri_t diag_log_uri = {
+        .uri = "/api/diagnostic-log",
+        .method = HTTP_GET,
+        .handler = api_diagnostic_log_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &diag_log_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_status_uri = {
+        .uri = "/api/validation/library-load-gate",
+        .method = HTTP_GET,
+        .handler = api_library_validation_gate_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &library_validation_gate_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_arm_uri = {
+        .uri = "/api/validation/library-load-gate/arm",
+        .method = HTTP_POST,
+        .handler = api_library_validation_gate_arm_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &library_validation_gate_arm_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_cancel_uri = {
+        .uri = "/api/validation/library-load-gate/cancel",
+        .method = HTTP_POST,
+        .handler = api_library_validation_gate_cancel_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &library_validation_gate_cancel_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_status_uri = {
+        .uri = "/api/validation/audio-load-gate",
+        .method = HTTP_GET,
+        .handler = api_audio_load_validation_gate_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_arm_uri = {
+        .uri = "/api/validation/audio-load-gate/arm",
+        .method = HTTP_POST,
+        .handler = api_audio_load_validation_gate_arm_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_arm_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_cancel_uri = {
+        .uri = "/api/validation/audio-load-gate/cancel",
+        .method = HTTP_POST,
+        .handler = api_audio_load_validation_gate_cancel_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_cancel_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t validation_reboot_uri = {
+        .uri = "/api/validation/reboot",
+        .method = HTTP_POST,
+        .handler = api_validation_reboot_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &validation_reboot_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t firmware_uri = {
+        .uri = "/api/firmware*",
+        .method = HTTP_GET,
+        .handler = api_firmware_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &firmware_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_cfg_get_uri = {
+        .uri = "/api/ota/config",
+        .method = HTTP_GET,
+        .handler = api_ota_config_get_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_cfg_get_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_cfg_post_uri = {
+        .uri = "/api/ota/config",
+        .method = HTTP_POST,
+        .handler = api_ota_config_post_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_cfg_post_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_p4_uri = {
+        .uri = "/api/ota/p4",
+        .method = HTTP_POST,
+        .handler = api_p4_ota_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_p4_uri);
+    if (rc != ESP_OK) return rc;
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    httpd_uri_t controller_profiles_uri = {
+        .uri = "/api/controller-profiles",
+        .method = HTTP_GET,
+        .handler = api_controller_profiles_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &controller_profiles_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t controller_profile_upload_uri = {
+        .uri = "/api/controller-profile",
+        .method = HTTP_POST,
+        .handler = api_controller_profile_upload_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &controller_profile_upload_uri);
+    if (rc != ESP_OK) return rc;
+#endif
+
+    httpd_uri_t library_uri = {
+        .uri = "/api/library*",
+        .method = HTTP_GET,
+        .handler = api_library_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &library_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t control_uri = {
+        .uri = "/api/control*",
+        .method = HTTP_POST,
+        .handler = api_control_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &control_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t load_uri = {
+        .uri = "/api/load*",
+        .method = HTTP_POST,
+        .handler = api_load_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &load_uri);
+    if (rc != ESP_OK) return rc;
+
+    // Registracija catch-all za preusmjeravanje Captive Portala
+    httpd_uri_t catch_all_uri = {
+        .uri = "*",
+        .method = HTTP_GET,
+        .handler = catch_all_handler,
+        .user_ctx = NULL
+    };
+    // Zbog poretka pretraživanja registrirat ćemo ga na kraju
+    rc = register_uri_or_stop(s_web_server, &catch_all_uri);
+    if (rc != ESP_OK) return rc;
+
+    rc = mdns_init();
+    if (rc == ESP_OK) {
+        rc = mdns_hostname_set("pajoniiir");
+    }
+    if (rc == ESP_OK) {
+        rc = mdns_instance_name_set("Pajoniiir");
+    }
+    if (rc == ESP_OK) {
+        rc = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    }
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS startup failed: %s", esp_err_to_name(rc));
+        mdns_free();
+        httpd_stop(s_web_server);
+        s_web_server = NULL;
+        return rc;
+    }
+    s_mdns_started = true;
+    ESP_LOGI(TAG, "web UI available at http://%s", WEB_API_CANONICAL_HOSTNAME);
+
+    return ESP_OK;
+}
+
+void web_server_stop(void)
+{
+    if (s_mdns_started) {
+        mdns_free();
+        s_mdns_started = false;
+    }
+    if (s_web_server != NULL) {
+        httpd_stop(s_web_server);
+        s_web_server = NULL;
+    }
+}

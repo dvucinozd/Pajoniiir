@@ -340,11 +340,11 @@ static void test_california_cue(void)
     uint32_t landing = audio_pvbr_locate(s_pvbr, LEN, span_ms, span_ms, file_size, NULL, 10530u, &byte);
     assert(byte == 199008u && landing == 10146u);
 
-    /* v273: the same entry after the tag, at frame 432 (10368 ms); the
-     * 162 ms to the cue are decoded and dropped. */
+    /* A longer reservoir/synthesis lead selects entry 23. The old entry-24
+     * byte/frame law is retained above; all priming PCM is still dropped. */
     landing = audio_pvbr_locate(s_pvbr, LEN, span_ms, span_ms, file_size, &geom, 10530u, &byte);
-    assert(byte == 133217u + 199008u && landing == 432u * 24u);
-    assert(audio_seek_skip_frames(10530u, landing, 48000u) == 162u * 48u);
+    assert(byte == r->id3 + s_pvbr[23] && landing == audio_pvbr_entry_frame(23, n, LEN) * 24u);
+    assert(audio_seek_skip_frames(10530u, landing, 48000u) == (10530u - landing) * 48u);
 
     /* Before entry 0, or within the lead of the start: the Xing frame. */
     assert(audio_pvbr_locate(s_pvbr, LEN, span_ms, span_ms, file_size, &geom, 0u, &byte) == 0u &&
@@ -353,10 +353,11 @@ static void test_california_cue(void)
            byte == r->id3);
 
     /* Every target keeps the lead, so the frames a restarted decoder outputs
-     * nothing for come out of the skip, and lands within ~0.5 s. */
+     * nothing for come out of the skip. The bound includes one table interval. */
     for (uint32_t target = 0; target <= span_ms; target += 7u) {
         landing = audio_pvbr_locate(s_pvbr, LEN, span_ms, span_ms, file_size, &geom, target, &byte);
-        assert(landing <= target && target - landing < 600u);
+        assert(landing <= target && target - landing <
+               AUDIO_PVBR_RESYNC_LEAD_FRAMES * 24u + span_ms / LEN + 25u);
         if (landing > 0u) {
             assert(audio_seek_skip_frames(target, landing, 48000u) >=
                    AUDIO_PVBR_RESYNC_LEAD_FRAMES * 1152u);
@@ -519,7 +520,8 @@ static void test_pvbr_build(void)
         uint32_t byte = 0;
         const uint32_t landing = audio_pvbr_locate(s_pvbr, LEN, span_ms, span_ms, f.size, &geom,
                                                    target, &byte);
-        assert(landing % 24u == 0u && landing <= target && target - landing < 600u);
+        assert(landing % 24u == 0u && landing <= target && target - landing <
+               AUDIO_PVBR_RESYNC_LEAD_FRAMES * 24u + span_ms / LEN + 25u);
         assert(byte == s_vbr_at[landing / 24u]);
         /* What seek_estimate decoded instead: the frame at its linear byte. */
         const size_t guess = VBR_ID3 + ((uint64_t)target * (f.size - VBR_ID3)) / span_ms;

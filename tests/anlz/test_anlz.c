@@ -4,8 +4,8 @@
  * Builds on Linux/macOS/Windows with:
  *   make
  * or manually:
- *   gcc -DANLZ_STANDALONE_TEST -I../../firmware/main-deck-p4/components/library/include \
- *       ../../firmware/main-deck-p4/components/library/rekordbox_anlz.c \
+ *   gcc -DANLZ_STANDALONE_TEST -I../../firmware/p4-core/components/library/include \
+ *       ../../firmware/p4-core/components/library/rekordbox_anlz.c \
  *       test_anlz.c -o test_anlz
  *
  * Usage:
@@ -789,6 +789,35 @@ static void test_pwv3_timing(void)
           "analysis span bounds failed");
 }
 
+static void test_pqtz_original_bar_phases(void)
+{
+    FILE *fp = fopen(SYNTH_DAT, "wb");
+    if (!fp) { TEST("PQTZ phase fixture"); FAIL("open"); return; }
+    w_tag(fp, ANLZ_TAG_PMAI); w_be32(fp, 28); w_be32(fp, 28);
+    for (unsigned i = 0; i < 16; i++) fputc(0, fp);
+    w_tag(fp, ANLZ_TAG_PQTZ); w_be32(fp, 24); w_be32(fp, 56);
+    w_be32(fp, 0); w_be32(fp, 0x80000); w_be32(fp, 4);
+    for (unsigned phase = 1; phase <= 4; phase++) {
+        w_be16(fp, (uint16_t)phase); w_be16(fp, 12000); w_be32(fp, (phase - 1) * 500);
+    }
+    w_tag(fp, ANLZ_TAG_PPTH); w_be32(fp, 20); w_be32(fp, 26);
+    w_be32(fp, 0); w_be32(fp, 6);
+    w_be16(fp, '/'); w_be16(fp, 'a'); w_be16(fp, 0);
+    bool written = fclose(fp) == 0;
+    anlz_metadata_t meta = {0};
+    esp_err_t rc = written ? anlz_parse_dat(SYNTH_DAT, &meta) : ESP_FAIL;
+    TEST("standard PQTZ retains original phases 1-4 and downbeat 1");
+    bool valid = rc == ESP_OK && meta.beat_count == 4 && meta.beats;
+    for (unsigned i = 0; i < 4 && valid; i++) {
+        valid = meta.beats[i].beat_phase == i + 1 &&
+                anlz_beat_bar_index(meta.beats[i].beat_phase) == i &&
+                anlz_beat_is_downbeat(meta.beats[i].beat_phase) == (i == 0);
+    }
+    CHECK(valid, "PQTZ phase/downbeat regression");
+    anlz_free(&meta);
+    remove(SYNTH_DAT);
+}
+
 int main(int argc, char *argv[])
 {
     test_pwv3_timing();
@@ -807,6 +836,17 @@ int main(int argc, char *argv[])
     test_optional_pwv4_color_preview();
     test_pwv4_color_columns();
     test_memory_cue_list();
+    test_pqtz_original_bar_phases();
+    {
+        anlz_metadata_t fixture = {0};
+        TEST("committed qualification ANLZ has standard beats and tagged cue A");
+        esp_err_t rc = anlz_parse_dat("../fixtures/p4/ANLZ0000.DAT", &fixture);
+        CHECK(rc == ESP_OK && fixture.beat_count == 4 && fixture.cue_count == 1 &&
+              fixture.beats[0].beat_phase == 1 && fixture.cues[0].start_ms == 1250 &&
+              strcmp(fixture.audio_path, "/Contents/onset-44100.wav") == 0,
+              "mandatory ANLZ fixture failed");
+        anlz_free(&fixture);
+    }
 
     printf("\n=== Strict truncation corpus ===\n");
     TEST("DAT header/section/payload truncations rejected transactionally");

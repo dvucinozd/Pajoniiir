@@ -1,4 +1,5 @@
 #include "wifi_link_retry.h"
+#include "wifi_link_control.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -69,6 +70,26 @@ static void test_null_is_inert(void)
     assert(wifi_link_retry_attempts(NULL) == 0u);
 }
 
+static void test_control_policy_defers_changes_during_transition(void)
+{
+    assert(wifi_link_control_next(false, true, true) ==
+           WIFI_LINK_CONTROL_WAIT_TRANSITION);
+    assert(wifi_link_control_next(true, false, true) ==
+           WIFI_LINK_CONTROL_WAIT_TRANSITION);
+
+    /* A repeated request does not need to wait: no stack mutation follows. */
+    assert(wifi_link_control_next(true, true, true) == WIFI_LINK_CONTROL_IDLE);
+    assert(wifi_link_control_next(false, false, true) == WIFI_LINK_CONTROL_IDLE);
+}
+
+static void test_control_policy_selects_start_and_stop_when_safe(void)
+{
+    assert(wifi_link_control_next(true, false, false) == WIFI_LINK_CONTROL_START);
+    assert(wifi_link_control_next(false, true, false) == WIFI_LINK_CONTROL_STOP);
+    assert(wifi_link_control_next(true, true, false) == WIFI_LINK_CONTROL_IDLE);
+    assert(wifi_link_control_next(false, false, false) == WIFI_LINK_CONTROL_IDLE);
+}
+
 int main(void)
 {
     test_the_budget_is_finite();
@@ -76,6 +97,8 @@ int main(void)
     test_reset_restores_the_budget();
     test_backoff_increases();
     test_null_is_inert();
+    test_control_policy_defers_changes_during_transition();
+    test_control_policy_selects_start_and_stop_when_safe();
     puts("wifi_link_retry tests passed");
     return 0;
 }

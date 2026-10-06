@@ -3,7 +3,7 @@ param(
     [switch]$UpdateBaselines,
     [switch]$KeepArtifacts,
     [string]$LvglPath,
-    [ValidateSet('legacy','product-compact','product-wide','native-compact','native-wide','runtime-compact','runtime-wide','link-wide')]
+    [ValidateSet('legacy','product-compact','product-wide','product-m3','native-compact','native-wide','runtime-compact','runtime-wide','link-wide')]
     [string]$Presentation = 'legacy'
 )
 
@@ -46,6 +46,7 @@ function Resolve-Tool {
 
 $Git = Resolve-Tool 'git' @()
 $CMake = Resolve-Tool 'cmake' @(
+    'C:\Espressif\tools\cmake\4.0.3\bin\cmake.exe'
     'C:\Espressif\tools\cmake\3.30.2\bin\cmake.exe'
 )
 $Ninja = Resolve-Tool 'ninja' @(
@@ -150,6 +151,9 @@ if ($Presentation.StartsWith('native-')) {
 }
 if ($Presentation -eq 'link-wide') {
     $Captures = @('link_loading','link_tracks','link_folders','link_playlist','link_empty','link_error','link_unavailable','link_local_restored')
+}
+if ($Presentation -eq 'product-m3') {
+    $Captures += @('overview_zoom_0','overview_zoom_1','overview_zoom_2','overview_zoom_3','overview_zoom_4')
 }
 foreach ($name in $Captures) {
     $path = Join-Path $OutputDir "$name.ppm"

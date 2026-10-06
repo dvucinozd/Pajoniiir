@@ -8,6 +8,26 @@
 
 # Pajoniiir
 
+Shared-core development: portable P4 firmware lives in `firmware/p4-core`,
+with hardware providers under `firmware/boards`. JC4880, JC1060 and M3 use linked
+common startup; the M3 entrypoint is `firmware/main-deck-m3`.
+See the [integration ledger](docs/SHARED_P4_CORE_INTEGRATION.md). This work does
+not change the published M2.5 release or its accepted hardware scope.
+
+The M3 shared-core candidate uses `main-deck-m3`, a separate M3 version line and
+`/m3` OTA channel. Its initial wired migration preserves the existing partition
+layout and settings. Build verification does not qualify the new image on
+hardware. See [board policies](docs/SHARED_P4_BOARDS.md),
+[M3 migration](docs/M3_SHARED_CORE_MIGRATION.md) and the
+[reliability campaign](docs/RELIABILITY_MONITORING_PLAN.md).
+
+The [current M3 candidate record](docs/validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md)
+identifies the installed development candidate and its signed OTA health result.
+Audio/USB lifecycle campaigns and full hardware qualification remain open.
+The initial dual-deck timing attempt exposed a
+[waveform regression](docs/validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md);
+the signed development image has no production hardware PASS.
+
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
 
