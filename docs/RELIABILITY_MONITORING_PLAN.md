@@ -57,8 +57,9 @@ The summary must include at least:
 
 ## Campaign A: USB enumeration and recovery
 
-Run the following 30 controlled cycles with the Rekordbox medium containing the
-accepted 191-track library:
+Run the following 30 controlled cycles with a fixed, verified Rekordbox medium.
+Pass its exact count with `-ExpectedLibraryTracks`; the current shared-core bench
+medium has 324 tracks. The historical M3 campaign used 191 tracks.
 
 | Scenario | Cycles | Initial connection state |
 | --- | ---: | --- |
@@ -71,7 +72,7 @@ For every cycle, record:
 
 - time until the web API responds;
 - time until the controller is present with MIDI In, MIDI Out, and UAC active;
-- time until the library reports 191 tracks;
+- time until the library reports the expected track count;
 - USB address transitions visible in the diagnostic log;
 - whether recovery needed another replug, reset, or power cycle;
 - LED snapshot correctness after reconnect.
@@ -86,7 +87,7 @@ Hard failure conditions:
 
 - controller state never becomes fully ready;
 - stale or incorrect LED state survives recovery;
-- library does not return to 191 tracks;
+- library does not return to the expected track count;
 - panic, watchdog, reset loop, deadlock, or required manual intervention;
 - new PCM underrun, UAC drop/overflow, or service-log drop caused by recovery.
 
@@ -96,7 +97,7 @@ Run for 60 minutes initially. Extend to 120 minutes only if the first hour is
 clean and a longer confidence run is useful.
 
 ```powershell
-.\tools\monitor_p4_reliability.ps1 -Mode TimingSoak -DurationMinutes 60
+.\tools\monitor_p4_reliability.ps1 -Mode TimingSoak -DurationMinutes 60 -ExpectedLibraryTracks 324
 ```
 
 Required workload:

@@ -244,3 +244,13 @@ settings were confirmed before OTA. See the
 [installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md) for exact
 digests, the operator-authorized existing-image recovery mode, manual RESET and
 remaining physical gates. Migration tooling now has 19 passing regressions.
+
+The current ordinary candidate is clean source 11574f4e, signed and installed
+VALID in M3 ota_1. Its status exposes MT/loop state and its read-only monitor
+supports the common catalog contract with seven passing regressions. All three
+ordinary builds and exact-source CI passed. The replacement medium contains 324
+tracks; 44.1/48-kHz loads and stopped loop/pitch preflight passed. See the
+[current image record](validation/M3_SHARED_CORE_11574_20261006.md).
+Active-playback/operator, Campaign A/B and startup-timeout/rollback gates remain
+open. These updates supersede the earlier installed-state and test counts above;
+they do not extend earlier physical acceptance to the new image.

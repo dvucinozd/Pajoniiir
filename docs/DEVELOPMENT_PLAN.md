@@ -14,9 +14,12 @@ worst-case Campaign B timing. Legacy-image acceptance does not transfer.
 Unavailable hardware is NOT RUN. Public board-channel publication requires
 separate authorization after that board's acceptance.
 
-`M3-dev-g95e6573c3422` is now installed in M3 ota_0 with VALID health state.
-[The installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md) separates
-the confirmed GUI/touch/settings and signed OTA from remaining audio/USB campaigns.
+`M3-dev-g11574f4eff16` is installed in M3 ota_1 with VALID health state.
+[The current candidate record](validation/M3_SHARED_CORE_11574_20261006.md) separates
+the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
+operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
+touch/settings confirmations remain in the image-specific
+[95e installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).

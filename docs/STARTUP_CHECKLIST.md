@@ -21,8 +21,8 @@ remain image-specific; successful builds do not qualify the new M3 target.
 
 These checks do not authorize publication or qualify JC4880/JC1060 hardware.
 
-For the installed `M3-dev-g95e6573c3422` candidate, see the
-[exact-image acceptance record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
+For the installed `M3-dev-g11574f4eff16` candidate in ota_1, see the
+[exact-image acceptance record](validation/M3_SHARED_CORE_11574_20261006.md).
 
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the

@@ -21,7 +21,7 @@ hardware. See [board policies](docs/SHARED_P4_BOARDS.md),
 [M3 migration](docs/M3_SHARED_CORE_MIGRATION.md) and the
 [reliability campaign](docs/RELIABILITY_MONITORING_PLAN.md).
 
-The [M3 installation record](docs/validation/M3_SHARED_CORE_INSTALL_20261006.md)
+The [current M3 candidate record](docs/validation/M3_SHARED_CORE_11574_20261006.md)
 identifies the installed development candidate and its signed OTA health result.
 Audio/USB lifecycle campaigns and full hardware qualification remain open.
 

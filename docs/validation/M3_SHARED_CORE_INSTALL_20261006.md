@@ -1,6 +1,10 @@
 # M3 shared-core installation, 2026-10-06
 
-## Exact installed image
+This record describes the initial 95e6573c installation. It was subsequently
+replaced by the [11574f4e candidate](M3_SHARED_CORE_11574_20261006.md) in ota_1.
+Evidence below remains specific to the initial image.
+
+## Initial installed image
 
 The ordinary shared-core candidate `M3-dev-g95e6573c3422` is installed on the
 identified M3 ESP32-P4 revision 1.3, MAC `80:f1:b2:d3:4c:81`, 16 MiB flash.
@@ -11,7 +15,7 @@ Secure boot and flash encryption were disabled. Runtime `/api/firmware` confirms
 - ELF SHA-256 `c4b07f8e7543f0e0c08d7d544130fbf37adb1e6f7cfc10f42c0fd7769ff7c267`.
 - Image 2,565,136 B, SHA-256 `025a5370d03642d18a747461220ec33d7b0b7bbadc6acaedaaf769a5f8bf9505`.
 - Signed bundle 2,565,324 B, SHA-256 `2fd9c99d83b217655b4fe64f558c9b624ffe9470e4c3a504e8df3eda12c9e165`.
-- Current slot `ota_0`, image state `valid`, OTA service `idle`, no last error.
+- Observed slot `ota_0`, image state `valid`, OTA service `idle`, no last error.
 
 The immutable artifact directory is `releases/shared-p4-95e6573c`, retained
 locally. The migration-tool fixes made during installation do not rebuild or
