@@ -168,6 +168,10 @@ Status/resources and the operator response are retained as
 replacement and deliberately delayed or corrupt cover arrival remain NOT RUN;
 basic load/page transitions do not imply those cases passed.
 
+A subsequent stopped USB media removal/reinsert restores Library and artwork
+normally, confirmed by the operator. This closes the ordinary stopped-media
+return check; rapid source replacement and delayed/corrupt images remain open.
+
 The first clean build session ended before final linking. Resuming the same
 clean build completed successfully with observed exit code zero. Original and
 completion logs, signed package, CI evidence, pre/post diagnostic logs and
