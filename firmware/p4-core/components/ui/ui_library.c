@@ -2664,9 +2664,8 @@ void ui_library_update(const ui_frame_context_t *ctx)
             lv_label_set_text_fmt(lv_obj_get_child(buttons[d], 0),
                                  locked ? "D%u LOAD LOCK" : "LOAD DECK %u", (unsigned)d + 1u);
         }
-        audio_engine_deck_status_t status = {0};
+        audio_engine_deck_status_t status = ctx->deck_audio_status[s_library_load_request_deck];
         if (ui_library_track_load_busy() &&
-            audio_engine_deck_get_status(s_library_load_request_deck, &status) == ESP_OK &&
             status.state == AE_LOADING)
             lv_label_set_text_fmt(s_label_indicator_status, "LOAD %u%%", (unsigned)status.load_progress);
     }
@@ -2689,17 +2688,26 @@ void ui_library_update(const ui_frame_context_t *ctx)
                                      busy ? "LOADING" : d1 || d2 ? "ACTIVE" :
                                      ctx->deck_info[ctx->active_deck] && ctx->deck_info[ctx->active_deck]->valid
                                         ? "READY" : "EMPTY");
-        audio_engine_deck_status_t status = {0};
+        audio_engine_deck_status_t status = ctx->deck_audio_status[s_library_load_request_deck];
         /* Show decoder progress only when that request deck is actually loading.
          * Metadata stages have no percentage; never reuse another deck's value. */
-        bool progress = busy && audio_engine_deck_get_status(s_library_load_request_deck, &status) == ESP_OK &&
-                        status.state == AE_LOADING;
+        bool progress = busy && status.state == AE_LOADING;
         dj_ui_library_set_progress(progress ? status.load_progress : -1);
     }
 #endif
 }
 
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
+{
+    audio_engine_deck_status_t status = {0};
+    bool valid = audio_engine_deck_get_status(ui_library_deck_index(deck), &status) == ESP_OK;
+    return ui_library_deck_duration_observed(deck, fallback_duration_ms,
+        valid && status.loaded, status.session_generation, status.duration_ms);
+}
+
+uint32_t ui_library_deck_duration_observed(uint8_t deck, uint32_t fallback_duration_ms,
+                                         bool loaded, uint32_t session_generation,
+                                         uint32_t decoded_duration_ms)
 {
     uint8_t idx = ui_library_deck_index(deck);
     uint32_t metadata_ms = fallback_duration_ms;
@@ -2708,12 +2716,9 @@ uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms
 #else
     if (s_deck_loaded_track_valid[idx]) metadata_ms = s_deck_loaded_duration_ms[idx];
 #endif
-    audio_engine_deck_status_t status = {0};
-    if (!s_deck_loaded_track_valid[idx] ||
-        audio_engine_deck_get_status(idx, &status) != ESP_OK) return metadata_ms;
+    if (!s_deck_loaded_track_valid[idx]) return metadata_ms;
     return ui_track_duration_select(metadata_ms, s_deck_audio_session[idx],
-                                    status.loaded, status.session_generation,
-                                    status.duration_ms);
+                                    loaded, session_generation, decoded_duration_ms);
 }
 
 static void library_page_event_cb(lv_event_t *e)

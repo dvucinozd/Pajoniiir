@@ -3395,12 +3395,21 @@ static void publish_loaded_track_hot_cue_leds(uint8_t deck)
 deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
     const uint8_t idx = normalize_deck(deck);
+    deck_state_t snap = deck_core_get_deck_control_state(idx);
+    if (deck_uses_audio_engine(idx)) {
+        snap.position_ms = audio_engine_deck_position_ms(idx);
+    }
+    return snap;
+}
+
+deck_state_t deck_core_get_deck_control_state(uint8_t deck)
+{
+    const uint8_t idx = normalize_deck(deck);
     deck_state_t snap = {0};
     copy_state_snapshot(idx, &snap, NULL, NULL);
 
     if (deck_uses_audio_engine(idx)) {
         snap.playing = audio_engine_deck_is_playing(idx);
-        snap.position_ms = audio_engine_deck_position_ms(idx);
     }
     return snap;
 }
@@ -3419,7 +3428,7 @@ bool deck_core_load_allowed(uint8_t deck)
 {
     if (deck >= DECK_CORE_DECK_COUNT) return false;
     if (deck_core_track_replacement_active(deck)) return false;
-    const bool playing = deck_core_get_deck_state(deck).playing;
+    const bool playing = deck_core_get_deck_control_state(deck).playing;
     return deck_load_lock_allows(
         deck_load_lock_check(deck_core_get_load_lock(), playing));
 }
@@ -3441,7 +3450,7 @@ uint32_t deck_core_begin_track_replacement(uint8_t deck)
                                     false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return 0;
     /* Actor events are excluded here; use the actual audio transport, not a
      * stale UI snapshot. LOAD LOCK off explicitly permits replacing playback. */
-    const bool playing = deck_core_get_deck_state(deck).playing;
+    const bool playing = deck_core_get_deck_control_state(deck).playing;
     if (!deck_load_lock_allows(deck_load_lock_check(deck_core_get_load_lock(), playing))) {
         deck_core_end_track_replacement(deck, token);
         return 0;

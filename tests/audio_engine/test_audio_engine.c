@@ -41,6 +41,71 @@ static int s_lifecycle_hook_release;
 static int s_lifecycle_stop_finished;
 
 #define TELEMETRY_THREAD_ITERATIONS 50000u
+static pthread_mutex_t s_observer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_observer_cond = PTHREAD_COND_INITIALIZER;
+static bool s_observer_entered, s_observer_release, s_observer_expired;
+
+static void hold_decoder_mutex(void *context)
+{
+    (void)context;
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += 2;
+    pthread_mutex_lock(&s_observer_mutex);
+    s_observer_entered = true;
+    pthread_cond_broadcast(&s_observer_cond);
+    while (!s_observer_release) {
+        if (pthread_cond_timedwait(&s_observer_cond, &s_observer_mutex, &deadline) != 0) {
+            s_observer_expired = true;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_observer_mutex);
+}
+
+static void *observer_decoder_thread(void *context)
+{
+    audio_engine_test_with_decoder_mutex(hold_decoder_mutex, context);
+    return NULL;
+}
+
+static void test_display_status_never_waits_for_decoder(void)
+{
+    audio_engine_deck_status_t status, retained;
+    memset(&status, 0x5a, sizeof(status));
+    retained = status;
+    s_observer_entered = s_observer_release = s_observer_expired = false;
+    pthread_t thread;
+    int rc = pthread_create(&thread, NULL, observer_decoder_thread, NULL);
+    EXPECT(rc == 0, "decoder contention thread starts");
+    if (rc != 0) return;
+    pthread_mutex_lock(&s_observer_mutex);
+    while (!s_observer_entered) pthread_cond_wait(&s_observer_cond, &s_observer_mutex);
+    pthread_mutex_unlock(&s_observer_mutex);
+    EXPECT(audio_engine_deck_try_get_status(0, &status) == ESP_ERR_TIMEOUT,
+           "D1 display observation rejects held decoder mutex immediately");
+    EXPECT(!memcmp(&status, &retained, sizeof(status)), "busy D1 observation preserves caller snapshot");
+    EXPECT(audio_engine_deck_try_get_status(1, &status) == ESP_ERR_TIMEOUT,
+           "D2 display observation does not wait behind other deck decode");
+    EXPECT(!memcmp(&status, &retained, sizeof(status)), "busy D2 observation preserves caller snapshot");
+    EXPECT(audio_engine_deck_try_get_status(2, &status) == ESP_ERR_INVALID_ARG,
+           "display observation validates deck before lock");
+    EXPECT(audio_engine_deck_try_get_status(0, NULL) == ESP_ERR_INVALID_ARG,
+           "display observation validates destination before lock");
+    pthread_mutex_lock(&s_observer_mutex);
+    s_observer_release = true;
+    pthread_cond_broadcast(&s_observer_cond);
+    pthread_mutex_unlock(&s_observer_mutex);
+    pthread_join(thread, NULL);
+    EXPECT(!s_observer_expired, "display observations finish while decoder remains held");
+    for (uint8_t deck = 0; deck < 2; ++deck) {
+        EXPECT(audio_engine_deck_try_get_status(deck, &status) == ESP_OK,
+               "display snapshot resumes after decoder releases mutex");
+        EXPECT(audio_engine_deck_get_status(deck, &retained) == ESP_OK &&
+               !memcmp(&status, &retained, sizeof(status)),
+               "display observation uses production status/session/position semantics");
+    }
+}
 static int s_telemetry_writer_done;
 static uint32_t s_telemetry_snapshot_errors;
 
@@ -1774,6 +1839,7 @@ int main(int argc, char *argv[])
     printf("Build: AUDIO_ENGINE_PC_TEST\n");
 
     test_init();
+    test_display_status_never_waits_for_decoder();
     test_load_missing();
     test_pitch();
     test_mixer_state_api();

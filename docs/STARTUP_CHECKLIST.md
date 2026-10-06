@@ -33,6 +33,9 @@ verified on 2026-10-07 after the upload helper's earlier polling deadline
 expired; this later observation is not a startup-time measurement.
 Its short retest also failed: solo sharp, dual deformed, audio clean, with 55
 coalesced refreshes. Both decks are stopped. The full soak remains NOT RUN.
+The next zero-wait display-observation candidate must pass production contention
+tests, unchanged simulator baselines, clean builds and the same measured/operator
+retest before Campaign B can begin.
 
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the

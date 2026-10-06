@@ -383,6 +383,10 @@ typedef struct {
 } audio_engine_deck_status_t;
 
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
+/* Display observer: zero-wait mutex acquisition. On ESP_ERR_TIMEOUT, *out is
+ * unchanged so the UI can retain its last coherent observation/interpolate.
+ * Transport/admission must continue using authoritative APIs. */
+esp_err_t audio_engine_deck_try_get_status(uint8_t deck, audio_engine_deck_status_t *out);
 esp_err_t audio_engine_stop_all(void);
 esp_err_t audio_engine_suspend_loads_and_stop_all(void);
 esp_err_t audio_engine_suspend_usb_loads_and_stop(void);
@@ -390,6 +394,7 @@ bool audio_engine_deck_is_sd(uint8_t deck);
 void audio_engine_resume_loads(void);
 #if defined(AUDIO_ENGINE_PC_TEST)
 typedef void (*audio_engine_lifecycle_test_hook_t)(uint8_t deck);
+void audio_engine_test_with_decoder_mutex(void (*callback)(void *), void *context);
 void audio_engine_test_set_after_internal_stop_hook(
     audio_engine_lifecycle_test_hook_t hook);
 #endif

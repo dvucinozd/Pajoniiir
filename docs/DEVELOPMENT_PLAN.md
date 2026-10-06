@@ -34,6 +34,11 @@ The installed repair also failed the physical retest: solo sharp, dual deformed,
 audio clean, 55 coalesced refreshes in the short dual window. Investigate the
 remaining blocking UI status reads before another candidate; the full timing
 gate must restart after a successful exact-image physical retest.
+The next candidate shares one zero-wait, UI-owned audio-status observation per
+deck between position, session-checked duration and status/progress rendering.
+Busy decode retains the last observation; transport decisions keep their
+authoritative APIs. Production mutex-contention and simulator recovery tests
+precede clean builds and physical acceptance.
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).

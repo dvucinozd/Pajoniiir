@@ -2465,6 +2465,7 @@ static void ui_overview_format_remaining_time(char *out,
 }
 
 static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
+                                    const audio_engine_deck_status_t *audio_status,
                                     uint16_t effective_speed_permille,
                                     bool scratch_position_authoritative,
                                     ui_overview_update_phase_t phase,
@@ -2519,9 +2520,9 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
     char key_text[24];
     snprintf(key_text, sizeof key_text, "KEY: %s", info->valid && info->key[0] ? info->key : "--");
     ui_label_set_text_if_changed(panel->label_key, key_text);
-    audio_engine_deck_status_t status = {0};
+    audio_engine_deck_status_t status = *audio_status;
     char status_text[96];
-    if (audio_engine_deck_get_status(deck, &status) == ESP_OK && status.state == AE_LOADING)
+    if (status.state == AE_LOADING)
         snprintf(status_text, sizeof status_text, "LOADING %u%%", (unsigned)status.load_progress);
     else if (status.last_error_text[0]) snprintf(status_text, sizeof status_text, "ERROR: %.72s", status.last_error_text);
     else if (state->network_sync!=DECK_NET_SYNC_OFF) {
@@ -2708,6 +2709,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     for (uint8_t i = 0; i < step_count; ++i) {
         uint8_t deck = steps[i].deck;
         ui_update_overview_deck(deck, &ctx->deck_state[deck],
+                                &ctx->deck_audio_status[deck],
                                 ctx->mixer_snapshot.effective_speed_permille[deck],
                                 ctx->mixer_snapshot.scratch_position_authoritative[deck],
                                 steps[i].phase, &frame_elapsed_ms[deck]);

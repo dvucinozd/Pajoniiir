@@ -133,6 +133,9 @@ void ui_library_cycle_source(void);
 void ui_library_dj_enable(void);
 #endif
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms);
+uint32_t ui_library_deck_duration_observed(uint8_t deck, uint32_t fallback_duration_ms,
+                                         bool loaded, uint32_t session_generation,
+                                         uint32_t decoded_duration_ms);
 uint32_t ui_library_deck_analysis_span_ms(uint8_t deck, uint32_t fallback_duration_ms);
 uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm);
 bool ui_library_get_loaded_waveform(uint8_t deck,

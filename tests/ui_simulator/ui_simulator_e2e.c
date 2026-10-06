@@ -27,6 +27,7 @@ extern uint32_t audio_engine_stub_duration_ms[2];
 extern uint32_t audio_engine_stub_session_generation[2];
 extern bool audio_engine_stub_deck_loaded[2];
 extern bool ui_simulator_audio_status_override[2];
+extern bool ui_simulator_audio_status_busy[2];
 extern audio_engine_deck_status_t ui_simulator_audio_status[2];
 
 #ifndef DISPLAY_WIDTH
@@ -637,6 +638,17 @@ int main(int argc, char **argv)
         fail("live duration changed waveform time base or was ignored");
     if (framebuffer_hash() == metadata_hash)
         fail("live duration did not update the visible overview");
+    uint64_t observed_duration_hash = framebuffer_hash();
+    ui_simulator_audio_status_busy[0] = ui_simulator_audio_status_busy[1] = true;
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = 100u;
+    pump(64);
+    if (framebuffer_hash() != observed_duration_hash)
+        fail("busy decoder replaced retained display duration/status observation");
+    ui_simulator_audio_status_busy[0] = ui_simulator_audio_status_busy[1] = false;
+    pump(64);
+    if (framebuffer_hash() == observed_duration_hash)
+        fail("display duration did not refresh after decoder contention ended");
+    audio_engine_stub_duration_ms[CTRL_DECK_1] = analysis_ms + 30000u;
     ++audio_engine_stub_session_generation[CTRL_DECK_1];
     if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms)
         fail("stale audio session leaked its duration into current track");
@@ -752,9 +764,12 @@ int main(int argc, char **argv)
     /* Actual product status rendering, not only the donor's standalone demo. */
     click_label("OVERVIEW");
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    /* Inject only lifecycle/error fields. The complete observation must keep
+     * the real position/session/duration used by the production frame path. */
+    (void)audio_engine_deck_get_status(0, &ui_simulator_audio_status[0]);
+    ui_simulator_audio_status[0].state = AE_LOADING;
+    ui_simulator_audio_status[0].load_progress = 37;
     ui_simulator_audio_status_override[0] = true;
-    ui_simulator_audio_status[0] = (audio_engine_deck_status_t){
-        .state=AE_LOADING, .load_progress=37};
     pump(512);
     if (!find_visible_label(lv_screen_active(), "LOADING 37%"))
         fail("product loading status did not use real decoder progress");

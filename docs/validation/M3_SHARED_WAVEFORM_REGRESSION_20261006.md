@@ -223,3 +223,32 @@ sound. PCM underrun, UAC dropped/overflow and output-late counters remained zero
 in the short test. This candidate fails the physical visual gate; the small
 timing differences do not establish a material repair. The new 60-minute soak
 was NOT RUN. No public release/channel was modified.
+
+## Nonblocking display observation candidate
+
+The frame still called the blocking decoder-mutex status/position APIs before
+both waveform writes: two deck-position reads, two duration queries and an
+active-deck loading query. Deck chrome repeated status and LOAD LOCK queries.
+The historical M3 duration helper used metadata directly; integration added
+decoded-duration selection but also repeated these blocking status reads.
+This is a demonstrated blocking code path, not proof that it explains every
+cache or scanout outlier.
+
+The next candidate adds a zero-wait production status getter that returns
+TIMEOUT without changing its caller-owned snapshot when decode owns the mutex.
+One UI-owned observation per deck feeds position, session-checked decoded
+duration, loading/error chrome and library progress. Track publication/clear
+invalidates the retained observation. The existing position interpolator bridges
+ordinary missed observations. Control state and the atomic playing flag are
+sampled separately without querying decoder position; LOAD LOCK needs only
+that playing flag. Authoritative transport/status APIs remain available for
+LOAD/seek/CUE decisions. Scratch position uses the same audible-head calculation
+in both status paths, without a nested decoder-mutex acquisition.
+
+Tests exercise the actual production API with a decoder mutex held by another
+thread, both decks, unchanged timeout payloads, invalid arguments and recovery
+to identical authoritative status. Product simulators now execute the same
+display-observation path and check retained duration while busy plus refresh
+after release. Full host qualification, clean target builds, exact-source CI,
+signed packaging and measured/operator retest are required before acceptance.
+Panel timing, geometry, PPA order, redraw cadence and audio DSP remain unchanged.

@@ -264,6 +264,16 @@ audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out) {
   return ESP_OK;
 }
 
+static inline esp_err_t audio_engine_deck_try_get_status(uint8_t deck,
+                                                       audio_engine_deck_status_t *out) {
+  if (deck >= 2 || !out) return ESP_ERR_INVALID_ARG;
+#if UI_SIMULATOR_AUDIO_STATUS
+  extern bool ui_simulator_audio_status_busy[2];
+  if (ui_simulator_audio_status_busy[deck]) return ESP_ERR_TIMEOUT;
+#endif
+  return audio_engine_deck_get_status(deck, out);
+}
+
 static inline esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
                                                          bool *active,
                                                          uint32_t *start_ms,

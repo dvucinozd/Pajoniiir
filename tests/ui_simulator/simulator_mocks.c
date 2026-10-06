@@ -12,6 +12,7 @@ esp_err_t audio_engine_stub_deck_play_result[2] = {ESP_OK, ESP_OK};
 bool audio_engine_stub_deck_playing[2] = {false, false};
 bool audio_engine_stub_deck_loaded[2] = {true, true};
 bool ui_simulator_audio_status_override[2];
+bool ui_simulator_audio_status_busy[2];
 audio_engine_deck_status_t ui_simulator_audio_status[2];
 uint32_t audio_engine_stub_duration_ms[2];
 uint32_t audio_engine_stub_session_generation[2] = {1u, 1u};

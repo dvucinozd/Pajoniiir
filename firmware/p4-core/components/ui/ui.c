@@ -142,6 +142,10 @@ static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
  * or clear must refresh retained frame metadata immediately; steady playback
  * must not resample every audio/file-mutex-backed field twice per frame. */
 static uint32_t s_deck_frame_revision;
+/* UI-owned observations, cleared at track publication. A busy decoder must
+ * not move the single-buffer waveform write out of the refresh window. */
+static audio_engine_deck_status_t s_display_audio_status[DECK_CORE_DECK_COUNT];
+static bool s_display_audio_status_valid[DECK_CORE_DECK_COUNT];
 static ui_deck_anlz_store_t s_deck_anlz_store;
 static ui_controls_state_t s_controls;
 
@@ -228,6 +232,8 @@ static void ui_deck_track_info_clear(uint8_t deck)
 {
     uint8_t idx = ui_deck_index(deck);
     memset(&s_deck_track_info[idx], 0, sizeof(s_deck_track_info[idx]));
+    s_display_audio_status_valid[idx] = false;
+    memset(&s_display_audio_status[idx], 0, sizeof(s_display_audio_status[idx]));
     s_deck_frame_revision++;
 }
 
@@ -251,6 +257,8 @@ static void ui_deck_track_info_set(uint8_t deck,
     ui_copy_str(info->key, sizeof(info->key), key ? key : "");
     info->duration_ms = duration_ms;
     info->valid = true;
+    s_display_audio_status_valid[idx] = false;
+    memset(&s_display_audio_status[idx], 0, sizeof(s_display_audio_status[idx]));
     s_deck_frame_revision++;
 }
 
@@ -1265,14 +1273,24 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     ctx->now_ms = lv_tick_get();
     ctx->active_tab = s_active_tab;
 
-    ctx->deck_state[CTRL_DECK_1] = deck_core_get_state();
-    ctx->deck_state[CTRL_DECK_2] = deck_core_get_deck_state(CTRL_DECK_2);
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        if (audio_engine_deck_try_get_status(deck, &s_display_audio_status[deck]) == ESP_OK)
+            s_display_audio_status_valid[deck] = true;
+        ctx->deck_audio_status[deck] = s_display_audio_status[deck];
+        ctx->deck_state[deck] = deck_core_get_deck_control_state(deck);
+        if (s_display_audio_status_valid[deck])
+            ctx->deck_state[deck].position_ms = ctx->deck_audio_status[deck].position_ms;
+    }
     ctx->active_deck = ui_controls_active_deck(&s_controls);
     ctx->active_state = ctx->deck_state[ui_deck_index(ctx->active_deck)];
     ctx->beat_fx_state = deck_core_get_beat_fx_state();
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        ctx->deck_duration_ms[deck] = ui_deck_duration_ms(deck);
+        ctx->deck_duration_ms[deck] = s_deck_track_info[deck].valid ?
+            ui_library_deck_duration_observed(deck, s_deck_track_info[deck].duration_ms,
+                s_display_audio_status_valid[deck] && ctx->deck_audio_status[deck].loaded,
+                ctx->deck_audio_status[deck].session_generation,
+                ctx->deck_audio_status[deck].duration_ms) : 0;
         ctx->deck_analysis_span_ms[deck] = ui_library_deck_analysis_span_ms(
             deck, ctx->deck_duration_ms[deck]);
         ctx->deck_bpm[deck] = ui_deck_bpm(deck);
@@ -1321,15 +1339,10 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     }
 
 #ifndef WIN32
-    audio_engine_deck_status_t audio_status = {0};
-    if (audio_engine_deck_get_status(ui_deck_index(ctx->active_deck),
-                                     &audio_status) == ESP_OK) {
-        ctx->ae_loading = (audio_status.state == AE_LOADING);
-        ctx->ae_load_pct = audio_status.load_progress;
-    } else {
-        ctx->ae_loading = false;
-        ctx->ae_load_pct = 100;
-    }
+    const audio_engine_deck_status_t *audio_status =
+        &ctx->deck_audio_status[ui_deck_index(ctx->active_deck)];
+    ctx->ae_loading = (audio_status->state == AE_LOADING);
+    ctx->ae_load_pct = audio_status->load_progress;
     audio_engine_get_mixer_snapshot(&ctx->mixer_snapshot);
 #else
     ctx->ae_loading = false;

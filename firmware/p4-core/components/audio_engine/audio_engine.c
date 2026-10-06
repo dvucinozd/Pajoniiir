@@ -5232,7 +5232,7 @@ float audio_engine_raw_pitch_to_percent(int16_t raw_pitch)
     return ((8192.0f - (float)raw_pitch) / 8192.0f) * 10.0f;
 }
 
-static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
+static bool audio_engine_scratch_position_ms_for_deck(uint8_t deck, uint32_t *out)
 {
     audio_engine_state_t *eng = &s_engines[deck];
     /* While the scratch source is audible, its fractional head is the playback
@@ -5247,11 +5247,20 @@ static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
              phase == AE_SCRATCH_HANDOFF_FADE_OUT) &&
             b->newest_valid && b->sample_rate > 0u) {
             float head_back = scratch_head_snapshot(deck);
-            return audio_scratch_track_position_ms(
+            *out = audio_scratch_track_position_ms(
                 b->newest_pos_ms, head_back, b->sample_rate,
                 eng->loop_active, eng->loop_start_ms, eng->loop_end_ms);
+            return true;
         }
     }
+    return false;
+}
+
+static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
+{
+    audio_engine_state_t *eng = &s_engines[deck];
+    uint32_t scratch_ms;
+    if (audio_engine_scratch_position_ms_for_deck(deck, &scratch_ms)) return scratch_ms;
     AE_LOCK();
     if (!eng->loaded || eng->sample_rate == 0) {
         uint32_t base = eng->output_base_ms;
@@ -5276,14 +5285,12 @@ static ae_state_t engine_lifecycle_state(const audio_engine_state_t *eng)
             !atomic_load_bool(&eng->paused)) ? AE_PLAYING : AE_READY;
 }
 
-esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out)
+/* Caller owns the decoder metadata mutex. The scratch override reads the
+ * audible head directly, without a second acquisition of that mutex. */
+static void audio_engine_copy_deck_status(uint8_t deck, audio_engine_deck_status_t *out)
 {
-    if (!deck_is_valid(deck) || !out) return ESP_ERR_INVALID_ARG;
-
     audio_engine_state_t *eng = &s_engines[deck];
     memset(out, 0, sizeof(*out));
-
-    AE_LOCK();
     out->state = engine_lifecycle_state(eng);
     out->load_progress = eng->load_progress;
     out->last_error = eng->last_error;
@@ -5302,16 +5309,39 @@ esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t 
         uint32_t from_frames = (uint32_t)(eng->output_frames_since_seek * 1000u / eng->sample_rate);
         out->position_ms = eng->output_base_ms + from_frames;
     }
-    AE_UNLOCK();
-
     /* Keep status consumers on the same audible scratch coordinate as the
      * direct position API. This call is lock-free for an active scratch window. */
-    if (atomic_load_bool(&s_scratch_playing[deck])) {
-        out->position_ms = audio_engine_position_ms_for_deck(deck);
-    }
+    uint32_t scratch_ms;
+    if (audio_engine_scratch_position_ms_for_deck(deck, &scratch_ms))
+        out->position_ms = scratch_ms;
+}
 
+esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out)
+{
+    if (!deck_is_valid(deck) || !out) return ESP_ERR_INVALID_ARG;
+    AE_LOCK();
+    audio_engine_copy_deck_status(deck, out);
+    AE_UNLOCK();
     return ESP_OK;
 }
+
+esp_err_t audio_engine_deck_try_get_status(uint8_t deck, audio_engine_deck_status_t *out)
+{
+    if (!deck_is_valid(deck) || !out) return ESP_ERR_INVALID_ARG;
+    if (!AE_TRY_LOCK()) return ESP_ERR_TIMEOUT;
+    audio_engine_copy_deck_status(deck, out);
+    AE_UNLOCK();
+    return ESP_OK;
+}
+
+#if defined(AUDIO_ENGINE_PC_TEST)
+void audio_engine_test_with_decoder_mutex(void (*callback)(void *), void *context)
+{
+    AE_LOCK();
+    callback(context);
+    AE_UNLOCK();
+}
+#endif
 
 #if AE_FW
 static bool deck_transport_supported(uint8_t deck);

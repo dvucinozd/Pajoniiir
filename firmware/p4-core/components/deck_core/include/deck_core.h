@@ -119,6 +119,10 @@ deck_state_t deck_core_get_state(void);
 
 // Thread-safe snapshot of one deck state.
 deck_state_t deck_core_get_deck_state(uint8_t deck);
+/* Control state plus atomic audible playing flag; position is the control
+ * coordinate, without waiting for the decoder mutex. Display overlays combine
+ * this with their coherent nonblocking audio-status observation. */
+deck_state_t deck_core_get_deck_control_state(uint8_t deck);
 /* LOAD LOCK defaults on: no replacement while the destination deck plays.
  * Both UI admission and the asynchronous worker recheck this verdict. */
 void deck_core_set_load_lock(bool on);
