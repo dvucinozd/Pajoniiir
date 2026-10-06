@@ -1,6 +1,6 @@
 # Pajoniiir project overview
 
-Status: **published JC4880/FLX4 v91; shared-core development extensions**
+Status: **published JC4880/FLX4 M2.5; shared-core development extensions**
 (2026-10-06).
 
 Pajoniiir is a standalone dual-deck DJ system. The JC4880P443C_I_W ESP32-P4
@@ -19,11 +19,17 @@ OTA. No performance computer or secondary playback processor is required.
 | UI | Previous LVGL design: Overview, Library, Hot Cues, Settings; native 800x480 |
 | Service | Wi-Fi Remote, resources/diagnostics, profiles and signed OTA |
 
-Current release **M2.4-91-g75136aef** freezes source
-`75136aef749a1f03d9089c8b6ff6452b3dba0839` on ESP-IDF v6.0.2.
-[GitHub](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef)
+Current release **M2.5** freezes source
+`20f1c3f04a615209ae25e9bbdae649d0f5b44e8d` on ESP-IDF v6.0.2.
+[GitHub](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.5)
 and the [public OTA channel](https://ota.pajoniiir.eu/latest.json) publish the
 original tested artifacts. Later `master` commits do not change that image.
+
+M2.5 adds the Pajoniiir artwork fallback and passed final tagged OTA/startup
+and 62.622211 seconds of operator-confirmed clean dual playback. A new long
+soak was explicitly waived because audio code is unchanged; see the
+[M2.5 record](validation/M2_5_RELEASE_20261006.md). Older v91 scenarios below
+remain evidence for their original image.
 
 ## Implemented capabilities
 
@@ -42,7 +48,7 @@ original tested artifacts. Later `master` commits do not change that image.
   bounded startup confirmation and rollback.
 
 Implemented features do not imply every combination was physically tested.
-The [release record](validation/JC4880_V91_RELEASE_20261005.md) lists focused
+The historical [v91 record](validation/JC4880_V91_RELEASE_20261005.md) lists focused
 audio/transport/cue/reconnect checks and the operator-accepted segmented
 180m01.37s soak exception. Uninterrupted 180-minute qualification, exhaustive
 metadata/touch variants and other unrun scenarios remain NOT RUN.

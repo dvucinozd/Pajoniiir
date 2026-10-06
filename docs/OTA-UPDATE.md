@@ -1,8 +1,8 @@
 # Pajoniiir OTA Update Procedure
 
 Status: **current board-specific P4 procedure, reconciled 2026-10-06**.
-Published JC4880/FLX4 release `M2.4-91-g75136aef` freezes source
-`75136aef749a1f03d9089c8b6ff6452b3dba0839`. The original image, not a rebuild
+Published JC4880/FLX4 release `M2.5` freezes source
+`20f1c3f04a615209ae25e9bbdae649d0f5b44e8d`. The original image, not a rebuild
 of later master, is accepted and published. JC1060 has a separate project and
 development channel configuration; its hardware/channel publication is NOT RUN.
 Both boards run P4; there is no S3 update target.
@@ -182,7 +182,7 @@ wired flash whenever either changes.
 
 The application version comes from `git describe`. The historical lines use
 `RC<tag>` and the beta line begins at the annotated `M2` tag. The selected
-production version is `M2.4-91-g75136aef`; immutable M2.4 remains available.
+production version is `M2.5`; immutable M2.4 and v91 remain available.
 A tagged build reports the bare tag; later commits
 report `<tag>-<distance>-g<hash>`.
 

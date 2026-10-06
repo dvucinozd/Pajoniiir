@@ -1,10 +1,14 @@
 # P4 operation and release checklist
 
-Status: **current v91 JC4880 checklist and development qualification gates**
+Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the
-[v91 release](validation/JC4880_V91_RELEASE_20261005.md) is not a request to
+[M2.5 release](validation/M2_5_RELEASE_20261006.md) is not a request to
 repeat completed tests. Checkboxes below are procedures for operation or a
 new/changed candidate; NOT RUN entries remain outside accepted scope.
+
+M2.5 passed final tagged OTA/startup and 62.622211-second listening/telemetry
+checks. Its new 180-minute soak was explicitly waived by the operator because
+audio code is unchanged. This exception does not waive future changed-image gates.
 
 ## Normal JC4880 operation
 
@@ -131,7 +135,7 @@ See [G procedure](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWARE_20261004.md).
   target(s), preserve independent locks and the `0x380000` application budget.
 - [ ] UI: run real product layouts and relevant preview/Link simulator modes,
   visually review changes before updating screenshot baselines.
-- [ ] M2.5 artwork fallback: on the exact candidate, check real artwork remains
+- [ ] Artwork fallback regressions: on a changed candidate, check real artwork remains
   visible, no-artwork tracks show the Pajoniiir logo, late cover arrival replaces
   the logo and media/page changes retain no previous cover. Empty product decks
   and folder rows must not display stale track artwork.

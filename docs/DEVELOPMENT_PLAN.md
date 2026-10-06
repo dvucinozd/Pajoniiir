@@ -1,15 +1,15 @@
 # P4 post-release development plan
 
-Status: **v91 published; A-L merged into master; hardware extensions open**
+Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).
 
 ## Current baseline
 
-The accepted release is `M2.4-91-g75136aef` from
-`75136aef749a1f03d9089c8b6ff6452b3dba0839`, for JC4880/FLX4 with PCM5102A
+The accepted release is `M2.5` from
+`20f1c3f04a615209ae25e9bbdae649d0f5b44e8d`, for JC4880/FLX4 with PCM5102A
 MAIN and FLX4 cue. The previous product design is retained. The
-[release record](validation/JC4880_V91_RELEASE_20261005.md) preserves the explicit
-segmented-soak exception, exact artifacts and focused physical scope.
+[release record](validation/M2_5_RELEASE_20261006.md) preserves the explicit
+final-image soak waiver, exact artifacts and focused physical scope.
 
 Packages A-L are software verified and merged into `master`. The
 [integration ledger](FORK_IMPROVEMENTS.md) records modules adapted from
@@ -26,21 +26,23 @@ immutable.
 
 ## Next work
 
-For M2.5, qualify JC4880/FLX4 first. Close the focused local-library cases
-below, freeze a clean regular candidate, complete automated gates and perform
-exact-image OTA/startup/audio acceptance before signing off publication.
+M2.5 JC4880/FLX4 is published after exact-source CI, final tagged OTA/startup
+and operator-confirmed short audio acceptance. Subsequent maintenance uses
+change-driven regressions; the remaining local-library cases below stay open.
 JC1060/DDJ-400/Link, experimental recording and APTA need not block a release
 that explicitly excludes their production support. Web Profile Builder v4
 deployment is required only if its public exporter is part of the release scope.
 
-The user-supplied Pajoniiir logo is now the development artwork fallback for
+The user-supplied Pajoniiir logo is now the released M2.5 artwork fallback for
 loaded tracks and Library rows. It is stored as native 34x34/40x40 RGB565
 constants; the existing real-artwork worker/cache remains authoritative.
 Candidate `M2.4-111-ge09e9ca4` has passed signed OTA, operator-confirmed logo
 display and a 62.419-second dual-deck listening/resource check; see the
 [candidate record](validation/M2_5_DEFAULT_ARTWORK_20261006.md).
-Confirm real cover, missing cover, page/media change and unloaded state on the
-M2.5 device candidate; this does not change the frozen v91's acceptance.
+Real cover, missing cover and normal page/media return passed on the logo
+candidate. Final M2.5 passed 62.622211 seconds of clean dual playback and
+startup/resource checks. Its new long soak was explicitly waived; v91 remains
+immutable and its earlier evidence is not relabeled as M2.5.
 
 | Work | Required evidence / boundary |
 | --- | --- |

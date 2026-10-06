@@ -1,12 +1,16 @@
 # Pajoniiir documentation
 
-Status: **reconciled 2026-10-06; v91 published; A-L merged into master**.
+Status: **reconciled 2026-10-06; M2.5 published; A-L merged into master**.
 
 Start with the [user manual](index.html) for operation and
 [DOCUMENTATION_STATUS.md](DOCUMENTATION_STATUS.md) for current support.
 The published configuration is JC4880 / DDJ-FLX4 / PCM5102A MAIN / FLX4 cue,
-frozen at `M2.4-91-g75136aef`. JC1060/DDJ-400/real Link peers remain
+frozen at `M2.5`. JC1060/DDJ-400/real Link peers remain
 software-verified development configurations. No S3 firmware is active.
+
+The [M2.5 release record](validation/M2_5_RELEASE_20261006.md) records final
+artifacts, publication, short hardware/listening checks and the explicit waiver
+of a new long soak. Historical v91 evidence remains tied to v91.
 
 ## Operation and maintenance
 

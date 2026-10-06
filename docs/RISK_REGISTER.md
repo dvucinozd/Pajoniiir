@@ -1,14 +1,15 @@
 # P4 risk register
 
-Status: **current v91 scope and development risks, reconciled 2026-10-06**.
+Status: **current M2.5 scope and development risks, reconciled 2026-10-06**.
 
-Current release is JC4880/FLX4 `M2.4-91-g75136aef` from `75136aef`.
-The [release record](validation/JC4880_V91_RELEASE_20261005.md) separates exact-image
+Current release is JC4880/FLX4 `M2.5` from `20f1c3f0`.
+The [release record](validation/M2_5_RELEASE_20261006.md) separates exact-image
 physical/listening acceptance, diagnostic rollback and publication from unrun
 variants. Dated records retain every earlier failed candidate and monitor loss.
 
 | Status / priority | Risk | Evidence and required disposition |
 | --- | --- | --- |
+| ACCEPTED EXCEPTION (M2.5) | New final-image long soak explicitly waived | Operator waived a new 180m run because audio/deck/DSP code is unchanged. Final tagged OTA/startup and 62.622211s dual playback/listening passed with zero strict faults. No M2.5 long-soak PASS is claimed; v91 evidence remains image-specific |
 | ACCEPTED EXCEPTION (v91) | Monitor loss prevents a continuous 180-minute record | Saved 1,015.8899243s + completed 9,785.4764933s = 10,801.3664176s with interruption. Continuation resources/strict deltas and operator sound passed. Preserve INCOMPLETE evidence; uninterrupted 180m remains NOT RUN. No automatic exception for a later image |
 | CLOSED in focused v91 scope | Periodic PSRAM heap walks delay realtime service | Earlier ISO SKIPPED reproduced under heap diagnostics. Largest-block PSRAM walks were removed; retain cheap free/minimum readings and mark unmeasured values null. Requalify after diagnostic/allocator changes; wall-time query probes do not measure exact IRQ latency |
 | CLOSED in focused v91 scope | PCM5102A DMA quantum differs from mixer output | Earlier 240-vs-256-frame mismatch reproduced output lateness; shared 256-frame quantum and focused/final segmented v91 runs have zero new strict faults. Preserve bounds and measure sink latency separately |

@@ -1,10 +1,10 @@
 # Fork improvements integration
 
 Status: **A-L software integration complete and merged into master** (2026-10-05).
-The published JC4880/FLX4 release is frozen `M2.4-91-g75136aef`, source
-`75136aef749a1f03d9089c8b6ff6452b3dba0839`. The
-[release record](validation/JC4880_V91_RELEASE_20261005.md) defines focused
-hardware acceptance, publication and the explicit segmented-soak exception.
+The published JC4880/FLX4 release is frozen `M2.5`, source
+`20f1c3f04a615209ae25e9bbdae649d0f5b44e8d`. The
+[release record](validation/M2_5_RELEASE_20261006.md) defines focused
+hardware acceptance, publication and the explicit final-image soak waiver.
 JC1060/DDJ-400/real Link peers remain hardware **NOT RUN**.
 
 This work began on `codex/fork-improvements` at
@@ -55,7 +55,7 @@ outside this integration. New-board software capability is not hardware support.
 | I | MIT djlink codec, Ethernet discovery/claim/browse | Software verified: I1-I4b runtime browse/cache/Library bridge; physical interoperability NOT RUN; audio download belongs to J |
 | J | Full persistent media identity, cancellable download, atomic cache | Software verified: Ethernet NFS/SD transaction, full-identity assets, shared LOAD and independent SD playback; unknown volumes session-local; physical peer/SD/audio gates NOT RUN |
 | K | Epoch-bound network clock, controlled sync and tempo master | Software verified: session-fenced follower, explicit alignment, acknowledged handoff/status/beats and sink/rate latency scope; real phase/listening/handoff NOT RUN |
-| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; frozen v91 JC4880/FLX4 published with explicit segmented-soak exception; JC1060 hardware NOT RUN |
+| L | Project-bound OTA, documentation, qualification and release candidate | Software verified; frozen M2.5 JC4880/FLX4 published with explicit final-image soak waiver; v91 history preserved; JC1060 hardware NOT RUN |
 
 Software verification, hardware acceptance and release are separate states.
 The [package B software closure](validation/FORK_IMPROVEMENTS_PACKAGE_B_SOFTWARE_20261004.md)

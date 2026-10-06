@@ -36,7 +36,7 @@ controls and update instructions.
 ## Release and support
 
 The current release for **JC4880 + DDJ-FLX4** is
-[`M2.4-91-g75136aef`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef),
+[`M2.5`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.5),
 also available through the [public OTA channel](https://ota.pajoniiir.eu/latest.json).
 It retains the previous UI design and includes the integrated library and
 transport improvements.
@@ -45,13 +45,14 @@ JC1060, DDJ-400 and Ethernet Pro DJ Link are implemented as development
 configurations. Their physical qualification is still pending. Recording and
 SD storage experiments remain disabled in regular builds.
 
-The [release record](docs/validation/JC4880_V91_RELEASE_20261005.md) documents
-the tested configuration, accepted segmented-soak exception and remaining
+The [release record](docs/validation/M2_5_RELEASE_20261006.md) documents
+the tested configuration, explicit final-image soak waiver and remaining
 qualification limits.
 
-Development `master` adds a built-in Pajoniiir logo for tracks without artwork
-in Overview and Library. This is intended for the next M2.5 candidate; the
-frozen v91 image is unchanged.
+M2.5 adds a built-in Pajoniiir logo for tracks without artwork in Overview
+and Library. The final image passed short OTA/startup/audio checks; the operator
+waived a new 180-minute soak because audio code is unchanged. Historical v91
+evidence remains tied to its original image.
 
 ## Improvements and collaboration
 

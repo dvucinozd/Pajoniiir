@@ -4,23 +4,23 @@ Status: **current documentation authority, reconciled 2026-10-06**.
 
 ## Published product
 
-The current public release is **M2.4-91-g75136aef**, frozen at
-`75136aef749a1f03d9089c8b6ff6452b3dba0839`. It is accepted for
+The current public release is **M2.5**, frozen at
+`20f1c3f04a615209ae25e9bbdae649d0f5b44e8d`. It is accepted for
 **JC4880 / DDJ-FLX4 / PCM5102A MAIN / FLX4 headphone cue**, with the previous
 product design and regular configuration. Preview, recorder and SD experiments
-are disabled. The [release record](validation/JC4880_V91_RELEASE_20261005.md)
+are disabled. The [release record](validation/M2_5_RELEASE_20261006.md)
 is authoritative for artifacts, physical acceptance and publication.
 
 | Item | Frozen release value |
 | --- | --- |
-| Release / annotated tag | `M2.4-91-g75136aef` |
-| Source | `75136aef749a1f03d9089c8b6ff6452b3dba0839` |
+| Release / annotated tag | `M2.5` |
+| Source | `20f1c3f04a615209ae25e9bbdae649d0f5b44e8d` |
 | Project / toolchain | `main-deck-p4` / ESP-IDF v6.0.2 |
-| Application | 2,570,752 bytes; SHA-256 `d93de2ce1e788dd167c2a87dffd1908e2202c1bf399a8a6ba5c25f75e0224caa` |
-| Signed bundle | 2,570,940 bytes; SHA-256 `9810b31ece270c7b406be2eb605331ad460e83dc06134519e57498cb6270d069` |
+| Application | 2,576,432 bytes; SHA-256 `7aaab31d4a7c00990939cb9ccecb04aba1cba463b1db919d168477c7df3210ba` |
+| Signed bundle | 2,576,620 bytes; SHA-256 `44db191c1785168781e9b2893cac6dda1b92a20a5342c328d7fbfdbbd8707e27` |
 | Public channel | [latest.json](https://ota.pajoniiir.eu/latest.json) |
-| GitHub release | [M2.4-91-g75136aef](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.4-91-g75136aef) |
-| Last publication-session device observation | v91 / `ota_1`, boot 615; decks stopped, AP/API and USB/FLX4 available, startup ready, zero allocation failures |
+| GitHub release | [M2.5](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.5) |
+| Last publication-session device observation | M2.5 / `ota_1`, boot 618; decks stopped, AP/API and USB/FLX4 available, startup ready, zero allocation failures |
 
 A recorded slot/boot is session evidence, not a fresh observation of the device.
 Documentation and later diagnostic commits on `master` do not alter the frozen
@@ -28,6 +28,12 @@ image. The integration branch was merged into `master` on 2026-10-05; it is
 no longer a separate source of unreleased A-L work.
 
 ## Acceptance and limits
+
+Final M2.5 passed signed OTA, startup readiness, USB/FLX4 availability and
+62.622211 seconds of dual playback with zero new strict audio/USB faults and
+operator-confirmed Overview/MAIN/D1/D2 cue. The operator explicitly waived
+a new 180-minute M2.5 soak because audio/deck/DSP code is unchanged. This is
+an image-specific exception; the following v91 evidence remains historical.
 
 Focused exact-v91 scenarios passed with operator-confirmed sound:
 MP3/WAV/FLAC (including 96 kHz/24-bit FLAC), MAIN/D1/D2 cue, scratch,
@@ -75,12 +81,12 @@ installed during these checks.
 
 ## Maintained architecture and software scope
 
-Development `master` additionally includes the user-supplied default Pajoniiir
+Released M2.5 additionally includes the user-supplied default Pajoniiir
 artwork logo. Overview and track Library rows use pre-rendered read-only
 thumbnails when real artwork is unavailable; empty product decks and folder
-rows remain distinct. It is a new M2.5 candidate change, not present in the
-frozen v91. A clean `M2.4-111-ge09e9ca4` candidate from `e09e9ca4` has now
-been installed in `ota_0` through signed OTA. Startup, API, FLX4 and storage
+rows remain distinct. It is absent from the immutable v91 image. Before final
+M2.5, a clean `M2.4-111-ge09e9ca4` candidate from `e09e9ca4` was
+installed in `ota_0` through signed OTA. Startup, API, FLX4 and storage
 are available, with zero allocation failures, and the operator confirms logo
 visibility in Library and on loaded D1 (`Red For Love {320}`). A matched
 stopped-track memory comparison has unchanged largest internal/DMA blocks
@@ -99,7 +105,7 @@ One authoritative P4 core serves two board entrypoints:
 
 | Configuration | Identity | Status |
 | --- | --- | --- |
-| JC4880 / FLX4 / PCM5102A MAIN + USB cue | `firmware/main-deck-p4` / `main-deck-p4` | Published frozen v91; focused physical scope above |
+| JC4880 / FLX4 / PCM5102A MAIN + USB cue | `firmware/main-deck-p4` / `main-deck-p4` | Published frozen M2.5; focused physical scope and explicit soak waiver above |
 | JC1060 / DDJ-400 / USB MAIN + cue / Ethernet Link | `firmware/main-deck-jc1060` / `main-deck-jc1060` | Software verified; all new-board/peer physical gates NOT RUN |
 
 Packages A-L are software verified. The [integration ledger](FORK_IMPROVEMENTS.md)
@@ -140,7 +146,7 @@ Do not transfer historical passes to new code or claim waived tests were run.
 ## Source-of-truth order
 
 1. Exact release artifacts/configuration and current code/tests for their own SHA.
-2. [Published v91 record](validation/JC4880_V91_RELEASE_20261005.md) for accepted
+2. [Published M2.5 record](validation/M2_5_RELEASE_20261006.md) for accepted
    hardware and publication; this status for current scope.
 3. Operational architecture, wiring, OTA, security, checklist and risk documents.
 4. Dated validation and integration history for their named images.
