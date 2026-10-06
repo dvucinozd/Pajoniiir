@@ -413,6 +413,9 @@ typedef void (*audio_engine_limiter_publish_test_hook_t)(void);
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
 /* Advances the real decoder without rewinding; -1 means EOF/invalid deck. */
 int audio_engine_test_decode_frame(uint8_t deck);
+/* Actual decoder output after seek skipping; capacity is stereo int16 frames.
+ * Unlike decode_to_wav(), this never rewinds the loaded input. */
+int audio_engine_test_read_pcm(uint8_t deck, int16_t *out, size_t capacity_frames);
 bool audio_engine_test_snapshot_beat_fx_time_command(
     uint8_t deck,
     audio_delay_fx_config_t *out_config);

@@ -124,6 +124,11 @@ deck_state_t deck_core_get_deck_state(uint8_t deck);
 void deck_core_set_load_lock(bool on);
 bool deck_core_get_load_lock(void);
 bool deck_core_load_allowed(uint8_t deck);
+/* Reserve replacement against semantic transport events. 0 means refused;
+ * release the returned token only after publishing/retiring the loaded track. */
+uint32_t deck_core_begin_track_replacement(uint8_t deck);
+void deck_core_end_track_replacement(uint8_t deck, uint32_t token);
+bool deck_core_track_replacement_active(uint8_t deck);
 void deck_core_toggle_master_tempo(uint8_t deck);
 
 // Snapshot of the global Beat FX state. Beat FX DSP is not applied yet; this is

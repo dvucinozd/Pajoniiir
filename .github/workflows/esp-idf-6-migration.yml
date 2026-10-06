@@ -118,7 +118,7 @@ jobs:
           IDF_PATH: ${{ runner.temp }}/cue-nvs-idf
         shell: pwsh
         run: |
-          & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
+          & ./tests/run_p4_host_tests.ps1 -Qualification *> p4-host-tests.log
           $p4 = $LASTEXITCODE
           $p4Lines = @(Get-Content p4-host-tests.log)
           if ($p4 -ne 0) {

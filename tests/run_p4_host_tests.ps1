@@ -1,5 +1,6 @@
 param(
     [switch]$KeepArtifacts,
+    [switch]$Qualification,
     [string[]]$Suite = @(),
     [switch]$ListSuites
 )
@@ -10,6 +11,9 @@ param(
 # syntax errors hundreds of lines further down.
 
 $ErrorActionPreference = "Stop"
+if ($Qualification -and ($Suite.Count -gt 0 -or $ListSuites)) {
+    throw "Qualification requires the complete host gate, not selected suites"
+}
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Gcc = Get-Command gcc -ErrorAction Stop
@@ -137,7 +141,7 @@ function Invoke-Step {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        if ($MinTestsRun -gt 0) {
+        if ($MinTestsRun -gt 0 -or $Qualification) {
             $output = & $Executable @Arguments 2>&1
             $output | ForEach-Object { Write-Host $_ }
         } else {
@@ -146,6 +150,9 @@ function Invoke-Step {
         }
         if ($LASTEXITCODE -ne 0) {
             throw "$Name failed with exit code $LASTEXITCODE"
+        }
+        if ($Qualification -and ($output | Select-String -Pattern '(?i)(^\s*SKIP:|^\s*\(No PDB path|SKIPPING the .*tests)')) {
+            throw "$Name skipped a required qualification case"
         }
         if ($MinTestsRun -gt 0) {
             $match = $output | Select-String -Pattern 'TESTS_RUN=(\d+)' | Select-Object -Last 1
@@ -3214,6 +3221,7 @@ $tests = @(
         Name = "rekordbox_pdb"
         Dir = "tests/rekordbox_pdb"
         Target = "test_pdb.exe"
+        RunArgs = @("../fixtures/p4/export.pdb")
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic",
             "-DREKORDBOX_PDB_STANDALONE_TEST",
@@ -3405,6 +3413,7 @@ foreach ($probe in $pythonProbes) {
     if (Test-PythonHasCryptography -Exe $probe) { $pythonSource = $probe; break }
 }
 if (-not $pythonSource) {
+    if ($Qualification) { throw "Qualification requires Python cryptography; OTA tests cannot be skipped" }
     $usable = ($pythonProbes | Select-Object -Unique) -join ", "
     Write-Warning "no python with the 'cryptography' module found (tried: $usable); SKIPPING the OTA signing tests"
 }
@@ -3893,6 +3902,9 @@ Invoke-Step -Name "run UI runtime memory budget gate" -WorkingDirectory $RepoRoo
 
 Invoke-Step -Name "run offline M3 cue migration" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/cue_migration/test_cue_migration.py")
+
+Invoke-Step -Name "run mandatory qualification fixture integrity" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/qualification/test_fixture_manifest.py")
 
 # Keep source-text contracts after executable suites: a stale UI spelling must
 # not prevent functional regressions from running. Default CI still runs both.

@@ -166,7 +166,10 @@ typedef struct {
 /* A seek lands at least this many frames before its target: a decoder
  * started mid-file outputs nothing for the first frame or three (the bit
  * reservoir), and those frames come out of the seek skip. */
-#define AUDIO_PVBR_RESYNC_LEAD_FRAMES 4u
+/* Four low-bitrate MPEG1 frames may not fill the 511-byte bit reservoir.
+ * Sixteen also prime synthesis history; exact skip still anchors the target.
+ * Required VBR PCM onset fixtures guard against position-dependent latency. */
+#define AUDIO_PVBR_RESYNC_LEAD_FRAMES 16u
 
 typedef struct {
     uint32_t hz;

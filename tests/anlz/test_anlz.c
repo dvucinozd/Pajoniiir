@@ -837,6 +837,16 @@ int main(int argc, char *argv[])
     test_pwv4_color_columns();
     test_memory_cue_list();
     test_pqtz_original_bar_phases();
+    {
+        anlz_metadata_t fixture = {0};
+        TEST("committed qualification ANLZ has standard beats and tagged cue A");
+        esp_err_t rc = anlz_parse_dat("../fixtures/p4/ANLZ0000.DAT", &fixture);
+        CHECK(rc == ESP_OK && fixture.beat_count == 4 && fixture.cue_count == 1 &&
+              fixture.beats[0].beat_phase == 1 && fixture.cues[0].start_ms == 1250 &&
+              strcmp(fixture.audio_path, "/Contents/onset-44100.wav") == 0,
+              "mandatory ANLZ fixture failed");
+        anlz_free(&fixture);
+    }
 
     printf("\n=== Strict truncation corpus ===\n");
     TEST("DAT header/section/payload truncations rejected transactionally");

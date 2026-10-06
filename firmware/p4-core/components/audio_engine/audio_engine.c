@@ -6951,13 +6951,22 @@ static void wav_write_header(FILE      *wav,
 
 int audio_engine_test_decode_frame(uint8_t deck)
 {
-    if (deck >= AUDIO_ENGINE_DECK_COUNT) return -1;
     int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+    return audio_engine_test_read_pcm(deck, pcm, MINIMP3_MAX_SAMPLES_PER_FRAME);
+}
+
+int audio_engine_test_read_pcm(uint8_t deck, int16_t *out, size_t capacity_frames)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || !out ||
+        capacity_frames < MINIMP3_MAX_SAMPLES_PER_FRAME) return -1;
     AE_LOCK();
     audio_engine_state_t *eng = &s_engines[deck];
-    int n = eng->loaded ? decode_one_frame(eng, pcm) : 0;
-    if (n > 0 && eng->seek_skip_frames)
-        n -= (int)audio_seek_skip_take(&eng->seek_skip_frames, (uint32_t)n);
+    int n = eng->loaded ? decode_one_frame(eng, out) : 0;
+    if (n > 0 && eng->seek_skip_frames) {
+        uint32_t skipped = audio_seek_skip_take(&eng->seek_skip_frames, (uint32_t)n);
+        n -= (int)skipped;
+        if (n > 0 && skipped) memmove(out, out + skipped * 2u, (size_t)n * 2u * sizeof(*out));
+    }
     bool done = !eng->loaded || atomic_load_bool(&eng->eof);
     AE_UNLOCK();
     return done ? -1 : n;

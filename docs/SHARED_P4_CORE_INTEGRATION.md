@@ -100,6 +100,29 @@ complete CLI round trip. Old blobs remain intact; absent slots do not create
 tombstones. See `M3_CUE_MIGRATION.md`. Software preparation performs no device
 write. Wired NVS apply and physical set/delete/restore/reboot remain NOT RUN.
 
+Phase 5 software gate PASS: complete host runner with `-Qualification`, all
+three IDF 6.0.2 targets, unchanged locks and compact/wide screenshot baselines
+pass. M3-policy 300 s dual-deck MT soak passes with zero source-clock drift,
+no detected clicks or clipping. Mandatory committed MP3/WAV/FLAC/PDB/ANLZ
+fixtures now have checked hashes; qualification cannot silently skip them.
+Lossless PCM is checked sample-for-sample, including short/final EOF batches,
+and mixed-rate seek executes both production decoders.
+
+Real VBR media reproduced position-dependent seek onset with the original
+four-frame reservoir lead. Sixteen-frame preparation makes all three seek
+positions retain the same full-decoded PCM/codec-delay mapping; the MP3 relative
+onset bound is 96 frames, WAV/FLAC one frame. PVBR regressions retain byte/frame
+identity and update their preparation-time bound accordingly. Full-track WAV
+export rewinds and is no longer described as proof of acoustic seek.
+
+LOAD replacement now reserves the semantic deck transport from final admission
+through audio replacement and loaded-track publication. MIDI/touch/web actions
+share the same actor boundary. If PLAY wins, LOAD is refused without mutation;
+if LOAD wins, transport cannot enter between check and reset. Generation tokens
+prevent stale completion from releasing a newer reservation. The real deck-core
+tests cover both orders, other-deck independence and LOAD LOCK off. Physical
+seek/loop/CUE, replacement races and opposite-pitch acceptance remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

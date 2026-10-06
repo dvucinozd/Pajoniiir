@@ -24,7 +24,7 @@ if ($Gcc) {
 $OriginalPath = $env:Path
 $GccDirectory = Split-Path -Parent $GccPath
 if ($env:Path -notlike "*$GccDirectory*") {
-    $env:Path = "$GccDirectory;$env:Path"
+    $env:Path = "$env:Path;$GccDirectory"
 }
 
 Push-Location $TestDir

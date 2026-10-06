@@ -68,6 +68,9 @@ static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
 static deck_core_beat_jump_page_t s_beat_jump_page = DECK_CORE_BEAT_JUMP_PAGE_DEFAULT;
 static bool s_load_lock = true;
+/* 0 idle, 1 actor event, >=2 generation-bound replacement reservation. */
+static uint32_t s_transport_owner[DECK_CORE_DECK_COUNT];
+static uint32_t s_next_replacement_token = 1u;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static bool              s_loaded_hot_cue_mask_valid[DECK_CORE_DECK_COUNT];
@@ -3099,6 +3102,35 @@ static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
            ev->id == CTRL_ID_BROWSE_SHIFT_PRESS;
 }
 
+/* Same admission boundary for MIDI, touch and web semantic events. A LOAD
+ * reservation spans audio replacement and loaded-track publication; PLAY
+ * cannot enter between the worker's final check and deck reset. */
+static void apply_deck_transport_event(const ctrl_event_t *ev)
+{
+    const uint8_t deck = deck_index_for_event(ev);
+    uint32_t expected = 0;
+    if (!__atomic_compare_exchange_n(&s_transport_owner[deck], &expected, 1u,
+                                    false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return;
+    if (!on_deck_extension_button(ev)) {
+        switch (ev->type) {
+        case CTRL_EV_BUTTON:
+            on_button(deck, button_for_event(ev), ev->value != 0);
+            break;
+        case CTRL_EV_JOG:
+            if (control_link_id_control(ev->id) == CTRL_DECK_CTL_LOOP_SIZE)
+                on_loop_size_delta(deck, ev->value, &s_decks[deck]);
+            else if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH)
+                on_jog_search(deck, ev->value);
+            else on_jog(deck, control_link_id_control(ev->id), ev->value);
+            break;
+        case CTRL_EV_BROWSE: on_browse_event(ev->id, ev->value); break;
+        case CTRL_EV_PITCH: on_pitch(deck, ev->value); break;
+        case CTRL_EV_STATE: on_state_event(ev); break;
+        }
+    }
+    __atomic_store_n(&s_transport_owner[deck], 0u, __ATOMIC_RELEASE);
+}
+
 // ─── Main task ────────────────────────────────────────────────────────────────
 
 static void deck_task(void *arg)
@@ -3172,40 +3204,12 @@ static void deck_task(void *arg)
             continue;
         }
 
-        uint8_t deck = deck_index_for_event(&ev);
-
         if (event_is_mixer_control(&ev)) {
             on_mixer_control(ev.id, ev.value);
             continue;
         }
 
-        if (on_deck_extension_button(&ev)) {
-            continue;
-        }
-
-        switch (ev.type) {
-        case CTRL_EV_BUTTON:
-            on_button(deck, button_for_event(&ev), ev.value != 0);
-            break;
-        case CTRL_EV_JOG:
-            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_LOOP_SIZE) {
-                on_loop_size_delta(deck, ev.value, &s_decks[deck]);
-            } else if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
-                on_jog_search(deck, ev.value);
-            } else {
-                on_jog(deck, control_link_id_control(ev.id), ev.value);
-            }
-            break;
-        case CTRL_EV_BROWSE:
-            on_browse_event(ev.id, ev.value);
-            break;
-        case CTRL_EV_PITCH:
-            on_pitch(deck, ev.value);
-            break;
-        case CTRL_EV_STATE:
-            on_state_event(&ev);
-            break;
-        }
+        apply_deck_transport_event(&ev);
     }
 }
 
@@ -3410,9 +3414,42 @@ bool deck_core_get_load_lock(void)
 bool deck_core_load_allowed(uint8_t deck)
 {
     if (deck >= DECK_CORE_DECK_COUNT) return false;
+    if (deck_core_track_replacement_active(deck)) return false;
     const bool playing = deck_core_get_deck_state(deck).playing;
     return deck_load_lock_allows(
         deck_load_lock_check(deck_core_get_load_lock(), playing));
+}
+
+bool deck_core_track_replacement_active(uint8_t deck)
+{
+    return deck < DECK_CORE_DECK_COUNT &&
+        __atomic_load_n(&s_transport_owner[deck], __ATOMIC_ACQUIRE) >= 2u;
+}
+
+uint32_t deck_core_begin_track_replacement(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return 0;
+    uint32_t token;
+    do { token = __atomic_add_fetch(&s_next_replacement_token, 1u, __ATOMIC_RELAXED); }
+    while (token < 2u);
+    uint32_t expected = 0;
+    if (!__atomic_compare_exchange_n(&s_transport_owner[deck], &expected, token,
+                                    false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return 0;
+    /* Actor events are excluded here; use the actual audio transport, not a
+     * stale UI snapshot. LOAD LOCK off explicitly permits replacing playback. */
+    const bool playing = deck_core_get_deck_state(deck).playing;
+    if (!deck_load_lock_allows(deck_load_lock_check(deck_core_get_load_lock(), playing))) {
+        deck_core_end_track_replacement(deck, token);
+        return 0;
+    }
+    return token;
+}
+
+void deck_core_end_track_replacement(uint8_t deck, uint32_t token)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || token < 2u) return;
+    (void)__atomic_compare_exchange_n(&s_transport_owner[deck], &token, 0u,
+                                     false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
@@ -3571,6 +3608,7 @@ bool deck_core_get_loaded_track(uint8_t deck,
 #if defined(DECK_CORE_PC_TEST)
 void deck_core_test_reset(void)
 {
+    memset(s_transport_owner, 0, sizeof(s_transport_owner));
     deck_core_set_network_ops(NULL);
     memset(s_net_sync,0,sizeof(s_net_sync));memset(s_net_generation,0,sizeof(s_net_generation));
     s_network_was_enabled=false;
@@ -3650,40 +3688,12 @@ static void test_apply_event(const ctrl_event_t *ev)
         return;
     }
 
-    uint8_t deck = deck_index_for_event(ev);
-
     if (event_is_mixer_control(ev)) {
         on_mixer_control(ev->id, ev->value);
         return;
     }
 
-    if (on_deck_extension_button(ev)) {
-        return;
-    }
-
-    switch (ev->type) {
-    case CTRL_EV_BUTTON:
-        on_button(deck, button_for_event(ev), ev->value != 0);
-        break;
-    case CTRL_EV_JOG:
-        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_LOOP_SIZE) {
-            on_loop_size_delta(deck, ev->value, &s_decks[deck]);
-        } else if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
-            on_jog_search(deck, ev->value);
-        } else {
-            on_jog(deck, control_link_id_control(ev->id), ev->value);
-        }
-        break;
-    case CTRL_EV_BROWSE:
-        on_browse_event(ev->id, ev->value);
-        break;
-    case CTRL_EV_PITCH:
-        on_pitch(deck, ev->value);
-        break;
-    case CTRL_EV_STATE:
-        on_state_event(ev);
-        break;
-    }
+    apply_deck_transport_event(ev);
 }
 
 void deck_core_test_apply_event(const ctrl_event_t *ev)

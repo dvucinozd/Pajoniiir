@@ -342,6 +342,7 @@ typedef struct {
     uint32_t load_id;
     uint32_t audio_session_generation;
     bool deck_reset;
+    uint32_t replacement_token;
     anlz_metadata_t *remote_meta;
     ui_artwork_thumb_t *remote_art;
     media_catalog_track_t item;
@@ -1202,6 +1203,8 @@ static void ui_remote_load_progress(void *ctx,uint32_t done,uint32_t total)
 #endif
 static void ui_track_load_meta_free(ui_track_load_result_t *result)
 {
+    deck_core_end_track_replacement(result->deck, result->replacement_token);
+    result->replacement_token = 0;
     free(result->remote_art);result->remote_art=NULL;
     if (result->remote_meta) {anlz_free(result->remote_meta);free(result->remote_meta);result->remote_meta=NULL;}
 }
@@ -1245,7 +1248,7 @@ static void ui_track_load_worker(void *arg)
     } else if (!ui_library_track_load_is_current(req.load_id)) {
         result->rc = ESP_ERR_INVALID_STATE;
         ui_track_load_set_status(result, "LOAD CANCELLED", "LOAD CANCELLED");
-    } else if (!deck_core_load_allowed(req.deck)) {
+    } else if (!(result->replacement_token = deck_core_begin_track_replacement(req.deck))) {
         /* PLAY may have started while metadata was read. Preserve the current
          * deck, audio session and loaded-track snapshot in that case. */
         result->rc = ESP_ERR_INVALID_STATE;
@@ -1323,7 +1326,10 @@ static void ui_track_load_worker(void *arg)
     if (s_track_load_result_q) {
         /* Multiple invalidated workers may finish after a reconnect. Preserve
          * every completion so a stale result cannot overwrite the active one. */
-        (void)xQueueSend(s_track_load_result_q, result, portMAX_DELAY);
+        if (xQueueSend(s_track_load_result_q, result, portMAX_DELAY) != pdTRUE)
+            ui_track_load_meta_free(result);
+    } else {
+        ui_track_load_meta_free(result);
     }
     if (ui_diagnostics_enabled()) {
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
@@ -2938,6 +2944,11 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (!ui_library_try_begin_track_load()) {
         return ESP_ERR_INVALID_STATE;
     }
+    const uint32_t replacement_token = deck_core_begin_track_replacement(deck);
+    if (!replacement_token) {
+        ui_library_finish_track_load();
+        return ESP_ERR_INVALID_STATE;
+    }
     library_set_selected_track_index(index);
     library_track_t *track = library_get_ptr(index);
     if (track) {
@@ -2948,6 +2959,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
             anlz_free(&meta_snapshot);
             ui_library_apply_empty_track(deck);
             ui_library_finish_track_load();
+            deck_core_end_track_replacement(deck, replacement_token);
             return ESP_FAIL;
         }
         s_deck_loaded_track_key[deck] = track->track_id;
@@ -2967,6 +2979,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
         anlz_free(&meta_snapshot);
     }
     ui_library_finish_track_load();
+    deck_core_end_track_replacement(deck, replacement_token);
     return ESP_OK;
 #endif
 }
