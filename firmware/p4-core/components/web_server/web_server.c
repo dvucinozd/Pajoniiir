@@ -3,6 +3,8 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_app_desc.h"
+#include "board_build_identity.h"
+#include "board_capabilities.h"
 #include "audio_engine.h"
 #include "controller_usb_audio_stream.h"
 #include "audio_uac_health.h"
@@ -28,6 +30,7 @@
 #include "audio_recorder.h"
 #endif
 #include "p4_ota_pull_config.h"
+#include "p4_ota_pull_manifest.h"
 #include "app_settings.h"
 #include <stdio.h>
 #include "sdkconfig.h"
@@ -540,10 +543,12 @@ static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
     char json[sizeof(ssid_esc) + sizeof(url_esc) + sizeof(detail_esc) + sizeof(address_esc) + 192u];
     int n = snprintf(json, sizeof(json),
                      "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s,"
+                     "\"pull_supported\":%s,"
                      "\"probe\":{\"state\":\"%s\",\"detail\":\"%s\","
                      "\"address\":\"%s\"}}",
                      ssid_esc, url_esc,
                      has_password ? "true" : "false",
+                     p4_ota_pull_version_supported(esp_app_get_description()->version) ? "true" : "false",
                      probe_name, detail_esc, address_esc);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
@@ -602,6 +607,10 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
         if (rc == ESP_ERR_INVALID_ARG) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                                        "no service network or update URL configured");
+        }
+        if (rc == ESP_ERR_NOT_SUPPORTED) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "automatic updates unavailable for this development version; use local signed upload");
         }
         if (rc != ESP_OK) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
@@ -1359,6 +1368,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     ESP_LOGD(TAG, "GET /api/status: %s", req->uri);
+    const board_capabilities_t *board = board_capabilities_get();
     audio_engine_deck_status_t deck1 = {0};
     audio_engine_deck_status_t deck2 = {0};
     audio_engine_mixer_snapshot_t mixer = {0};
@@ -1671,6 +1681,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     int json_len = web_api_alloc_printf(
         &json,
         "{"
+        "\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\",\"source_dirty\":%s,"
+        "\"pull_update_supported\":%s,"
+        "\"capabilities\":{\"wifi\":%s,\"ethernet\":%s,\"pcm5102a\":%s,"
+        "\"display_width\":%u,\"display_height\":%u,\"panel_rotation\":%u,"
+        "\"storage_root\":%u,\"controller_root\":%u,\"fixed_output_sample_rate\":%u,"
+        "\"waveform_first\":%s,\"waveform_top_to_bottom\":%s,\"dj_link\":\"%s\",\"recorder\":\"%s\"},"
         "\"main_sink\":\"%s\","
         "\"sd_metrics\":{\"idle_waits\":%u,\"idle_polls\":%u,\"idle_timeouts\":%u,\"idle_errors\":%u,\"idle_max_us\":%u,"
         "\"reads\":%u,\"writes\":%u,\"transfer_errors\":%u,\"read_max_us\":%u,\"write_max_us\":%u,"
@@ -1801,6 +1817,19 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"heap_walk_max_us\":[%u,%u,%u]"
         "}"
         "}",
+        board_id_name(board->id), board->project, board_build_source_sha(),
+        board_build_source_dirty() ? "true" : "false",
+        p4_ota_pull_version_supported(esp_app_get_description()->version) ? "true" : "false",
+        board->wifi ? "true" : "false", board->ethernet ? "true" : "false", board->pcm5102a ? "true" : "false",
+        board->display_width, board->display_height, board->panel_rotation,
+        board->storage_root, board->controller_root, (unsigned)board->fixed_output_sample_rate,
+        board->waveform_first ? "true" : "false", board->waveform_top_to_bottom ? "true" : "false",
+        board->ethernet ? "supported" : "disabled",
+#if CONFIG_AUDIO_RECORDER_ENABLED
+        "experimental",
+#else
+        "disabled",
+#endif
         audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "usb" : "pcm5102a",
         sd_wait.waits, sd_wait.polls, sd_wait.timeouts, sd_wait.errors, sd_wait.max_wait_us,
         sd_transfer.reads, sd_transfer.writes, sd_transfer.errors, sd_transfer.read_max_us, sd_transfer.write_max_us,

@@ -370,7 +370,7 @@ void pajoniiir_common_app_main(void)
     ESP_LOGW(TAG, "reset reason: %d", (int)esp_reset_reason());
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────
-    app_settings_init();   // also initialises NVS; falls back to defaults
+    ESP_ERROR_CHECK(app_settings_init()); // preserve failed NVS; pending OTA rolls back
     const bool boot_network_required =
         board_capabilities_get()->wifi && app_settings_get().wifi_remote;
     ESP_ERROR_CHECK(media_io_gate_init());

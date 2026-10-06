@@ -1094,9 +1094,9 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("monitor_pcm_link")
 
 Assert-FileContains `
-    -Name "OTA release packager emits only P4 silicon for both board projects" `
+    -Name "OTA release packager emits only P4 silicon for all three board projects" `
     -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
-    -LiteralPatterns @('[ValidateSet("main-deck-p4", "main-deck-jc1060")]', '"--target", "p4"', 'target = "p4"')
+    -LiteralPatterns @('[ValidateSet("main-deck-p4", "main-deck-jc1060", "main-deck-m3")]', '"--target", "p4"', 'target = "p4"')
 
 Assert-FileDoesNotContain `
     -Name "OTA release packager excludes the retired S3 target" `
@@ -1241,7 +1241,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "p4 app version excludes derived tags and enforces the descriptor limit" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/cmake/project_version.cmake") `
     -LiteralPatterns @(
         'describe --tags --dirty --exclude "*-g*"',
         "PAJONIIIR_PROJECT_VER_BYTES GREATER 31",
@@ -1249,7 +1249,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "p4 app version cannot fall back to an unordered commit hash" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/cmake/project_version.cmake") `
     -RegexPattern '\bdescribe\b[^\r\n]*--always(?:\s|$)'
 
 Assert-FileContains `
@@ -3409,6 +3409,9 @@ if (-not $pythonSource) {
     Write-Warning "no python with the 'cryptography' module found (tried: $usable); SKIPPING the OTA signing tests"
 }
 if ($pythonSource) {
+    Invoke-Step -Name "run board-aware project version qualification" `
+        -WorkingDirectory $RepoRoot -Executable $pythonSource `
+        -Arguments @("tests/board_adapter/test_project_version.py")
     Invoke-Step -Name "run ota_signing" `
         -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
         -Executable $pythonSource `

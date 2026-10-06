@@ -1,14 +1,16 @@
 param(
-    [ValidateSet("main-deck-p4", "main-deck-jc1060")]
+    [ValidateSet("main-deck-p4", "main-deck-jc1060", "main-deck-m3")]
     [string]$Project = "main-deck-p4",
     [string]$BuildName = "build_signed",
     [string]$OutputRoot = "releases",
     [string]$SigningKey = "keys/ota_signing_private.pem",
     [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
-    [string]$KeyId = "rel-001"
+    [string]$KeyId = "rel-001",
+    [switch]$DevelopmentCandidate
 )
 
 $ErrorActionPreference = "Stop"
+if ($DevelopmentCandidate -and $Project -ne 'main-deck-m3') { throw 'DevelopmentCandidate is reserved for the M3 migration image' }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if ($KeyId -ne "rel-001") {
     throw "Firmware currently trusts only OTA signing key ID 'rel-001'"
@@ -93,6 +95,14 @@ function Read-TargetBuild {
     }
 
     $sourceVersion = [string]$description.project_version
+    if ($ExpectedProject -eq 'main-deck-m3') {
+        if ($DevelopmentCandidate) {
+            if ($sourceVersion -notmatch '^M3-dev-g[0-9a-f]{12}$') { throw 'M3 development candidate requires an M3-dev source version' }
+        } elseif ($sourceVersion -notmatch '^M3-[0-9]+(-[0-9]+-g[0-9a-f]{7,})*$') {
+            throw 'M3 release requires an explicit numeric M3 version'
+        }
+        if ([Text.Encoding]::UTF8.GetByteCount($sourceVersion) -gt 31) { throw 'M3 release version exceeds 31 bytes' }
+    }
     if ($sourceVersion -match '-dirty$') { throw "OTA candidate must come from a clean committed source" }
     [pscustomobject]@{
         Project = $ExpectedProject
@@ -107,18 +117,34 @@ function Read-TargetBuild {
     }
 }
 
+$sourceSha = & git -C $RepoRoot rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve packaging source SHA' }
+$sourceChanges = & git -C $RepoRoot status --porcelain
+if ($LASTEXITCODE -ne 0 -or $sourceChanges) { throw 'OTA packaging requires a clean committed source worktree' }
+$buildIdentityPath = Join-Path $RepoRoot "firmware/$Project/$BuildName/board_build_identity.json"
+$buildIdentity = Get-Content -LiteralPath $buildIdentityPath -Raw | ConvertFrom-Json
+if ($buildIdentity.source_sha -cne $sourceSha -or $buildIdentity.source_dirty -ne 0) {
+    throw 'Build identity is stale or dirty; reconfigure and rebuild the clean source before packaging'
+}
+
 $p4 = Read-TargetBuild `
     -RelativeProjectDir "firmware/$Project" `
     -ExpectedProject $Project `
     -ExpectedChipId 0x0012 `
     -SlotSize 0x400000
+& $Python (Join-Path $PSScriptRoot 'check_board_build.py') --build (Join-Path $RepoRoot "firmware/$Project/$BuildName") --project $Project
+if ($LASTEXITCODE -ne 0) { throw 'Board build verification failed before packaging' }
 if ($p4.SourceVersion -ne $p4.Version) {
     Write-Warning "ESP application version truncated to 31 UTF-8 bytes: '$($p4.Version)'"
 }
 
 $safeVersion = $p4.Version -replace '[^A-Za-z0-9._-]', '_'
 $resolvedOutputRoot = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $RepoRoot $OutputRoot }
-$directoryName = if ($Project -eq 'main-deck-p4') { "pajoniiir-$safeVersion" } else { "pajoniiir-jc1060-$safeVersion" }
+$directoryName = switch ($Project) {
+    'main-deck-p4' { "pajoniiir-$safeVersion" }
+    'main-deck-jc1060' { "pajoniiir-jc1060-$safeVersion" }
+    'main-deck-m3' { "pajoniiir-m3-$safeVersion" }
+}
 $outputDir = Join-Path $resolvedOutputRoot $directoryName
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
@@ -138,6 +164,8 @@ $p4Bundle = Get-Item -LiteralPath $p4BundlePath
 $manifest = [ordered]@{
     schema_version = 2
     release_version = $p4.Version
+    source_sha = $sourceSha
+    development_candidate = [bool]$DevelopmentCandidate
     signing = [ordered]@{
         algorithm = "ecdsa-p256-sha256"
         key_id = $KeyId

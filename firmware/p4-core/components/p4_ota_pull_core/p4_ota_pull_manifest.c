@@ -349,6 +349,7 @@ typedef struct {
 enum {
     RELEASE_FAMILY_RC = 1u,
     RELEASE_FAMILY_M = 2u,
+    RELEASE_FAMILY_M3 = 3u,
 };
 
 static bool parse_u32_part(const char **cursor, uint32_t *out)
@@ -373,7 +374,10 @@ static bool parse_release_version(const char *text, release_version_t *out)
     if (!text || !out) return false;
     const char *p = text;
     release_version_t parsed = {0};
-    if (p[0] == 'R' && p[1] == 'C') {
+    if (strncmp(p, "M3-", 3u) == 0) {
+        parsed.family = RELEASE_FAMILY_M3;
+        p += 3;
+    } else if (p[0] == 'R' && p[1] == 'C') {
         parsed.family = RELEASE_FAMILY_RC;
         p += 2;
     } else if (p[0] == 'M') {
@@ -413,6 +417,13 @@ static bool parse_release_version(const char *text, release_version_t *out)
     return true;
 }
 
+bool p4_ota_pull_version_supported(const char *version)
+{
+    release_version_t parsed;
+    return version && !strstr(version, "-dirty") &&
+           parse_release_version(version, &parsed);
+}
+
 p4_ota_pull_release_order_t p4_ota_pull_release_compare(
     const char *offered_version, const char *running_version)
 {
@@ -430,6 +441,8 @@ p4_ota_pull_release_order_t p4_ota_pull_release_compare(
         return P4_OTA_PULL_RELEASE_UNORDERED;
     }
     if (offered.family != running.family) {
+        if (offered.family == RELEASE_FAMILY_M3 || running.family == RELEASE_FAMILY_M3)
+            return P4_OTA_PULL_RELEASE_UNORDERED;
         return offered.family > running.family ? P4_OTA_PULL_RELEASE_NEWER
                                                 : P4_OTA_PULL_RELEASE_OLDER;
     }

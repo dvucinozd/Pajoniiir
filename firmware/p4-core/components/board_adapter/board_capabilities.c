@@ -27,3 +27,12 @@ const board_capabilities_t *board_capabilities_get(void)
     return &boards[BOARD_JC4880];
 #endif
 }
+const char *board_id_name(board_id_t id)
+{
+    switch (id) {
+    case BOARD_JC4880: return "jc4880";
+    case BOARD_JC1060: return "jc1060";
+    case BOARD_M3: return "m3";
+    default: return "unknown";
+    }
+}

@@ -96,6 +96,10 @@ const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r);
 p4_ota_pull_release_order_t p4_ota_pull_release_compare(
     const char *offered_version, const char *running_version);
 
+/* M3 has a separate M3-<release>[-<distance>-g<hash>] family. Development
+ * hashes and dirty builds cannot start automatic pull discovery. */
+bool p4_ota_pull_version_supported(const char *version);
+
 /* Convenience wrapper used by the pull worker. */
 p4_ota_pull_release_order_t p4_ota_pull_manifest_order(
     const p4_ota_pull_manifest_t *m, const char *running_version);

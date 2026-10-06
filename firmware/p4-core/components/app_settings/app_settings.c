@@ -239,13 +239,9 @@ esp_err_t app_settings_start_backlight_worker(void);
 esp_err_t app_settings_init(void)
 {
     esp_err_t rc = nvs_flash_init();
-    if (rc == ESP_ERR_NVS_NO_FREE_PAGES || rc == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "NVS needs erase (%s) — erasing", esp_err_to_name(rc));
-        rc = nvs_flash_erase();
-        if (rc == ESP_OK) rc = nvs_flash_init();
-    }
     if (rc != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_flash_init: %s", esp_err_to_name(rc));
+        ESP_LOGE(TAG, "nvs_flash_init: %s; NVS preserved for wired recovery",
+                 esp_err_to_name(rc));
         return rc;
     }
 
@@ -255,7 +251,9 @@ esp_err_t app_settings_init(void)
     char ota_url[APP_SETTINGS_OTA_URL_CAP] = {0};
 
     nvs_handle_t handle;
-    if (nvs_open(NS, NVS_READWRITE, &handle) == ESP_OK) {
+    rc = nvs_open(NS, NVS_READWRITE, &handle);
+    if (rc != ESP_OK) return rc;
+    {
         uint8_t value;
         if (nvs_get_u8(handle, "audio_out", &value) == ESP_OK) next.audio_out = value;
         if (nvs_get_u8(handle, "backlight", &value) == ESP_OK) next.backlight_pct = value > 100 ? 100 : value;

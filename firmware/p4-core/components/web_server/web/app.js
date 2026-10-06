@@ -636,6 +636,8 @@ async function refreshOtaNetwork() {
         const response = await fetch('/api/ota/config', { cache: 'no-store' });
         if (!response.ok) throw new Error(await response.text());
         const cfg = await response.json();
+        const checkButton = document.getElementById('ota-net-check');
+        if (checkButton) checkButton.disabled = cfg.pull_supported === false;
         const ssid = document.getElementById('ota-net-ssid');
         const url = document.getElementById('ota-net-url');
         // Do not overwrite a field the operator is typing into.
@@ -645,6 +647,9 @@ async function refreshOtaNetwork() {
             ? `Network: ${cfg.ssid} — passphrase ${cfg.has_password ? 'stored' : 'not set'}`
             : 'No update server configured.';
         renderProbe(cfg.probe);
+        if (cfg.pull_supported === false) {
+            info.textContent += ' Automatic updates are unavailable for this development version; use local signed upload.';
+        }
     } catch (err) {
         info.textContent = `Update-server settings unavailable: ${err.message}`;
     }

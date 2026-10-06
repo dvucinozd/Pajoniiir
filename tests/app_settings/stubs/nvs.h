@@ -22,6 +22,8 @@ typedef int nvs_handle_t;
 
 typedef struct {
     uint32_t open_calls;
+    esp_err_t init_result;
+    uint32_t erase_calls;
     uint32_t set_u8_calls;
     uint32_t commit_calls;
     char     last_key[32];
@@ -50,8 +52,8 @@ static inline void test_nvs_reset(void)
     memset(&g_test_nvs, 0, sizeof(g_test_nvs));
 }
 
-static inline esp_err_t nvs_flash_init(void) { return ESP_OK; }
-static inline esp_err_t nvs_flash_erase(void) { return ESP_OK; }
+static inline esp_err_t nvs_flash_init(void) { return g_test_nvs.init_result; }
+static inline esp_err_t nvs_flash_erase(void) { g_test_nvs.erase_calls++; return ESP_OK; }
 
 static inline esp_err_t nvs_open(const char *ns, int mode, nvs_handle_t *out)
 {

@@ -97,7 +97,8 @@ class OtaSigningTests(unittest.TestCase):
     def test_candidates_require_matching_signed_and_embedded_board(self):
         root = Path(self.temp.name)
         version = "M2.4-70-g12345678"
-        for project, other in (("main-deck-p4", "main-deck-jc1060"), ("main-deck-jc1060", "main-deck-p4")):
+        import itertools
+        for project, other in itertools.permutations(candidate.PROJECTS, 2):
             image = self.candidate_image(project, version)
             (root / f"{project}.bin").write_bytes(image)
             bundle = root / f"{project}.ddjota"

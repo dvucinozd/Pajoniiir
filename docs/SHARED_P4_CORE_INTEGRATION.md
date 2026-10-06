@@ -65,6 +65,24 @@ the shared exclusive OTA/probe/control lease and bounded association retries.
 Real external MP3/PDB cases remain optional SKIP until the qualification fixture
 gate is added. M3 image memory headroom and all physical gates remain NOT RUN.
 
+Phase 3 software gate PASS: full host runner exit 0, three IDF 6.0.2 builds,
+all six wrong-board manifest combinations, signed artifact identity tests,
+M3/JC channel separation and independent CMake version-history tests pass.
+M3 uses `M3-dev-g<12-hex-SHA>` until its own release ancestry exists; dirty
+sources are labelled and pull discovery is disabled for development versions.
+Explicit release builds require a clean source and a bounded numeric version.
+Packaging checks compiled source provenance and board isolation before signing.
+The public-channel generator refuses development M3 versions. `/api/status`
+now reports board/project/source identity, product capabilities and whether
+pull updates are supported; the web check button follows that state.
+
+NVS initialization failures now preserve storage and fail startup, including
+NO_FREE_PAGES/NEW_VERSION cases, instead of erasing settings and legacy cues.
+Pending OTA retains the production 60 s actual AP/HTTP readiness gate; absent
+USB peripherals are not required. Startup readiness/timeout/rollback decision
+tests pass. Physical interrupted upload, boot timeout and rollback remain
+NOT RUN on the integrated image. No device was flashed and no channel changed.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

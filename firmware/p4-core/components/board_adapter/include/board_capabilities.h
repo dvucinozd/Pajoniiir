@@ -25,3 +25,4 @@ typedef struct {
 /* Pure immutable descriptions; root roles never depend on enumeration order. */
 const board_capabilities_t *board_capabilities_for(board_id_t id);
 const board_capabilities_t *board_capabilities_get(void);
+const char *board_id_name(board_id_t id);

@@ -669,6 +669,12 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
 
 esp_err_t p4_ota_pull_check_start(void)
 {
+    const esp_app_desc_t *running = esp_app_get_description();
+    if (!running || !p4_ota_pull_version_supported(running->version)) {
+        note(P4_OTA_PULL_FAILED, ESP_ERR_NOT_SUPPORTED,
+             "pull update disabled for development version");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     app_settings_ota_config_t config = {0};
     app_settings_ota_get_config(&config);
     if (config.ssid[0] == '\0' || config.url[0] == '\0') return ESP_ERR_INVALID_ARG;

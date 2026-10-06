@@ -87,17 +87,18 @@ try {
         -Raw | ConvertFrom-Json
     Assert-Equal "M2.1" ([string]$latest.release) `
         "publisher derives release from signed bundle"
-    foreach ($project in @('main-deck-p4','main-deck-jc1060')) {
+    foreach ($project in @('main-deck-p4','main-deck-jc1060','main-deck-m3')) {
         $fixture = Join-Path $tempRoot "firmware/$project/build_test"
         New-Item -ItemType Directory -Path (Join-Path $fixture 'config') -Force | Out-Null
-        $description = @{project_name=$project;project_version='M2.1';app_bin="$project.bin"}
+        $fixtureVersion = if ($project -eq 'main-deck-m3') { 'M3-52' } else { 'M2.1' }
+        $description = @{project_name=$project;project_version=$fixtureVersion;app_bin="$project.bin"}
         $description | ConvertTo-Json | Set-Content (Join-Path $fixture 'project_description.json')
         $config = Join-Path $fixture 'config/sdkconfig.h'
         Set-Content $config ''
         $binary = New-Object byte[] 256
         $binary[0]=0xe9; $binary[12]=0x12
         [Array]::Copy([BitConverter]::GetBytes([Convert]::ToUInt32('abcd5432',16)),0,$binary,32,4)
-        [Array]::Copy([Text.Encoding]::UTF8.GetBytes('M2.1'),0,$binary,48,4)
+        [Array]::Copy([Text.Encoding]::UTF8.GetBytes($fixtureVersion),0,$binary,48,$fixtureVersion.Length)
         [Array]::Copy([Text.Encoding]::UTF8.GetBytes($project),0,$binary,80,$project.Length)
         $path = Join-Path $fixture "$project.bin"
         [IO.File]::WriteAllBytes($path,$binary)
@@ -154,6 +155,25 @@ try {
     try { & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-jc1060 -ReleaseDir $releaseDir -PublicKey $publicKey | Out-Null }
     catch { $rejected=$_.Exception.Message -match 'not a versioned main-deck-jc1060' }
     if (-not $rejected) { throw 'Channel accepted renamed wrong-board bundle' }
+    $m3Bundle = Join-Path $releaseDir 'main-deck-m3.ddjota'
+    & $Python (Join-Path $RepoRoot 'tools/ota_signing.py') bundle --private-key $privateKey --target p4 --chip-id 0x12 --project main-deck-m3 --version M3-52 --input $image --output $m3Bundle
+    if ($LASTEXITCODE -ne 0) { throw 'M3 test bundle failed' }
+    $m3Output = & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-m3 -ReleaseDir $releaseDir -PublicKey $publicKey -WriteToReleaseDir
+    if (($m3Output -join "`n") -notmatch [regex]::Escape('https://ota.pajoniiir.eu/m3/latest.json')) { throw 'M3 channel not isolated' }
+    $latest = Get-Content (Join-Path $releaseDir 'latest.json') -Raw | ConvertFrom-Json
+    Assert-Equal 'M3-52/main-deck-m3.ddjota' $latest.p4.url 'M3 channel schema'
+    foreach ($wrongRoot in @('https://ota.pajoniiir.eu','https://ota.pajoniiir.eu/jc1060')) {
+        $rejected=$false
+        try { & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-m3 -ReleaseDir $releaseDir -PublicKey $publicKey -BaseUrl $wrongRoot | Out-Null }
+        catch { $rejected=$_.Exception.Message -match 'separate OTA channel' }
+        if (-not $rejected) { throw "M3 accepted wrong channel $wrongRoot" }
+    }
+    & $Python (Join-Path $RepoRoot 'tools/ota_signing.py') bundle --private-key $privateKey --target p4 --chip-id 0x12 --project main-deck-m3 --version M3-dev-g123456789abc --input $image --output $m3Bundle
+    if ($LASTEXITCODE -ne 0) { throw 'M3 development test bundle failed' }
+    $rejected=$false
+    try { & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-m3 -ReleaseDir $releaseDir -PublicKey $publicKey | Out-Null }
+    catch { $rejected=$_.Exception.Message -match 'development versions cannot' }
+    if (-not $rejected) { throw 'Development M3 image generated a public channel' }
 } finally {
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import struct
 import re
+import subprocess
 
 
 def verify(build: Path, project: str, experimental_recorder: bool = False) -> None:
@@ -52,6 +53,14 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
     assert struct.unpack_from("<I", image, 32)[0] == 0xABCD5432, "missing app descriptor"
     embedded_project = image[80:112].split(b"\0", 1)[0].decode()
     assert embedded_project == project, "wrong embedded OTA project identity"
+    identity = json.loads((build / "board_build_identity.json").read_text())
+    assert re.fullmatch(r"[0-9a-f]{40}", identity["source_sha"]), "invalid compiled source SHA"
+    assert identity["source_dirty"] in (0, 1), "invalid source cleanliness flag"
+    assert identity["source_sha"].encode() in image, "source metadata not bound into the application"
+    root = project_path.parent.parent
+    current_sha = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    dirty = bool(subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True).strip())
+    assert identity == {"source_sha": current_sha, "source_dirty": int(dirty)}, "stale build identity; reconfigure and rebuild"
     print(f"PASS {project}: {len(image)} bytes, isolated BSP, LVGL 9.5.0, app identity")
 
 

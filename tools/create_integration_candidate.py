@@ -13,7 +13,7 @@ import shutil
 from check_board_build import verify as verify_board
 from ota_signing import inspect_bundle, _load_public, _raw_verify
 
-PROJECTS = {"main-deck-p4": "JC4880", "main-deck-jc1060": "JC1060"}
+PROJECTS = {"main-deck-p4": "JC4880", "main-deck-jc1060": "JC1060", "main-deck-m3": "M3"}
 
 
 def record(path):
@@ -85,10 +85,18 @@ def main():
     commit = git(root, "rev-parse", "HEAD")
     if git(root, "rev-parse", "@{upstream}") != commit:
         raise ValueError("candidate source is not the pushed upstream revision")
-    version = git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*")
+    identity = json.loads((build / "board_build_identity.json").read_text())
+    if identity != {"source_sha": commit, "source_dirty": 0}:
+        raise ValueError("stale or dirty compiled source identity")
+    version = json.loads((build / "project_description.json").read_text())["project_version"]
+    if args.project != "main-deck-m3" and version != git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*", "--match", "M2*"):
+        raise ValueError("stale JC version ancestry")
     ci = json.loads(args.ci_evidence.read_text(encoding="utf-8-sig"))
-    if ci["headSha"] != commit or ci["conclusion"] != "success" or len(ci["jobs"]) != 8 or any(j["conclusion"] != "success" for j in ci["jobs"]):
-        raise ValueError("exact candidate SHA needs all eight successful CI jobs")
+    required = {"Host regression tests", "ESP32-P4 M3 shared-core firmware"}
+    required |= {f"ESP32-P4 firmware ({v})" for v in ("regular", "recorder", "dj-ui")}
+    required |= {f"ESP32-P4 JC1060 firmware ({v})" for v in ("regular", "recorder", "psram", "dj-ui")}
+    if ci["headSha"] != commit or ci["conclusion"] != "success" or not required <= {j["name"] for j in ci["jobs"]} or any(j["conclusion"] != "success" for j in ci["jobs"]):
+        raise ValueError("exact candidate SHA needs every required successful CI job")
     verify_board(build, args.project)
     config = (build / "config/sdkconfig.h").read_text()
     if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
@@ -108,6 +116,9 @@ def main():
     if idf != "v6.0.2":
         raise ValueError("candidate requires ESP-IDF v6.0.2")
     manifest, signature = verify_release_manifest(release, args.public_key, args.project, version, image, bundle)
+    signed_source = json.loads((release / "manifest.json").read_text(encoding="utf-8-sig"))
+    if signed_source.get("source_sha") != commit:
+        raise ValueError("signed release manifest has another source SHA")
     locks = [record(root / "firmware" / p / "dependencies.lock") | {"project": p} for p in PROJECTS]
     files = [record(build / "config/sdkconfig.h"), record(build / "partition_table/partition-table.bin"),
              record(build / "bootloader/bootloader.bin"), record(build / "project_description.json")]

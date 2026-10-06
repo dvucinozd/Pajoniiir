@@ -113,6 +113,15 @@ int main(void)
     assert(ddj_ota_manifest_parse(header, sizeof(header), DDJ_OTA_TARGET_P4,
            0x0012u, "main-deck-jc1060", 0x380000u, &manifest) == DDJ_OTA_MANIFEST_WRONG_PROJECT);
 
+    const char *projects[] = {"main-deck-p4", "main-deck-jc1060", "main-deck-m3"};
+    for (unsigned offered = 0; offered < 3; ++offered) {
+        make_header(header, DDJ_OTA_TARGET_P4, 0x0012u, projects[offered]);
+        for (unsigned running = 0; running < 3; ++running) {
+            assert(ddj_ota_manifest_parse(header, sizeof(header), DDJ_OTA_TARGET_P4,
+                0x0012u, projects[running], 0x400000u, &manifest) ==
+                (running == offered ? DDJ_OTA_MANIFEST_OK : DDJ_OTA_MANIFEST_WRONG_PROJECT));
+        }
+    }
     puts("ota_manifest tests passed");
     return 0;
 }
