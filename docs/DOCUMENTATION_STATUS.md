@@ -89,7 +89,10 @@ and only eight bytes less free memory, matching BSS growth. A subsequent
 cue sound, zero strict fault deltas and zero allocation failures. Largest
 internal/DMA blocks remain 31,744 bytes during playback. The empty-deck
 startup largest-block variation is retained in the record; this focused check
-does not constitute a new exact-image 180-minute soak. See the
+does not constitute a new exact-image 180-minute soak. The operator also
+confirms correct real-cover-to-logo replacement and two-page Library browsing
+without stale artwork. Media replacement and delayed/corrupt cover variants
+remain open. See the
 [candidate record](validation/M2_5_DEFAULT_ARTWORK_20261006.md).
 
 One authoritative P4 core serves two board entrypoints:

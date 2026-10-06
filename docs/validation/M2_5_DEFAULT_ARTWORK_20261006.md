@@ -1,8 +1,9 @@
 # M2.5 development artwork fallback — 2026-10-06
 
 Status: **software verified; signed candidate installed; focused JC4880 logo
-display and dual-deck listening/resource checks PASS**. Remaining artwork
-transition variants and full exact-image qualification remain open.
+display, basic cover transitions and dual-deck listening/resource checks
+PASS**. Media-change/late-cover variants and full exact-image qualification
+remain open.
 
 ## Change and source
 
@@ -149,6 +150,23 @@ Evidence lives in the candidate root's `audio-60s/` subdirectory. SHA-256:
 
 This is focused logo/UI candidate audio acceptance, not a new 180-minute soak
 or repetition of the full transport/lifecycle matrix on this exact image.
+
+## Installed artwork transitions
+
+The operator subsequently confirms that loading a track with real cover art
+on D1, then a no-cover track using the Pajoniiir logo, replaces the displayed
+image correctly. Browsing two Library pages and returning also keeps artwork
+with its corresponding rows, without the previous track's image remaining.
+The final read-only snapshot shows D1 `Frankey & Sandrino - Blue Flash`, READY,
+both decks stopped, the same candidate/slot, controller and storage present,
+and zero allocation/critical-allocation failures. This snapshot is final state,
+not proof of the identity of each intermediate selected track.
+
+Status/resources and the operator response are retained as
+`artwork-transition-status.json`, `artwork-transition-resources.json` and
+`operator-observations.json` in the candidate evidence root. Rapid source/media
+replacement and deliberately delayed or corrupt cover arrival remain NOT RUN;
+basic load/page transitions do not imply those cases passed.
 
 The first clean build session ended before final linking. Resuming the same
 clean build completed successfully with observed exit code zero. Original and
