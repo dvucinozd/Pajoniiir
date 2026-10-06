@@ -20,6 +20,7 @@ typedef struct {
     bool audio_antialias;
     bool wifi_wpa3_transition;
     bool wifi_apsta;
+    bool overview_artwork_in_title;
 } board_capabilities_t;
 
 /* Pure immutable descriptions; root roles never depend on enumeration order. */

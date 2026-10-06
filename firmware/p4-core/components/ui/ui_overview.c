@@ -1,6 +1,12 @@
 #ifndef WIN32
 #include "board_adapter.h"
 #endif
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
+#include "board_capabilities.h"
+#define OVERVIEW_ARTWORK_IN_TITLE (board_capabilities_get()->overview_artwork_in_title)
+#else
+#define OVERVIEW_ARTWORK_IN_TITLE false
+#endif
 #include "ui_overview.h"
 #include "ui_color_preview.h"
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
@@ -173,7 +179,7 @@ static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
 #define OVERVIEW_WAVE_STRIP_MARGIN_PX UI_OVERVIEW_WAVE_CACHE_MARGIN_PX
 #define OVERVIEW_WAVE_STRIP_W (OVERVIEW_CV_W + (OVERVIEW_WAVE_STRIP_MARGIN_PX * 2))
 _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider than visible canvas");
-#define OVERVIEW_MINI_CV_W (UI_HOR_RES / 2 - 46)
+#define OVERVIEW_MINI_CV_W (UI_HOR_RES / 2 - (OVERVIEW_ARTWORK_IN_TITLE ? 8 : 46))
 #define OVERVIEW_MINI_CV_H 45
 #define OVERVIEW_WAVE_X 82
 #define OVERVIEW_WAVE_INSET_X 0
@@ -809,8 +815,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_text_font(panel->label_title, &lv_font_montserrat_24, LV_PART_MAIN);
     lv_obj_set_style_text_color(panel->label_title, COL_TEXT, LV_PART_MAIN);
     lv_label_set_long_mode(panel->label_title, LV_LABEL_LONG_CLIP);
-    lv_obj_set_width(panel->label_title, OVERVIEW_TITLE_TEXT_W);
-    lv_obj_align(panel->label_title, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_set_width(panel->label_title, OVERVIEW_TITLE_TEXT_W - (OVERVIEW_ARTWORK_IN_TITLE ? 30 : 0));
+    lv_obj_align(panel->label_title, LV_ALIGN_LEFT_MID, OVERVIEW_ARTWORK_IN_TITLE ? 38 : 8, 0);
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
     lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
@@ -874,8 +880,14 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
         COL_TEXT_MUTED, info_x + 100, OVERVIEW_MIX_ROW_Y + 4,
         OVERVIEW_DECK_INFO_W - 104, "EMPTY");
-    panel->artwork = lv_image_create(panel->panel);
-    lv_obj_set_pos(panel->artwork, info_x + 4, OVERVIEW_MINI_WAVE_Y + 5);
+    panel->artwork = lv_image_create(OVERVIEW_ARTWORK_IN_TITLE ? title_strip : panel->panel);
+    if (OVERVIEW_ARTWORK_IN_TITLE) {
+        lv_image_set_pivot(panel->artwork, 0, 0);
+        lv_image_set_scale(panel->artwork, 210); /* 34 px source fits the 30 px title row. */
+        lv_obj_set_pos(panel->artwork, 4, 1);
+    } else {
+        lv_obj_set_pos(panel->artwork, info_x + 4, OVERVIEW_MINI_WAVE_Y + 5);
+    }
 #ifndef WIN32
     panel->artwork_pixels = heap_caps_calloc(UI_ARTWORK_DECK_PX * UI_ARTWORK_DECK_PX,
                                            sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -954,7 +966,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_opa(panel->mini_wave_border, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->mini_wave_border, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->mini_wave_border, OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H);
-    lv_obj_set_pos(panel->mini_wave_border, info_x + 42, OVERVIEW_MINI_WAVE_Y);
+    lv_obj_set_pos(panel->mini_wave_border, info_x + (OVERVIEW_ARTWORK_IN_TITLE ? 4 : 42), OVERVIEW_MINI_WAVE_Y);
     /* Tap-to-seek across the full track: keep the border clickable (its canvas,
      * played overlay, cue markers and playhead are all non-clickable, so taps
      * land here) and tag it with the deck so the handler seeks the right one. */
@@ -2601,7 +2613,7 @@ void ui_overview_init(const ui_overview_config_t *config)
         s_overview_config = *config;
     }
     ui_overview_scheduler_init(&s_overview_scheduler);
-#ifndef WIN32
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
     s_overview_scheduler.top_to_bottom = board_capabilities_get()->waveform_top_to_bottom;
 #endif
 }

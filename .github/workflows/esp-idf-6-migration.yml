@@ -185,7 +185,7 @@ jobs:
       - name: Run UI simulator screenshot gate
         shell: pwsh
         run: |
-          foreach ($presentation in @('legacy','product-compact','product-wide','native-compact','native-wide','runtime-compact','runtime-wide','link-wide')) {
+          foreach ($presentation in @('legacy','product-compact','product-wide','product-m3','native-compact','native-wide','runtime-compact','runtime-wide','link-wide')) {
               & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 -Presentation $presentation *>> ui-simulator.log
               if ($LASTEXITCODE -ne 0) {
                   Get-Content ui-simulator.log | Select-Object -Last 100

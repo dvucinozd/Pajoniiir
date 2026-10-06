@@ -145,11 +145,14 @@ target_compile_definitions(ui_link_wide_e2e PRIVATE ${runtime_definitions}
     UI_LINK_SIMULATOR=1 DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
 target_link_libraries(ui_link_wide_e2e PRIVATE lvgl m)
 foreach(layout IN ITEMS compact wide)
-    add_executable(ui_product_${layout}_e2e ${runtime_sources})
-    target_include_directories(ui_product_${layout}_e2e PRIVATE ${runtime_includes})
-    target_compile_definitions(ui_product_${layout}_e2e PRIVATE ${runtime_definitions})
+    add_executable(ui_product_${layout}_e2e ${runtime_sources}
+        "${REPO_ROOT}/firmware/p4-core/components/board_adapter/board_capabilities.c")
+    target_include_directories(ui_product_${layout}_e2e PRIVATE ${runtime_includes}
+        "${REPO_ROOT}/firmware/p4-core/components/board_adapter/include")
+    target_compile_definitions(ui_product_${layout}_e2e PRIVATE ${runtime_definitions}
+        UI_SIM_BOARD_POLICY=1 BOARD_CAPABILITIES_PC_TEST=1)
     if(layout STREQUAL "wide")
-        target_compile_definitions(ui_product_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
+        target_compile_definitions(ui_product_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600 UI_SIM_BOARD_JC1060=1)
     endif()
     target_link_libraries(ui_product_${layout}_e2e PRIVATE lvgl m)
     add_executable(dj_ui_runtime_${layout}_e2e ${runtime_sources}
@@ -162,6 +165,14 @@ foreach(layout IN ITEMS compact wide)
     endif()
     target_link_libraries(dj_ui_runtime_${layout}_e2e PRIVATE lvgl m)
 endforeach()
+
+add_executable(ui_product_m3_e2e ${runtime_sources}
+    "${REPO_ROOT}/firmware/p4-core/components/board_adapter/board_capabilities.c")
+target_include_directories(ui_product_m3_e2e PRIVATE ${runtime_includes}
+    "${REPO_ROOT}/firmware/p4-core/components/board_adapter/include")
+target_compile_definitions(ui_product_m3_e2e PRIVATE ${runtime_definitions}
+    UI_SIM_BOARD_POLICY=1 UI_SIM_BOARD_SETTINGS=1 BOARD_CAPABILITIES_PC_TEST=1 CONFIG_PAJONIIIR_BOARD_M3=1)
+target_link_libraries(ui_product_m3_e2e PRIVATE lvgl m)
 
 if(MINGW)
     target_link_options(ui_simulator_e2e PRIVATE -static-libgcc -static-libstdc++)

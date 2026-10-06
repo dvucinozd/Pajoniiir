@@ -1,6 +1,9 @@
 #ifndef WIN32
 #include "board_adapter.h"
 #endif
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
+#include "board_capabilities.h"
+#endif
 #include "ui.h"
 #include "lvgl.h"
 #include "ui_theme.h"   // centralised colour palette (COL_*); needs lvgl.h above
@@ -1425,7 +1428,7 @@ void ui_update(void) {
     ui_idle_service(&ctx);
 #endif
     bool waveform_first = false;
-#ifndef WIN32
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
     waveform_first = board_capabilities_get()->waveform_first;
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (waveform_first) ui_overview_update(&ctx);

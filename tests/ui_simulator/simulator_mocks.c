@@ -168,7 +168,11 @@ static app_settings_t s_settings = {
     .time_remain = 1,
     .cue_mode = 0,
     .master_trim_preset = 0,
+#ifdef CONFIG_PAJONIIIR_BOARD_M3
+    .wifi_remote = 1,
+#else
     .wifi_remote = 0,
+#endif
 };
 
 esp_err_t app_settings_init(void)
@@ -187,6 +191,7 @@ void app_settings_set_time_remain(uint8_t value) { s_settings.time_remain = valu
 void app_settings_set_cue_mode(uint8_t value) { s_settings.cue_mode = value; }
 void app_settings_set_master_trim_preset(uint8_t value) { s_settings.master_trim_preset = value; }
 void app_settings_set_wifi_remote(uint8_t value) { s_settings.wifi_remote = value; }
+void app_settings_set_dj_link(uint8_t value) { s_settings.dj_link = value; }
 
 int64_t esp_timer_get_time(void)
 {

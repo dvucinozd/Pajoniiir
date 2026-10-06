@@ -1,4 +1,8 @@
 #include "ui_settings.h"
+#ifdef UI_SIM_BOARD_SETTINGS
+#include "app_settings.h"
+#include "board_capabilities.h"
+#endif
 #ifndef WIN32
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -335,7 +339,7 @@ static void wifi_remote_event_cb(lv_event_t *event)
     lv_obj_t *sw = lv_event_get_target(event);
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
     bool ethernet = s_config.hor_res == 1024;
-#ifndef WIN32
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
     ethernet = board_capabilities_get()->ethernet;
     if (ethernet) {
         app_settings_set_dj_link(on ? 1 : 0);
@@ -500,7 +504,11 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #else
     int bl_init = 80;
     s_master_trim_preset = 0;
+#ifdef UI_SIM_BOARD_SETTINGS
+    bool wifi_remote_init = board_capabilities_get()->ethernet ? app_settings_get().dj_link != 0 : app_settings_get().wifi_remote != 0;
+#else
     bool wifi_remote_init = false;
+#endif
 #endif
 
     const int left_x = 30;

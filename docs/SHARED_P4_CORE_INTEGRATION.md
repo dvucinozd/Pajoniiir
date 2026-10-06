@@ -123,6 +123,22 @@ prevent stale completion from releasing a newer reservation. The real deck-core
 tests cover both orders, other-deck independence and LOAD LOCK off. Physical
 seek/loop/CUE, replacement races and opposite-pitch acceptance remain NOT RUN.
 
+Phase 6 software gate PASS: full host qualification exits 0, all nine simulator
+configurations pass, and all three IDF 6.0.2 builds pass with unchanged locks:
+JC4880 2,604,448 B, JC1060 2,661,616 B, M3 2,565,616 B.
+Display integration adds a product M3 simulator using the shared board
+capabilities, waveform-first update and top-to-bottom scheduling. Artwork uses
+a board layout policy: the M3 cover fits inside the title row, preserving both
+648 x 141 main waveforms at x=82/y=0,142 and the accepted 392 x 45 full-track
+waveforms. JC layout and screenshot baselines remain unchanged. M3 retains
+Wi-Fi ON and PCM5102A MAIN/USB cue in its simulated Settings.
+
+The M3 scripted scenario checks all five zoom geometries and includes reviewed
+screenshots for playlists/folders/export order, memory cues, source/local Hot
+Cues, missing/restored artwork, PWV4, screensaver and Settings restoration.
+These are software rendering/navigation checks, not physical scanout timing,
+touch or audio acceptance. Final hardware gates remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.
