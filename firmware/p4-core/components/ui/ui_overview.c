@@ -2469,7 +2469,9 @@ static void ui_overview_format_remaining_time(char *out,
 
 static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
                                     uint16_t effective_speed_permille,
-                                    bool scratch_position_authoritative)
+                                    bool scratch_position_authoritative,
+                                    ui_overview_update_phase_t phase,
+                                    uint32_t *frame_elapsed_ms)
 {
     uint8_t idx = ui_overview_deck_index(deck);
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
@@ -2484,13 +2486,23 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
                             : effective_speed_permille != 0
                             ? effective_speed_permille
                             : ui_pitch_speed_permille(state);
-    uint32_t elapsed_ms = ui_position_interpolator_update(
+    uint32_t elapsed_ms = phase == UI_OVERVIEW_PHASE_CHROME ? *frame_elapsed_ms :
+        ui_position_interpolator_update(
         &s_overview_position_interp[idx],
         state->position_ms,
         duration_ms,
         state->playing,
         speed_permille,
         ui_monotonic_time_us());
+    *frame_elapsed_ms = elapsed_ms;
+    if (phase == UI_OVERVIEW_PHASE_WAVEFORM) {
+        /* Do not take status/track locks or query artwork before either main
+         * strip reaches the framebuffer. The single-buffer scanout window is
+         * shared by both decks, not a separate window for each deck's chrome. */
+        ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
+                                             state->playing);
+        return;
+    }
     uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
     const ui_deck_track_info_t *info = s_overview_deck_info[idx];
     ui_deck_track_info_t empty_info = {0};
@@ -2586,8 +2598,9 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
     ui_obj_set_text_color_if_changed(panel->master_tempo_label,
                                       state->master_tempo ? COL_ON_ACCENT : COL_TEXT_MUTED);
 
-    ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
-                                         state->playing);
+    if (phase == UI_OVERVIEW_PHASE_ALL)
+        ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
+                                             state->playing);
     ui_update_overview_beat_strip(deck, elapsed_ms);
 }
 
@@ -2682,12 +2695,21 @@ void ui_overview_update(const ui_frame_context_t *ctx)
                                           &first_deck,
                                           &second_deck);
 
-    ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck],
-                            ctx->mixer_snapshot.effective_speed_permille[first_deck],
-                            ctx->mixer_snapshot.scratch_position_authoritative[first_deck]);
-    ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck],
-                            ctx->mixer_snapshot.effective_speed_permille[second_deck],
-                            ctx->mixer_snapshot.scratch_position_authoritative[second_deck]);
+    bool waveform_first = false;
+#if !defined(WIN32) || defined(UI_SIM_BOARD_POLICY)
+    waveform_first = board_capabilities_get()->waveform_first;
+#endif
+    ui_overview_update_step_t steps[4];
+    uint32_t frame_elapsed_ms[DECK_CORE_DECK_COUNT] = {0};
+    uint8_t step_count = ui_overview_scheduler_plan_updates(first_deck, second_deck,
+                                                            waveform_first, steps);
+    for (uint8_t i = 0; i < step_count; ++i) {
+        uint8_t deck = steps[i].deck;
+        ui_update_overview_deck(deck, &ctx->deck_state[deck],
+                                ctx->mixer_snapshot.effective_speed_permille[deck],
+                                ctx->mixer_snapshot.scratch_position_authoritative[deck],
+                                steps[i].phase, &frame_elapsed_ms[deck]);
+    }
     ui_update_overview_fx_panel(&ctx->beat_fx_state);
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ui_overview_update_vu_meter(deck, ctx->mixer_snapshot.deck_peak_display[deck]);

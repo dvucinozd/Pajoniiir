@@ -24,6 +24,9 @@ hardware. See [board policies](docs/SHARED_P4_BOARDS.md),
 The [current M3 candidate record](docs/validation/M3_SHARED_CORE_11574_20261006.md)
 identifies the installed development candidate and its signed OTA health result.
 Audio/USB lifecycle campaigns and full hardware qualification remain open.
+The initial dual-deck timing attempt exposed a
+[waveform regression](docs/validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md);
+the signed development image has no production hardware PASS.
 
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**

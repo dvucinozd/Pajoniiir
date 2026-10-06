@@ -731,11 +731,9 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @(
         "ui_create_overview_phase_meter",
         "ui_update_phase_meter",
-        "s_phase_meter_label",
-        "OVERVIEW_PHASE_W",
-        "OVERVIEW_PHASE_X",
-        "OVERVIEW_PHASE_Y"
-    )
+        "s_phase_meter_label"
+    ) `
+    -RegexPattern '\bOVERVIEW_PHASE_[WXY]\b'
 
 Assert-FileContains `
     -Name "P4 Overview tempo cluster keeps pitch readable" `

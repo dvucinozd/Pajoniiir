@@ -1,5 +1,22 @@
 #include "ui_overview_scheduler.h"
 
+uint8_t ui_overview_scheduler_plan_updates(uint8_t first, uint8_t second,
+                                           bool waveform_first,
+                                           ui_overview_update_step_t steps[4])
+{
+    if (!steps) return 0;
+    if (waveform_first) {
+        steps[0] = (ui_overview_update_step_t){first, UI_OVERVIEW_PHASE_WAVEFORM};
+        steps[1] = (ui_overview_update_step_t){second, UI_OVERVIEW_PHASE_WAVEFORM};
+        steps[2] = (ui_overview_update_step_t){first, UI_OVERVIEW_PHASE_CHROME};
+        steps[3] = (ui_overview_update_step_t){second, UI_OVERVIEW_PHASE_CHROME};
+        return 4;
+    }
+    steps[0] = (ui_overview_update_step_t){first, UI_OVERVIEW_PHASE_ALL};
+    steps[1] = (ui_overview_update_step_t){second, UI_OVERVIEW_PHASE_ALL};
+    return 2;
+}
+
 void ui_overview_scheduler_init(ui_overview_scheduler_t *scheduler)
 {
     if (!scheduler) {

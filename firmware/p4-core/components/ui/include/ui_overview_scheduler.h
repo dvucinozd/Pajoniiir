@@ -13,6 +13,23 @@ typedef struct {
     bool top_to_bottom;
 } ui_overview_scheduler_t;
 
+typedef enum {
+    UI_OVERVIEW_PHASE_ALL,
+    UI_OVERVIEW_PHASE_WAVEFORM,
+    UI_OVERVIEW_PHASE_CHROME,
+} ui_overview_update_phase_t;
+
+typedef struct {
+    uint8_t deck;
+    ui_overview_update_phase_t phase;
+} ui_overview_update_step_t;
+
+/* The scanout policy can reserve the early frame for both waveform writes.
+ * Other boards retain their combined per-deck update. At most four steps. */
+uint8_t ui_overview_scheduler_plan_updates(uint8_t first, uint8_t second,
+                                           bool waveform_first,
+                                           ui_overview_update_step_t steps[4]);
+
 void ui_overview_scheduler_init(ui_overview_scheduler_t *scheduler);
 void ui_overview_scheduler_begin_tick(ui_overview_scheduler_t *scheduler,
                                       uint8_t main_redraw_budget);

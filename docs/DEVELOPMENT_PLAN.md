@@ -20,6 +20,9 @@ the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
 operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
 touch/settings confirmations remain in the image-specific
 [95e installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
+The 11574f4e timing attempt subsequently failed on operator-confirmed dual
+waveform deformation; see [the regression and repair candidate](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
+The full timing gate must restart after exact-image physical retest.
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).
