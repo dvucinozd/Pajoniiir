@@ -79,7 +79,15 @@ Development `master` additionally includes the user-supplied default Pajoniiir
 artwork logo. Overview and track Library rows use pre-rendered read-only
 thumbnails when real artwork is unavailable; empty product decks and folder
 rows remain distinct. It is a new M2.5 candidate change, not present in the
-frozen v91. Physical logo/render acceptance remains NOT RUN.
+frozen v91. A clean `M2.4-111-ge09e9ca4` candidate from `e09e9ca4` has now
+been installed in `ota_0` through signed OTA. Startup, API, FLX4 and storage
+are available, with zero allocation failures, and the operator confirms logo
+visibility in Library and on loaded D1 (`Red For Love {320}`). A matched
+stopped-track memory comparison has unchanged largest internal/DMA blocks
+and only eight bytes less free memory, matching BSS growth. Active
+audio/resource checks remain open; the empty-deck startup largest-block
+variation is retained in the record. See the
+[candidate record](validation/M2_5_DEFAULT_ARTWORK_20261006.md).
 
 One authoritative P4 core serves two board entrypoints:
 
