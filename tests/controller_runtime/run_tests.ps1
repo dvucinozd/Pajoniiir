@@ -12,6 +12,8 @@ $HostManager = Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager
 $Control = Join-Path $RepoRoot "firmware/p4-core/components/control_link/include"
 $Reconciler = Join-Path $RepoRoot "firmware/common/control_state_reconciler/include"
 $Stubs = Join-Path $PSScriptRoot "stubs"
+python (Join-Path $PSScriptRoot "verify_m3_reference.py")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $CommonArgs = @(
     "-std=c11", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-pthread",
@@ -24,6 +26,17 @@ $CommonArgs = @(
     "-I$Reconciler",
     "-I$Stubs"
 )
+
+$M3ParityExe = Join-Path $BuildDir "test_m3_flx4_parity.exe"
+gcc @CommonArgs "-I$(Join-Path $RepoRoot 'firmware/p4-core/components/controller_led_runtime/include')" `
+    (Join-Path $Runtime "flx4_map.c") (Join-Path $Codec "usb_midi_codec.c") `
+    (Join-Path $RepoRoot "firmware/p4-core/components/controller_led_runtime/flx4_led_midi.c") `
+    (Join-Path $PSScriptRoot "legacy_m3/legacy_m3_flx4_map.c") `
+    (Join-Path $PSScriptRoot "legacy_m3/legacy_m3_flx4_led.c") `
+    (Join-Path $PSScriptRoot "test_m3_flx4_parity.c") -o $M3ParityExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $M3ParityExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $BufferExe = Join-Path $BuildDir "test_controller_event_buffer"
 $RuntimeExe = Join-Path $BuildDir "test_controller_runtime"

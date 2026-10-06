@@ -139,6 +139,28 @@ Cues, missing/restored artwork, PWV4, screensaver and Settings restoration.
 These are software rendering/navigation checks, not physical scanout timing,
 touch or audio acceptance. Final hardware gates remain NOT RUN.
 
+Phase 7 software gate PASS: full host qualification and all three IDF 6.0.2
+builds exit 0 with unchanged dependency locks and Phase 6 image sizes.
+It uses the existing shared USB/controller infrastructure on every board:
+the sole MSC mount owner, deferred/coalesced semantic input, connection and
+transport epochs, nonblocking MIDI OUT and producer fencing before teardown.
+The MSC transfer object and sector count both retain the 8 KiB byte bound,
+including sector sizes other than 512 B. Recovery is scoped by immutable root
+roles; unknown device routing defers admission and cannot trigger a global
+power cycle. M3 retains 256 MIDI OUT queue entries, including shifted pad banks.
+Profiles v2/v3/v4 use the same compiler/parser/storage/runtime, atomic activation
+and held-state reconciliation; built-in fallback is exact FLX4 VID/PID only.
+
+The frozen M3 mapper/LED code is test-only and its original source hashes are
+verified after reversing namespacing. Direct parity executes 1,834,758 messages
+and 131,072 LED combinations. Two documented donor FX-target differences are
+retained: wrong-channel selector notes are rejected and redundant identical
+target publications are permitted. Valid selectors retain the same semantic
+state, including both/release fallback; all other input and LED bytes agree.
+USB CIN padding beyond message length is ignored by both semantic mappers.
+M3 storage throughput, actual root enumeration/reconnect, FAT32/exFAT playback
+and profile/UAC hardware acceptance remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

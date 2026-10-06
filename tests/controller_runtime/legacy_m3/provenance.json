@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/dvucinozd/Pajoniiir-M3",
+  "source_sha": "e95417c4e2fea007d2c1dcb693790914692c62ba",
+  "transformation": "public flx4_ symbols namespaced; include renamed; provenance comment added",
+  "files": [
+    {
+      "source": "firmware/main-deck-p4/components/p4_flx4_host/include/p4_flx4_map.h",
+      "sha256": "dcbf578bb7f96e179f88a4b272276b270ea80203367dc2ad3859909f82265a4d",
+      "test_reference": "legacy_m3_flx4_map.h"
+    },
+    {
+      "source": "firmware/main-deck-p4/components/p4_flx4_host/p4_flx4_map.c",
+      "sha256": "041f0bd5399262731bcb3f2bfff45b68b5546f15f20112dc12abb46265836852",
+      "test_reference": "legacy_m3_flx4_map.c"
+    },
+    {
+      "source": "firmware/main-deck-p4/components/p4_flx4_host/p4_flx4_led.c",
+      "sha256": "d4ca49d3b8827e46e75d83897f12d0a5c726fe74c1329acda4958ea364152623",
+      "test_reference": "legacy_m3_flx4_led.c"
+    }
+  ]
+}
