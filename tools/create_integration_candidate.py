@@ -15,6 +15,28 @@ from ota_signing import inspect_bundle, _load_public, _raw_verify
 
 PROJECTS = {"main-deck-p4": "JC4880", "main-deck-jc1060": "JC1060", "main-deck-m3": "M3"}
 
+MATRIX_JOBS = {"Host regression tests"}
+MATRIX_JOBS |= {f"ESP32-P4 M3 shared-core firmware ({v})" for v in ("regular", "recorder", "dj-ui", "link")}
+MATRIX_JOBS |= {f"ESP32-P4 firmware ({v})" for v in ("regular", "recorder", "dj-ui")}
+MATRIX_JOBS |= {f"ESP32-P4 JC1060 firmware ({v})" for v in ("regular", "recorder", "psram", "dj-ui")}
+ADDITIONAL_CI = {
+    "usb": ("P4 dual USB host software gates", {"Host tests and ESP32-P4 builds"}),
+    "documentation": ("Documentation integrity", {"Links, retired paths and whitespace"}),
+}
+
+
+def verify_ci(ci, commit, required_jobs, workflow=None):
+    """A green board matrix cannot stand in for the other required gates."""
+    jobs = ci.get("jobs", [])
+    names = [j.get("name") for j in jobs]
+    if (ci.get("headSha") != commit or ci.get("conclusion") != "success"
+            or not required_jobs <= set(names) or len(names) != len(set(names))
+            or any(j.get("conclusion") != "success" for j in jobs)
+            or (workflow is not None and ci.get("workflowName") != workflow)
+            or not ci.get("url", "").startswith("https://github.com/dvucinozd/Pajoniiir/actions/runs/")):
+        raise ValueError("exact candidate SHA needs every required successful CI job")
+    return {"url": ci["url"], "head_sha": commit, "jobs": len(jobs)}
+
 
 def record(path):
     data = path.read_bytes()
@@ -79,6 +101,8 @@ def main():
     parser.add_argument("--project", choices=PROJECTS, required=True)
     parser.add_argument("--public-key", required=True, type=Path)
     parser.add_argument("--ci-evidence", required=True, type=Path)
+    parser.add_argument("--usb-ci-evidence", required=True, type=Path)
+    parser.add_argument("--docs-ci-evidence", required=True, type=Path)
     args = parser.parse_args()
     root, build, release = args.repo_root.resolve(), args.build.resolve(), args.release.resolve()
     if git(root, "status", "--porcelain", "--untracked-files=normal"):
@@ -93,12 +117,11 @@ def main():
     if args.project != "main-deck-m3" and version != git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*", "--match", "M2*"):
         raise ValueError("stale JC version ancestry")
     ci = json.loads(args.ci_evidence.read_text(encoding="utf-8-sig"))
-    required = {"Host regression tests"}
-    required |= {f"ESP32-P4 M3 shared-core firmware ({v})" for v in ("regular", "recorder", "dj-ui", "link")}
-    required |= {f"ESP32-P4 firmware ({v})" for v in ("regular", "recorder", "dj-ui")}
-    required |= {f"ESP32-P4 JC1060 firmware ({v})" for v in ("regular", "recorder", "psram", "dj-ui")}
-    if ci["headSha"] != commit or ci["conclusion"] != "success" or not required <= {j["name"] for j in ci["jobs"]} or any(j["conclusion"] != "success" for j in ci["jobs"]):
-        raise ValueError("exact candidate SHA needs every required successful CI job")
+    ci_summary = verify_ci(ci, commit, MATRIX_JOBS, "ESP-IDF 6.0.2 migration")
+    for gate, path in (("usb", args.usb_ci_evidence), ("documentation", args.docs_ci_evidence)):
+        extra = json.loads(path.read_text(encoding="utf-8-sig"))
+        workflow, jobs = ADDITIONAL_CI[gate]
+        ci_summary[gate] = verify_ci(extra, commit, jobs, workflow)
     verify_board(build, args.project)
     config = (build / "config/sdkconfig.h").read_text()
     if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
@@ -141,7 +164,7 @@ def main():
         "version": version, "project": args.project, "board": PROJECTS[args.project],
         "idf": "6.0.2", "application_budget": 0x380000, "ota_slot_size": 0x400000,
         "software_verified": True, "hardware_accepted": False, "released": False,
-        "ci": {"url": ci["url"], "head_sha": ci["headSha"], "jobs": len(ci["jobs"])},
+        "ci": ci_summary,
         "image": image, "bundle": bundle, "locks": locks, "build_files": files,
         "image_elf_sha256": (build / image["file"]).read_bytes()[176:208].hex(),
         "release_manifest": manifest, "release_signature": signature,

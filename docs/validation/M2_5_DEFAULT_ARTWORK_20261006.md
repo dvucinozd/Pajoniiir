@@ -8,7 +8,7 @@ remain open.
 ## Change and source
 
 The operator supplied `favicon.svg` as the default Pajoniiir artwork. The
-[retained SVG](../../firmware/main-deck-p4/components/ui/assets/default_artwork.svg)
+[retained SVG](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/firmware/main-deck-p4/components/ui/assets/default_artwork.svg)
 is byte-identical to that file, SHA-256
 `cc7213894515a6438de36828c99386e7d9eebf6d5bb31bf70ea79c37bfc2661d`.
 [Generation tool](../../tools/generate_default_artwork.cjs) uses sharp 0.35.4 /

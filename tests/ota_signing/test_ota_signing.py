@@ -14,6 +14,30 @@ import create_integration_candidate as candidate  # noqa: E402
 
 
 class OtaSigningTests(unittest.TestCase):
+    def test_candidate_requires_all_exact_sha_ci_gates(self):
+        import copy
+        sha = "a" * 40
+        for workflow, required in ((None, candidate.MATRIX_JOBS), *candidate.ADDITIONAL_CI.values()):
+            evidence = {"headSha": sha, "conclusion": "success", "workflowName": workflow,
+                        "url": "https://github.com/dvucinozd/Pajoniiir/actions/runs/123",
+                        "jobs": [{"name": name, "conclusion": "success"} for name in sorted(required)]}
+            self.assertEqual(candidate.verify_ci(evidence, sha, required, workflow)["jobs"], len(required))
+            for field, value in (("headSha", "b" * 40), ("conclusion", "failure"),
+                                 ("conclusion", ""), ("url", "https://example.com/123"),
+                                 ("jobs", []), ("jobs", evidence["jobs"] + [evidence["jobs"][0]])):
+                with self.subTest(workflow=workflow, field=field):
+                    bad = evidence | {field: value}
+                    with self.assertRaisesRegex(ValueError, "every required"):
+                        candidate.verify_ci(bad, sha, required, workflow)
+            for result in ("failure", "skipped", "cancelled", None):
+                bad = copy.deepcopy(evidence)
+                bad["jobs"][0]["conclusion"] = result
+                with self.assertRaises(ValueError):
+                    candidate.verify_ci(bad, sha, required, workflow)
+            if workflow:
+                with self.assertRaises(ValueError):
+                    candidate.verify_ci(evidence | {"workflowName": "Another workflow"}, sha, required, workflow)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)

@@ -89,7 +89,7 @@ Repeat gates because behavior or assumptions changed, not because records aged.
 | DSP/scheduling/buffering | Reproduce/fix the failure; exact-image active timing and appropriately long audible test |
 | Partition/bootloader/trust key | Wired recovery plan, isolated signed build and supervised installation |
 
-Shared-core changes require both entrypoint builds. Use committed independent
+Shared-core changes require all three entrypoint builds. Use committed independent
 dependency locks and the fixed `0x380000` image budget. Preserve actual source,
 configuration, version, slot/boot, strict deltas and operator results.
 A host soak or simulator cannot replace physical deadlines or sound.

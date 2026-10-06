@@ -9,6 +9,10 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/controller_runtime"
     "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/controller_led_runtime"
     "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/control_link"
+    "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/board_capabilities"
+    "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/service_log"
+    "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/sd_io_gate"
+    "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
 )
 

@@ -155,9 +155,9 @@ push must verify local/remote SHA. No new firmware publication is performed.
 | [firmware/common/djlink/UPSTREAM.md](../../firmware/common/djlink/UPSTREAM.md) | Module/provenance | Attribution/license and software-only scope retained |
 | [firmware/main-deck-jc1060/README.md](../../firmware/main-deck-jc1060/README.md) | Current operation/development | Reconciled or retained where already accurate |
 | [firmware/main-deck-p4/PINOUT_P4.md](../../firmware/main-deck-p4/PINOUT_P4.md) | Current operation/development | Reconciled or retained where already accurate |
-| [firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md](../../firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md) | Current operation/development | Reconciled or retained where already accurate |
-| [firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md](../../firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md) | Module/provenance | Attribution/license and software-only scope retained |
-| [firmware/main-deck-p4/components/web_server/web/index.html](../../firmware/main-deck-p4/components/web_server/web/index.html) | Embedded runtime asset | Reviewed for boundary; unchanged firmware |
+| [firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md) | Current operation/development | Reconciled or retained where already accurate |
+| [firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/firmware/main-deck-p4/components/ui/DJ_UI_NOTICE.md) | Module/provenance | Attribution/license and software-only scope retained |
+| [firmware/main-deck-p4/components/web_server/web/index.html](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/firmware/main-deck-p4/components/web_server/web/index.html) | Embedded runtime asset | Reviewed for boundary; unchanged firmware |
 | [firmware/p4-dual-usb-spike/README.md](../../firmware/p4-dual-usb-spike/README.md) | Test/engineering guide | Current role checked; focused guide corrections where needed |
 | [firmware/p4-only-software-harness/README.md](../../firmware/p4-only-software-harness/README.md) | Test/engineering guide | Current role checked; focused guide corrections where needed |
 | [tests/anlz/README.md](../../tests/anlz/README.md) | Test/engineering guide | Current role checked; focused guide corrections where needed |

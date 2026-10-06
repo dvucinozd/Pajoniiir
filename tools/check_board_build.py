@@ -26,7 +26,7 @@ def verify(build: Path, project: str, experimental_recorder: bool = False,
     # from the canonical core, including optional archives that GC later drops.
     core = build.resolve().parent.parent / "p4-core/components"
     names = set(path.name for path in core.iterdir() if (path / "CMakeLists.txt").is_file())
-    required_core = {"p4_app", "board_adapter", "audio_engine", "deck_core", "library", "ui",
+    required_core = {"p4_app", "board_adapter", "board_capabilities", "audio_engine", "deck_core", "library", "ui",
                      "web_server", "p4_ota", "controller_profile_manager", "controller_profile_runtime",
                      "controller_usb_host", "usb_storage", "usb_host_manager", "audio_recorder"}
     assert required_core <= components, "production shared component missing"

@@ -13,7 +13,11 @@ release asset or public channel is modified by the migration tools.
 
 Use ESP-IDF 6.0.2 and esptool 5.3.1 from its PowerShell profile. Build and package
 a clean source, push the development branch, and require every exact-SHA CI job.
-`tools/create_integration_candidate.py` verifies the successful CI evidence,
+`tools/create_integration_candidate.py` requires all three exact-SHA GitHub run
+JSON files (`gh run view RUN_ID --json headSha,conclusion,jobs,url,workflowName`):
+the 12-job board/host matrix via `--ci-evidence`, USB software gates via
+`--usb-ci-evidence`, and documentation integrity via `--docs-ci-evidence`.
+It verifies the successful CI evidence,
 ordinary configuration, signatures, descriptor, source, fixed budget, locks and
 artifact hashes. Its `candidate-evidence.json` records hardware NOT RUN.
 `image_elf_sha256` identifies the embedded build; `image.sha256` is the complete

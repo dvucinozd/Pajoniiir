@@ -3289,9 +3289,9 @@ $tests = @(
         Target = "test_board_capabilities.exe"
         Args = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST",
-            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/board_capabilities/include",
             "-o", "test_board_capabilities.exe", "test_board_capabilities.c",
-            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
+            "../../firmware/p4-core/components/board_capabilities/board_capabilities.c"
         )
     },
     @{
@@ -3300,9 +3300,9 @@ $tests = @(
         Target = "test_board_capabilities_jc1060.exe"
         Args = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_JC1060",
-            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/board_capabilities/include",
             "-o", "test_board_capabilities_jc1060.exe", "test_board_capabilities.c",
-            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
+            "../../firmware/p4-core/components/board_capabilities/board_capabilities.c"
         )
     },
     @{
@@ -3311,9 +3311,9 @@ $tests = @(
         Target = "test_board_capabilities_m3.exe"
         Args = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_M3",
-            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/board_capabilities/include",
             "-o", "test_board_capabilities_m3.exe", "test_board_capabilities.c",
-            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
+            "../../firmware/p4-core/components/board_capabilities/board_capabilities.c"
         )
     },
     @{

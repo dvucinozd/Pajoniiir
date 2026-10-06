@@ -146,9 +146,9 @@ target_compile_definitions(ui_link_wide_e2e PRIVATE ${runtime_definitions}
 target_link_libraries(ui_link_wide_e2e PRIVATE lvgl m)
 foreach(layout IN ITEMS compact wide)
     add_executable(ui_product_${layout}_e2e ${runtime_sources}
-        "${REPO_ROOT}/firmware/p4-core/components/board_adapter/board_capabilities.c")
+        "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/board_capabilities.c")
     target_include_directories(ui_product_${layout}_e2e PRIVATE ${runtime_includes}
-        "${REPO_ROOT}/firmware/p4-core/components/board_adapter/include")
+        "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/include")
     target_compile_definitions(ui_product_${layout}_e2e PRIVATE ${runtime_definitions}
         UI_SIM_BOARD_POLICY=1 BOARD_CAPABILITIES_PC_TEST=1)
     if(layout STREQUAL "wide")
@@ -167,9 +167,9 @@ foreach(layout IN ITEMS compact wide)
 endforeach()
 
 add_executable(ui_product_m3_e2e ${runtime_sources}
-    "${REPO_ROOT}/firmware/p4-core/components/board_adapter/board_capabilities.c")
+    "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/board_capabilities.c")
 target_include_directories(ui_product_m3_e2e PRIVATE ${runtime_includes}
-    "${REPO_ROOT}/firmware/p4-core/components/board_adapter/include")
+    "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/include")
 target_compile_definitions(ui_product_m3_e2e PRIVATE ${runtime_definitions}
     UI_SIM_BOARD_POLICY=1 UI_SIM_BOARD_SETTINGS=1 BOARD_CAPABILITIES_PC_TEST=1 CONFIG_PAJONIIIR_BOARD_M3=1)
 target_link_libraries(ui_product_m3_e2e PRIVATE lvgl m)

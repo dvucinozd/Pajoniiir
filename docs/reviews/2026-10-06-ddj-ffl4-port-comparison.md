@@ -49,10 +49,10 @@ i zapis 60-minutnog soaka. Novi rad treba temeljiti na pregledanom stanju;
 sam prelazak na današnji `master` vratio bi stariju implementaciju.
 
 Izvori statusa:
-[M3 status](../DOCUMENTATION_STATUS.md),
-[M3 remediation](2026-09-07-review-remediation.md),
-[DDJ status](D:/Documents/DDJ-FFL4/docs/DOCUMENTATION_STATUS.md),
-[DDJ integracijski ledger](D:/Documents/DDJ-FFL4/docs/FORK_IMPROVEMENTS.md).
+[M3 status](https://github.com/dvucinozd/Pajoniiir-M3/blob/e95417c4e2fea007d2c1dcb693790914692c62ba/docs/DOCUMENTATION_STATUS.md),
+[M3 remediation](https://github.com/dvucinozd/Pajoniiir-M3/blob/e95417c4e2fea007d2c1dcb693790914692c62ba/docs/reviews/2026-09-07-review-remediation.md),
+[DDJ status](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/docs/DOCUMENTATION_STATUS.md),
+[DDJ integracijski ledger](https://github.com/dvucinozd/Pajoniiir/blob/9af99cd234e775521f3ec83c0104f5c6a0c72920/docs/FORK_IMPROVEMENTS.md).
 
 ### Metoda i granice
 
@@ -312,7 +312,7 @@ današnji parser podržava v2/v3/v4. Nove funkcije iz paketa A–L nisu u starom
 port planu. S druge strane, dio ownership/queue popravaka iz plana već postoji
 u M3 te ga ne treba ponovno brojiti kao potpuno izostavljen.
 
-`AGENTS.md` i `STARTUP_CHECKLIST.md` i dalje ističu raniji `M3-51/ota_0`
+Lokalne upute za agente i `STARTUP_CHECKLIST.md` i dalje ističu raniji `M3-51/ota_0`
 handoff, dok `DOCUMENTATION_STATUS.md` i timing validation navode noviji
 bench kandidat `483063f/ota_1`. Oba zapisa imaju vrijednost, ali rollback
 baseline, reviewed source i posljednja instalacija moraju biti jasno odvojeni.

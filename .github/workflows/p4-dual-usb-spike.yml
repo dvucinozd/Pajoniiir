@@ -1,6 +1,10 @@
 name: P4 dual USB host software gates
 
 on:
+  push:
+    branches:
+      - master
+      - "codex/**"
   pull_request:
     paths:
       - "firmware/p4-dual-usb-spike/**"
@@ -18,6 +22,10 @@ on:
       - "firmware/p4-core/components/controller_runtime/**"
       - "firmware/p4-core/components/controller_led_runtime/**"
       - "firmware/p4-core/components/controller_usb_audio/**"
+      - "firmware/p4-core/components/board_capabilities/**"
+      - "firmware/p4-core/components/service_log/**"
+      - "firmware/p4-core/components/sd_io_gate/**"
+      - "firmware/common/firmware_health/**"
       - "firmware/p4-core/components/p4_local_controller/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"

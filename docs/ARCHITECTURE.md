@@ -8,7 +8,12 @@ The earlier release records below retain their original image-specific scope.
 Current integration evidence is in [the ledger](SHARED_P4_CORE_INTEGRATION.md).
 
 Immutable board capabilities select display geometry/scanout, root roles,
-audio outputs, Wi-Fi policy and DSP memory. The shared engine/parser/controller
+audio outputs, Wi-Fi policy and DSP memory through a pure
+`board_capabilities` component.
+The adapter consumes its single source/header, which has no physical display,
+codec or SD dependencies, so the USB-only harness uses the same descriptions.
+The physical `board_adapter` remains the BSP-facing dependency.
+The shared engine/parser/controller
 contains no M3 identity branches. MAIN uses fixed 48 kHz on M3; FIR cache storage
 is compiled only for the capability that uses it. Both decoder-owned canonical
 PCM and consumer read/playhead publication retain one implementation.

@@ -223,6 +223,14 @@ no public channel or existing release asset was changed.
 | P10 | Canonical docs/provenance/migration/capabilities and evidence separation | Final installed/operator campaign record |
 
 No integrated target has a new production PASS until its hardware gates pass.
+Candidate qualification requires the exact-source 12-job board/host matrix,
+the separate USB software-harness workflow and documentation integrity. Missing,
+failed, cancelled or skipped jobs reject candidate evidence. The USB harness
+links the pure shared capability descriptions without pulling a physical BSP;
+production adapters retain exactly one board provider. Historical documentation
+links point to their frozen source revisions when a referenced artifact is not
+part of the canonical repository.
+
 M3 Campaign A/B, waveform timing/artwork/Wi-Fi load and physical audio/operator
 confirmation remain NOT RUN. Isolated output-late stays monitoring, not zero-late.
 
