@@ -3282,6 +3282,18 @@ static void test_network_sync_semantic_path_and_replacement(void)
     assert(audio_engine_stub_deck_seek_count[0]==0);
     assert(deck_core_get_deck_state(0).network_sync==DECK_NET_SYNC_WAIT);
     ctrl_event_t play=deck_button(CTRL_ID_DECK1_PLAY);deck_core_test_apply_event(&play);
+    deck_core_set_load_lock(false);
+    uint32_t replacement=deck_core_begin_track_replacement(0);
+    assert(replacement);
+    audio_engine_stub_deck_position_ms[0]=100;
+    deck_state_t held=deck_core_get_deck_state(0);
+    deck_core_network_tick(1000,1,48000);
+    assert(audio_engine_stub_deck_seek_count[0]==0 && audio_engine_stub_deck_position_ms[0]==100);
+    assert(!network_local[0].loaded);
+    assert(deck_core_get_deck_state(0).network_sync==held.network_sync);
+    assert(deck_core_track_replacement_active(0));
+    deck_core_end_track_replacement(0,replacement);
+    deck_core_set_load_lock(true);
     audio_engine_stub_deck_position_ms[0]=100;
     deck_core_network_tick(1000,1,48000);
     assert(audio_engine_stub_deck_seek_count[0]==1 && audio_engine_stub_deck_position_ms[0]==20);

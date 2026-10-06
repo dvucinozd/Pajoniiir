@@ -2,10 +2,15 @@
 #include "dj_link_discovery.h"
 #include "dj_link_browse.h"
 #include "esp_err.h"
+typedef struct esp_netif_obj esp_netif_t;
 
 /* After NVS/common P4 startup. Default-off worker owns all network I/O and model.
- * Only the JC1060 target links this component. No Web/USB/audio callbacks here. */
-esp_err_t dj_link_service_init(void);
+ * The board supplies its exact interface. NULL/unready interfaces remain
+ * unavailable; there is no default-route/AP fallback. No Web/USB/audio callbacks. */
+typedef esp_netif_t *(*dj_link_netif_provider_t)(void);
+esp_err_t dj_link_service_init(dj_link_netif_provider_t provider);
+/* Download workers use the same explicit interface as discovery. */
+esp_netif_t *dj_link_service_netif(void);
 /* Engineering calibration: measured output latency, bound to this exact sink
  * and rate. Initially unmeasured; no hardware values are invented/persisted. */
 bool dj_link_service_set_sink_latency(uint8_t sink,uint32_t sample_rate,

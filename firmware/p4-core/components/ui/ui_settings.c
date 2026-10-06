@@ -8,7 +8,7 @@
 #include "audio_recorder.h"
 #endif
 #include "service_log.h"
-#if CONFIG_PAJONIIIR_BOARD_JC1060
+#if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
 #include "dj_link_service.h"
 #endif
 #endif
@@ -854,8 +854,8 @@ void ui_settings_update(const ui_frame_context_t *ctx)
         return;
     }
 #ifndef WIN32
-#if CONFIG_PAJONIIIR_BOARD_JC1060
-    if (s_label_wifi_remote) {
+#if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
+    if (s_label_wifi_remote && board_capabilities_get()->ethernet) {
         char status[64];
         dj_link_service_format_status(status, sizeof(status));
         if (strcmp(lv_label_get_text(s_label_wifi_remote), status))

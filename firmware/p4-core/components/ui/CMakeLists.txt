@@ -1,8 +1,6 @@
-set(ui_link_requires)
-idf_build_get_property(ui_project PROJECT_NAME)
-if(ui_project STREQUAL "main-deck-jc1060")
-    list(APPEND ui_link_requires dj_link_service)
-endif()
+# Component discovery precedes final Kconfig evaluation. The portable service
+# has no physical provider dependency and may safely participate in all graphs.
+set(ui_link_requires dj_link_service)
 idf_component_register(
     SRCS "ui.c"
          "dj_ui.c"

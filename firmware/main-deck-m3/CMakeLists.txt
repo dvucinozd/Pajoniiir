@@ -8,7 +8,9 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../boards/m3"
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
-    "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest")
+    "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest"
+    "${CMAKE_CURRENT_LIST_DIR}/../common/djlink"
+    "${CMAKE_CURRENT_LIST_DIR}/../common/dj_link_core")
 
 if(PAJONIIIR_STORAGE_EXPERIMENT)
     set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.storage_experiment")
@@ -21,6 +23,12 @@ if(PAJONIIIR_DJ_UI_PREVIEW)
         set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
     endif()
     list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.dj_ui_preview")
+endif()
+if(PAJONIIIR_LINK_EXPERIMENT)
+    if(NOT SDKCONFIG_DEFAULTS)
+        set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
+    endif()
+    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../p4-core/cmake/sdkconfig.link_experiment")
 endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(main-deck-m3)

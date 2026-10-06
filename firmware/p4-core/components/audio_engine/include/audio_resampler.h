@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "audio_mixer.h"
+#include "audio_dsp_features.h"
 
 typedef bool (*audio_resampler_pop_fn)(void *ctx, audio_mixer_frame_t *out_frame);
 
@@ -17,10 +18,12 @@ typedef struct {
     uint32_t phase_q32;
     uint32_t pitch_factor_bits;
     uint64_t step_q32;
+#if AUDIO_ANTIALIAS_CACHE
     audio_mixer_frame_t history[1024];
     unsigned history_head;
     int filter_bank, previous_filter_bank;
     unsigned filter_fade;
+#endif
 } audio_resampler_state_t;
 
 void audio_resampler_reset(audio_resampler_state_t *state);

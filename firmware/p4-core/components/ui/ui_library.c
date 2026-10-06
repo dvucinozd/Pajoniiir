@@ -166,7 +166,7 @@ int ui_library_page_selection_after_delta(int total_tracks,
 #include "esp_log.h"
 #include "ui_lvgl_backend.h"
 #include "ui_theme.h"
-#if defined(CONFIG_PAJONIIIR_BOARD_JC1060) || defined(UI_LINK_SIMULATOR)
+#if defined(CONFIG_PAJONIIIR_DJ_LINK_SERVICE) || defined(UI_LINK_SIMULATOR)
 #define UI_LIBRARY_LINK 1
 #include "dj_link_service.h"
 #endif
@@ -183,7 +183,7 @@ static ui_library_row_text_t s_dj_rows[UI_LIBRARY_PAGE_ROWS];
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "media_catalog.h"
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
 #include "dj_link_download.h"
 #endif
 #include "service_log.h"
@@ -326,7 +326,7 @@ static const anlz_metadata_t *ui_library_clone_loaded_anlz(anlz_metadata_t *snap
 static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
 static bool s_loaded_media_valid[DECK_CORE_DECK_COUNT];
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
 static bool s_remote_load_active;
 static uint32_t s_download_done,s_download_total;
 #endif
@@ -360,7 +360,7 @@ typedef struct {
     uint32_t generation;
     uint32_t track_key;
     uint32_t load_id;
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     dj_link_remote_track_t remote;
     media_persistent_id_t pins[2];
 #endif
@@ -446,7 +446,7 @@ static void ui_library_finish_track_load_id(uint32_t load_id)
 #ifndef WIN32
     portENTER_CRITICAL(&s_track_load_lock);
     bool finished=ui_load_gate_finish(&s_track_load_gate, load_id);
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     if (finished) s_remote_load_active=false;
 #else
     (void)finished;
@@ -1189,7 +1189,7 @@ static void ui_library_release_deck_audio_session(uint8_t deck,
     }
 }
 
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
 static bool ui_remote_load_current(void *ctx)
 {
     return ui_library_track_load_is_current(((ui_track_load_request_t *)ctx)->load_id);
@@ -1225,7 +1225,7 @@ static void ui_track_load_worker(void *arg)
     result->track_key = req.track_key;
     result->load_id = req.load_id;
     bool remote=false;
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     remote=req.remote.peer!=0;
     if (remote) {
         result->remote_meta=heap_caps_calloc(1,sizeof(anlz_metadata_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
@@ -1402,7 +1402,7 @@ static void ui_apply_usb_removed(void)
     /* Cancel the worker without releasing its single-flight slot. The worker
      * must publish/retire its exact audio session before a reconnect can start
      * another LOAD, preventing two workers from reordering deck-core writes. */
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     if (!s_remote_load_active)
 #endif
     ui_library_invalidate_track_load();
@@ -1439,7 +1439,7 @@ static void ui_apply_usb_removed(void)
         }
         ui_library_status_hold("USB REMOVED", COL_AMBER, 2500);
     }
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     if (!s_remote_load_active)
 #endif
     ui_library_set_load_busy(false, "USB REMOVED");
@@ -2513,7 +2513,7 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 
 void ui_library_update(const ui_frame_context_t *ctx)
 {
-#ifdef CONFIG_PAJONIIIR_BOARD_JC1060
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     if(s_remote_load_active && ui_library_track_load_busy()) {
         uint32_t total=__atomic_load_n(&s_download_total,__ATOMIC_RELAXED);
         uint32_t done=__atomic_load_n(&s_download_done,__ATOMIC_RELAXED);

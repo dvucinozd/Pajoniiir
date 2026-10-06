@@ -4,9 +4,9 @@
 #include "dj_link_sync.h"
 #include "deck_core.h"
 #include "audio_engine.h"
-#include "board_ethernet.h"
 #include "app_settings.h"
 #include "esp_heap_caps.h"
+#include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -23,6 +23,7 @@
 
 static const char *TAG = "dj_link";
 static TaskHandle_t s_task;
+static dj_link_netif_provider_t s_netif_provider;
 static SemaphoreHandle_t s_snapshot_lock;
 static dj_link_discovery_t *s_model, *s_snapshot;
 static SemaphoreHandle_t s_browse_lock;
@@ -275,7 +276,7 @@ static void worker(void *unused)
     dj_link_datagram_t packet;
     uint8_t tx[DJLINK_MAX_PACKET];
     for (;;) {
-        esp_netif_t *netif = board_ethernet_netif();
+        esp_netif_t *netif = s_netif_provider();
         uint32_t now = now_ms();
         uint8_t mac[6] = {0}; esp_netif_ip_info_t info = {0};
         bool enabled = app_settings_get().dj_link != 0;
@@ -291,19 +292,19 @@ static void worker(void *unused)
         }
         if (available && !opened_ip && (int32_t)(now-retry_at) >= 0) {
             char name[IFNAMSIZ] = {0};
-            /* This exact Ethernet netif owns every inbound/outbound socket.
-             * No default route, AP, Wi-Fi netif or INADDR_ANY fallback binding. */
+            /* This exact board-provided netif owns every inbound/outbound socket.
+             * No default route, AP or INADDR_ANY fallback binding. */
             if (esp_netif_get_netif_impl_name(netif, name) == ESP_OK &&
                 dj_link_udp_open(&transport, name, ip, mask, ports) &&
                 dj_link_tcp_bind(&s_tcp,name,ip)) {
                 opened_ip = ip; opened_mask = mask; socket_error = false;
                 dj_link_discovery_configure(s_model, true, ip, mac, now);
-                ESP_LOGI(TAG, "Ethernet transport %s opened; claiming two players", name);
+                ESP_LOGI(TAG, "Board transport %s opened; claiming two players", name);
             } else {
                 dj_link_udp_close(&transport); dj_link_tcp_close(&s_tcp);
                 socket_error = true; retry_at = now + 2000;
                 dj_link_discovery_configure(s_model, true, 0, mac, now);
-                ESP_LOGW(TAG, "Ethernet transport refused: errno=%d", errno);
+                ESP_LOGW(TAG, "Board transport refused: errno=%d", errno);
             }
         }
         if (opened_ip) {
@@ -366,10 +367,16 @@ static void worker(void *unused)
         vTaskDelay(pdMS_TO_TICKS(opened_ip ? 1 : 40));
     }
 }
-esp_err_t dj_link_service_init(void)
+esp_netif_t *dj_link_service_netif(void)
 {
-    if (s_task) return ESP_OK;
-    if (!board_ethernet_netif()) return ESP_ERR_INVALID_STATE;
+    return s_task && s_netif_provider ? s_netif_provider() : NULL;
+}
+
+esp_err_t dj_link_service_init(dj_link_netif_provider_t provider)
+{
+    if (!provider) return ESP_ERR_INVALID_ARG;
+    if (s_task) return provider == s_netif_provider ? ESP_OK : ESP_ERR_INVALID_STATE;
+    s_netif_provider = provider;
     s_model = heap_caps_calloc(1, sizeof(*s_model), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     s_snapshot = heap_caps_calloc(1, sizeof(*s_snapshot), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     s_browse = heap_caps_calloc(1,sizeof(*s_browse),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
@@ -385,7 +392,7 @@ esp_err_t dj_link_service_init(void)
     dj_link_browse_init(s_browse,s_rows,&io); dj_link_tcp_init(&s_tcp,&s_browse->db);
     dj_link_discovery_init(s_model); *s_snapshot = *s_model;
     dj_link_sync_init(&s_sync);
-    if (xTaskCreatePinnedToCoreWithCaps(worker, "dj_link_eth", 6144, NULL, 2, &s_task, 0,
+    if (xTaskCreatePinnedToCoreWithCaps(worker, "dj_link_net", 6144, NULL, 2, &s_task, 0,
         MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT) != pdPASS) goto fail;
     deck_core_set_network_ops(&s_clock_ops);
     return ESP_OK;

@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "board_ethernet.h"
 #include "dj_link_service.h"
+#include "sdkconfig.h"
 void app_main(void)
 {
     /* PA must be low before network/NVS work, as on JC4880. */
@@ -11,6 +12,8 @@ void app_main(void)
     esp_err_t rc = board_ethernet_start();
     if (rc != ESP_OK) ESP_LOGE("jc1060", "Ethernet unavailable: %s", esp_err_to_name(rc));
     pajoniiir_common_app_main();
-    rc = dj_link_service_init();
+#if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
+    rc = dj_link_service_init(board_ethernet_netif);
     if (rc != ESP_OK) ESP_LOGE("jc1060", "DJ Link service unavailable: %s", esp_err_to_name(rc));
+#endif
 }

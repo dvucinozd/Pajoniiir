@@ -2958,6 +2958,9 @@ void deck_core_network_tick(uint32_t now, uint8_t sink, uint32_t rate)
     deck_net_local_snapshot_t local[2]={{0}};
     float latency=deck_sink_latency_ms(&calibration,sink,rate);
     for (uint8_t deck=0;deck<2;++deck) {
+        uint32_t expected=0;
+        if (!__atomic_compare_exchange_n(&s_transport_owner[deck],&expected,1u,
+                false,__ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE)) continue;
         deck_state_t *state=&s_decks[deck];deck_net_sync_t *sync=&s_net_sync[deck];
         deck_loaded_track_summary_t loaded={0};anlz_snapshot_t *lease=NULL;
         bool valid=acquire_loaded_track_for_deck(deck,&loaded,&lease);
@@ -3013,6 +3016,7 @@ void deck_core_network_tick(uint32_t now, uint8_t sink, uint32_t rate)
         if (local[deck].grid)
             local[deck].bar=fmodf(local[deck].bar-latency*(1+local[deck].pitch/100)/len+4,4);
         anlz_snapshot_release(lease);
+        __atomic_store_n(&s_transport_owner[deck],0u,__ATOMIC_RELEASE);
     }
     if (ops->publish) ops->publish(local);
     s_network_was_enabled=enabled;

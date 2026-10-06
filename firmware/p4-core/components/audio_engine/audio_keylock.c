@@ -1,5 +1,7 @@
 #include "audio_keylock.h"
+#if AUDIO_ANTIALIAS_CACHE
 #include "audio_resampler_filters.h"
+#endif
 
 #include <math.h>
 #include <string.h>
@@ -69,6 +71,12 @@ static bool read_fractional(audio_keylock_read_fn read, void *ctx,
     return true;
 }
 
+static uint32_t absolute_i32(int32_t value)
+{
+    return (uint32_t)(value < 0 ? -value : value);
+}
+
+#if AUDIO_ANTIALIAS_CACHE
 static bool filter_read(audio_keylock_t *s, audio_keylock_read_fn read, void *ctx,
                         uint64_t seq, audio_mixer_frame_t *out)
 {
@@ -82,11 +90,6 @@ static bool filter_read(audio_keylock_t *s, audio_keylock_read_fn read, void *ct
     s->filter_seq[index] = seq;
     s->filter_frames[index] = *out;
     return true;
-}
-
-static uint32_t absolute_i32(int32_t value)
-{
-    return (uint32_t)(value < 0 ? -value : value);
 }
 
 static bool read_filtered_integer(audio_keylock_t *s, audio_keylock_read_fn read,
@@ -115,9 +118,11 @@ static bool read_filtered_integer(audio_keylock_t *s, audio_keylock_read_fn read
     return true;
 }
 
+#endif
 static bool read_render_frame(audio_keylock_t *s, audio_keylock_read_fn read,
     void *ctx, float seq, audio_mixer_frame_t *out)
 {
+#if AUDIO_ANTIALIAS_CACHE
     if (!s->antialias || s->rate_ratio <= 1.0f) return read_fractional(read, ctx, s->origin_seq, seq, out);
     if (seq < 0.0f) return false;
     unsigned bank = 0;
@@ -136,6 +141,9 @@ static bool read_render_frame(audio_keylock_t *s, audio_keylock_read_fn read,
     out->left = (int16_t)fmaxf(-32768.0f, fminf(32767.0f, left));
     out->right = (int16_t)fmaxf(-32768.0f, fminf(32767.0f, right));
     return true;
+#else
+    return read_fractional(read, ctx, s->origin_seq, seq, out);
+#endif
 }
 
 static bool candidate_sad(audio_keylock_t *s,
@@ -319,9 +327,11 @@ void audio_keylock_configure(audio_keylock_t *s, float tempo, float ratio)
     float next_tempo = clamp_factor(tempo, 0.50f, 2.00f);
     float next_ratio = clamp_factor(ratio, 0.25f, 4.00f);
     if (s->tempo_factor == next_tempo && s->rate_ratio == next_ratio) return;
+#if AUDIO_ANTIALIAS_CACHE
     if (s->rate_ratio != next_ratio) {
         for (unsigned i = 0; i < 512u; ++i) s->filter_valid[i] &= 1u;
     }
+#endif
     s->tempo_factor = next_tempo;
     s->rate_ratio = next_ratio;
 }

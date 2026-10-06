@@ -1,5 +1,7 @@
 #include "audio_resampler.h"
+#if AUDIO_ANTIALIAS_CACHE
 #include "audio_resampler_filters.h"
+#endif
 
 #include <math.h>
 #include <string.h>
@@ -46,7 +48,9 @@ void audio_resampler_reset(audio_resampler_state_t *state)
 {
     if (!state) return;
     memset(state, 0, sizeof(*state));
+#if AUDIO_ANTIALIAS_CACHE
     state->filter_bank = state->previous_filter_bank = -1;
+#endif
     state->previous = (audio_mixer_frame_t){ 0 };
     state->current = (audio_mixer_frame_t){ 0 };
     state->phase_q32 = 0u;
@@ -54,6 +58,7 @@ void audio_resampler_reset(audio_resampler_state_t *state)
     state->step_q32 = 0u;
 }
 
+#if AUDIO_ANTIALIAS_CACHE
 static audio_mixer_frame_t filtered(const audio_resampler_state_t *s, int bank, float t)
 {
     float l = 0, r = 0;
@@ -69,6 +74,7 @@ static audio_mixer_frame_t filtered(const audio_resampler_state_t *s, int bank, 
     r = fmaxf(-32768, fminf(32767, r));
     return (audio_mixer_frame_t){ (int16_t)l, (int16_t)r };
 }
+#endif
 
 audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
                                          float pitch_factor,
@@ -80,6 +86,7 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
     if (!state) return (audio_mixer_frame_t){ 0 };
 
     float factor = sanitize_pitch_factor(pitch_factor);
+#if AUDIO_ANTIALIAS_CACHE
     if (state->antialias && !state->filter_fade) {
         int bank = -1;
         if (factor > 1.0f) {
@@ -92,6 +99,7 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
             state->filter_fade = 128;
         }
     }
+#endif
     uint32_t factor_bits = float_bits(factor);
     if (factor_bits != state->pitch_factor_bits) {
         state->pitch_factor_bits = factor_bits;
@@ -107,8 +115,10 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
         audio_mixer_frame_t next = { 0 };
         if (pop_source && pop_source(source_ctx, &next)) {
             state->current = next;
+#if AUDIO_ANTIALIAS_CACHE
             state->history_head = (state->history_head + 1u) & 1023u;
             state->history[state->history_head] = next;
+#endif
             if (out_consumed) (*out_consumed)++;
         }
         /* Ring underrun: leave `current` unchanged instead of snapping it to 0.
@@ -118,6 +128,7 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
     }
 
     float t = phase_fraction_float(state->phase_q32);
+#if AUDIO_ANTIALIAS_CACHE
     if (state->filter_bank >= 0 || state->filter_fade) {
         audio_mixer_frame_t out = filtered(state, state->filter_bank, t);
         if (state->filter_fade) {
@@ -128,6 +139,7 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
         }
         return out;
     }
+#endif
     float inv = 1.0f - t;
     return (audio_mixer_frame_t) {
         .left = (int16_t)(inv * (float)state->previous.left +

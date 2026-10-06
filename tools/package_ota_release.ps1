@@ -114,6 +114,7 @@ function Read-TargetBuild {
         Size = [long]$bytes.Length
         SlotSize = $SlotSize
         Sha256 = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        ElfSha256 = ([BitConverter]::ToString($bytes[176..207])).Replace('-', '').ToLowerInvariant()
     }
 }
 
@@ -182,6 +183,7 @@ $manifest = [ordered]@{
             bundle_size = $p4Bundle.Length
             slot_size = $p4.SlotSize
             sha256 = $p4.Sha256
+            image_elf_sha256 = $p4.ElfSha256
             bundle_sha256 = (Get-FileHash -LiteralPath $p4BundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
         }
     )

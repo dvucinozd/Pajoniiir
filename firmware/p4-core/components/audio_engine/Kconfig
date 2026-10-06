@@ -1,4 +1,9 @@
 menu "Audio engine"
+config AUDIO_ANTIALIAS_CACHE
+    bool
+    default y if PAJONIIIR_BOARD_M3
+    default n
+
 
 config AUDIO_SCRATCH_ENABLED
     bool "Enable vinyl/scratch mode (jog platter scratches the audio)"

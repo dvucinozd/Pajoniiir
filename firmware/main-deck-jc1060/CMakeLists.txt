@@ -6,7 +6,7 @@ pajoniiir_resolve_version("M2*")
 set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
 # Explicit allow-list; never discover another board provider or entrypoint.
 set(PAJONIIIR_SHARED_COMPONENTS
-    p4_app app_settings audio_engine audio_recorder beat_jump board_adapter control_link
+    p4_app app_settings audio_engine audio_recorder beat_jump board_adapter control_link dj_link_service
     controller_led_runtime controller_profile controller_profile_manager
     controller_profile_runtime controller_runtime controller_usb_audio controller_usb_host
     deck_core fatfs hot_cue_store library media_catalog media_identity media_io_gate
@@ -31,6 +31,12 @@ if(PAJONIIIR_STORAGE_EXPERIMENT)
 endif()
 if(PAJONIIIR_DJ_UI_PREVIEW)
     list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/sdkconfig.dj_ui_preview")
+endif()
+if(PAJONIIIR_LINK_EXPERIMENT)
+    if(NOT SDKCONFIG_DEFAULTS)
+        set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
+    endif()
+    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../p4-core/cmake/sdkconfig.link_experiment")
 endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(main-deck-jc1060)

@@ -2,7 +2,9 @@
 #include "esp_http_server.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_app_desc.h"
+#include "esp_ota_ops.h"
 #include "board_build_identity.h"
 #include "board_capabilities.h"
 #include "audio_engine.h"
@@ -457,14 +459,42 @@ static esp_err_t api_firmware_handler(httpd_req_t *req)
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     p4_ota_status_t status;
     web_collect_p4_ota_status(&status);
-    char json[512];
+    const board_capabilities_t *board = board_capabilities_get();
+    const esp_app_desc_t *app = esp_app_get_description();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t image_state;
+    const char *health = "unknown";
+    if (running && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        health = "factory";
+    } else if (running && esp_ota_get_state_partition(running, &image_state) == ESP_OK) {
+        switch (image_state) {
+        case ESP_OTA_IMG_NEW: health = "new"; break;
+        case ESP_OTA_IMG_PENDING_VERIFY: health = "pending_verify"; break;
+        case ESP_OTA_IMG_VALID: health = "valid"; break;
+        case ESP_OTA_IMG_INVALID: health = "invalid"; break;
+        case ESP_OTA_IMG_ABORTED: health = "aborted"; break;
+        default: break;
+        }
+    }
+    char elf_sha[65];
+    static const char hex[] = "0123456789abcdef";
+    for (unsigned i=0; i<32; ++i) {
+        elf_sha[i*2] = hex[app->app_elf_sha256[i] >> 4];
+        elf_sha[i*2+1] = hex[app->app_elf_sha256[i] & 15];
+    }
+    elf_sha[64] = 0;
+    char json[896];
     int len = snprintf(json, sizeof(json),
                        "{\"target\":\"p4\",\"state\":\"%s\","
+                       "\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\",\"source_dirty\":%s,"
+                       "\"image_elf_sha256\":\"%s\",\"running_image_state\":\"%s\","
                        "\"running_slot\":\"%s\",\"running_version\":\"%s\","
                        "\"target_slot\":\"%s\",\"target_version\":\"%s\","
                        "\"expected_size\":%u,\"received_size\":%u,"
                        "\"last_error\":\"%s\"}",
                        p4_ota_state_name(status.state),
+                       board_id_name(board->id), board->project, board_build_source_sha(),
+                       board_build_source_dirty() ? "true" : "false", elf_sha, health,
                        status.running_slot, status.running_version,
                        status.target_slot, status.target_version,
                        (unsigned)status.expected_size,
@@ -1684,6 +1714,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "{"
         "\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\",\"source_dirty\":%s,"
         "\"pull_update_supported\":%s,"
+        "\"uptime_ms\":%llu,"
         "\"capabilities\":{\"wifi\":%s,\"ethernet\":%s,\"pcm5102a\":%s,"
         "\"display_width\":%u,\"display_height\":%u,\"panel_rotation\":%u,"
         "\"storage_root\":%u,\"controller_root\":%u,\"fixed_output_sample_rate\":%u,"
@@ -1821,11 +1852,16 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         board_id_name(board->id), board->project, board_build_source_sha(),
         board_build_source_dirty() ? "true" : "false",
         p4_ota_pull_version_supported(esp_app_get_description()->version) ? "true" : "false",
+        (unsigned long long)(esp_timer_get_time() / 1000),
         board->wifi ? "true" : "false", board->ethernet ? "true" : "false", board->pcm5102a ? "true" : "false",
         board->display_width, board->display_height, board->panel_rotation,
         board->storage_root, board->controller_root, (unsigned)board->fixed_output_sample_rate,
         board->waveform_first ? "true" : "false", board->waveform_top_to_bottom ? "true" : "false",
-        board->ethernet ? "supported" : "disabled",
+#if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
+        app_settings_get().dj_link ? "experimental" : "disabled",
+#else
+        "disabled",
+#endif
 #if CONFIG_AUDIO_RECORDER_ENABLED
         "experimental",
 #else

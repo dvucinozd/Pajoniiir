@@ -161,6 +161,37 @@ USB CIN padding beyond message length is ignored by both semantic mappers.
 M3 storage throughput, actual root enumeration/reconnect, FAT32/exFAT playback
 and profile/UAC hardware acceptance remain NOT RUN.
 
+Phase 8 software gate PASS: complete host qualification exits 0, all nine
+simulator configurations retain their baselines, and all three regular IDF
+6.0.2 builds pass with unchanged dependency locks: JC4880 2,583,840 B,
+JC1060 2,642,288 B, M3 2,565,136 B. M3 recorder (2,578,416 B), alternative UI
+(2,580,400 B) and STA Link (2,627,504 B) build independently with fresh config.
+CI now requires these M3 variants alongside existing JC variants and the shared
+host gate. The board verifier checks every canonical core component's path,
+single BSP, feature class, compiled source and application identity.
+
+Pro DJ Link browse/download/cache/sync now lives in the shared core and receives
+an explicit network provider. JC1060 retains Ethernet; M3's optional experiment
+uses STA only, with no AP/default-route fallback. Normal M3 does not start Link.
+Recorder/preview remain separate experiments. Network clock mutation now shares
+the LOAD transport reservation and is tested against an active replacement.
+
+The FIR/history feature stores no inactive arrays on JC. Linked two-deck states
+use 6,576 B on JC versus 36,304 B on M3, reclaiming 29,728 B on each JC target.
+JC and M3 five-minute production keylock soaks retain zero clock drift and no
+detected clicks/clipping. USB/SD wrappers are linked; resampler objects contain
+no software double helpers. Runtime heap/stack reserves still need hardware.
+
+Existing bounded retained audio-WDT/library-load journals, rotated service
+journal, allocation callback and self-sampled stack counters are shared.
+The monitor performs GET only, binds board/project/source/ELF, detects resets and
+strict counter loss, and preserves original output-late investigation rules.
+Five executed tests cover clean/isolated-late, losses, bursts, missing/changed
+identity, reboot and workload mismatch. `/api/firmware` exposes IDF running-image
+state separately from OTA transfer state; a signed manifest binds ELF and full
+binary/bundle digests. Physical crash/restart/resource and experiment gates
+remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

@@ -25,7 +25,7 @@ on:
     paths:
       - "firmware/**"
       - "tests/**"
-      - "tools/check_board_build.py"
+      - "tools/**"
       - ".github/workflows/esp-idf-6-migration.yml"
   workflow_dispatch:
 
@@ -43,7 +43,10 @@ env:
 
 jobs:
   build-m3:
-    name: ESP32-P4 M3 shared-core firmware
+    name: ESP32-P4 M3 shared-core firmware (${{ matrix.variant }})
+    strategy:
+      matrix:
+        variant: [regular, recorder, dj-ui, link]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,11 +60,18 @@ jobs:
               set -e
               git config --global core.autocrlf true
               idf.py --version
-              idf.py set-target esp32p4
-              idf.py build
+              flags=""
+              if [ "${{ matrix.variant }}" = recorder ]; then flags="-D PAJONIIIR_STORAGE_EXPERIMENT=ON"; fi
+              if [ "${{ matrix.variant }}" = dj-ui ]; then flags="-D PAJONIIIR_DJ_UI_PREVIEW=ON"; fi
+              if [ "${{ matrix.variant }}" = link ]; then flags="-D PAJONIIIR_LINK_EXPERIMENT=ON"; fi
+              idf.py $flags set-target esp32p4
+              idf.py $flags build
+              if [ "${{ matrix.variant }}" = dj-ui ]; then grep -q "^#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1$" build/config/sdkconfig.h; fi
               object=build/esp-idf/audio_engine/CMakeFiles/__idf_audio_engine.dir/audio_resampler.c.obj
+              test -f "$object"
               if riscv32-esp-elf-nm -u "$object" | grep -Eq "__[[:alnum:]_]*df[[:alnum:]_]*$"; then exit 1; fi
               riscv32-esp-elf-nm build/main-deck-m3.elf | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"
+              if riscv32-esp-elf-nm build/main-deck-m3.elf | grep -q " T usb_dwc_hal_chan_decode_intr$"; then exit 1; fi
               for wrapper in sdmmc_wait_for_idle sdmmc_read_sectors sdmmc_write_sectors; do
                 riscv32-esp-elf-nm build/main-deck-m3.elf | grep -q " T __wrap_${wrapper}$"
               done
@@ -69,14 +79,14 @@ jobs:
       - name: Verify M3 board identity and dependency lock
         run: |
           sudo chown -R "$(id -u):$(id -g)" firmware/main-deck-m3/build
-          python3 tools/check_board_build.py --build firmware/main-deck-m3/build --project main-deck-m3
+          python3 tools/check_board_build.py --build firmware/main-deck-m3/build --project main-deck-m3 ${{ matrix.variant == 'recorder' && '--experimental-recorder' || '' }} ${{ matrix.variant == 'link' && '--experimental-link' || '' }}
           git diff --exit-code -- firmware/main-deck-m3/dependencies.lock
           sha256sum firmware/main-deck-m3/build/main-deck-m3.bin firmware/main-deck-m3/dependencies.lock > m3-SHA256SUMS.txt
       - name: Upload M3 software evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: main-deck-m3-idf-6.0.2
+          name: main-deck-m3-idf-6.0.2-${{ matrix.variant }}
           path: |
             m3-idf-build.log
             m3-SHA256SUMS.txt

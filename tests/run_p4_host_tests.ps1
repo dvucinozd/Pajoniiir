@@ -1952,6 +1952,7 @@ $tests = @(
         Dir = "tests/audio_keylock"
         Target = "test_audio_keylock.exe"
         Args = @(
+            "-DAUDIO_ANTIALIAS_CACHE=0",
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock.exe",
@@ -1968,6 +1969,16 @@ $tests = @(
             "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock_m3.exe", "test_audio_keylock_m3.c",
             "../../firmware/p4-core/components/audio_engine/audio_keylock.c", "-lm")
+    },
+    @{
+        Name = "audio_dsp_jc_memory"
+        Dir = "tests/audio_keylock"
+        Target = "test_jc_dsp_memory.exe"
+        Args = @("-O2", "-Wall", "-Wextra", "-Werror", "-std=c11", "-DAUDIO_ANTIALIAS_CACHE=0",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-o", "test_jc_dsp_memory.exe", "test_jc_dsp_memory.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_resampler.c", "-lm")
     },
     @{
         Name = "audio_resampler_antialias"
@@ -2512,6 +2523,7 @@ $tests = @(
         Dir = "tests/audio_resampler"
         Target = "test_audio_resampler.exe"
         Args = @(
+            "-DAUDIO_ANTIALIAS_CACHE=0",
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_resampler.exe",
@@ -3905,6 +3917,8 @@ Invoke-Step -Name "run offline M3 cue migration" -WorkingDirectory $RepoRoot `
 
 Invoke-Step -Name "run mandatory qualification fixture integrity" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/qualification/test_fixture_manifest.py")
+Invoke-Step -Name "run read-only shared P4 reliability monitor" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/reliability_monitor/test_monitor.py")
 
 # Keep source-text contracts after executable suites: a stale UI spelling must
 # not prevent functional regressions from running. Default CI still runs both.

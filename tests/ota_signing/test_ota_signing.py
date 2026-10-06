@@ -136,8 +136,10 @@ class OtaSigningTests(unittest.TestCase):
         import json
         root = Path(self.temp.name)
         image = {"file": "main-deck-p4.bin", "size": 256, "sha256": "a" * 64}
+        (root / image["file"]).write_bytes(self.candidate_image())
         bundle = {"file": "main-deck-p4.ddjota", "size": 512, "sha256": "b" * 64}
         target = {"target": "p4", "project": "main-deck-p4", "file": image["file"],
+                  "image_elf_sha256": "00" * 32,
                   "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
                   "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
         def write(target):
@@ -150,6 +152,9 @@ class OtaSigningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
         write(target | {"bundle_sha256": "c" * 64})
+        with self.assertRaisesRegex(ValueError, "artifact mismatch"):
+            candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
+        write(target | {"image_elf_sha256": "d" * 64})
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
 

@@ -6,7 +6,7 @@
 #include "dj_link_anlz.h"
 #include "djlink/nfs.h"
 #include "djlink/dbserver.h"
-#include "board_ethernet.h"
+#include "esp_netif.h"
 #include "board_adapter.h"
 #include "sd_io_gate.h"
 #include "esp_heap_caps.h"
@@ -111,8 +111,8 @@ static bool read_pdb(void *ctx,uint32_t offset,uint8_t *dst,size_t len)
 }
 static bool network(download_t *d)
 {
-    esp_netif_t *netif=board_ethernet_netif();char iface[IFNAMSIZ]={0};esp_netif_ip_info_t info;
-    if (!netif || esp_netif_get_netif_impl_name(netif,iface)!=ESP_OK ||
+    esp_netif_t *netif=dj_link_service_netif();char iface[IFNAMSIZ]={0};esp_netif_ip_info_t info;
+    if (!netif || !esp_netif_is_netif_up(netif) || esp_netif_get_netif_impl_name(netif,iface)!=ESP_OK ||
         esp_netif_get_ip_info(netif,&info)!=ESP_OK || !info.ip.addr) return false;
     d->fd=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);if(d->fd<0)return false;
     struct ifreq bindif={0};memcpy(bindif.ifr_name,iface,sizeof(bindif.ifr_name));

@@ -63,6 +63,7 @@ def verify_release_manifest(release, public, project, version, image, bundle):
         raise ValueError("wrong release manifest")
     target = info["targets"][0]
     expected = {"target": "p4", "project": project, "file": image["file"],
+                "image_elf_sha256": (release / image["file"]).read_bytes()[176:208].hex(),
                 "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
                 "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
     if any(target.get(k) != v for k, v in expected.items()):
@@ -92,7 +93,8 @@ def main():
     if args.project != "main-deck-m3" and version != git(root, "describe", "--tags", "--dirty", "--exclude", "*-g*", "--match", "M2*"):
         raise ValueError("stale JC version ancestry")
     ci = json.loads(args.ci_evidence.read_text(encoding="utf-8-sig"))
-    required = {"Host regression tests", "ESP32-P4 M3 shared-core firmware"}
+    required = {"Host regression tests"}
+    required |= {f"ESP32-P4 M3 shared-core firmware ({v})" for v in ("regular", "recorder", "dj-ui", "link")}
     required |= {f"ESP32-P4 firmware ({v})" for v in ("regular", "recorder", "dj-ui")}
     required |= {f"ESP32-P4 JC1060 firmware ({v})" for v in ("regular", "recorder", "psram", "dj-ui")}
     if ci["headSha"] != commit or ci["conclusion"] != "success" or not required <= {j["name"] for j in ci["jobs"]} or any(j["conclusion"] != "success" for j in ci["jobs"]):
@@ -141,6 +143,7 @@ def main():
         "software_verified": True, "hardware_accepted": False, "released": False,
         "ci": {"url": ci["url"], "head_sha": ci["headSha"], "jobs": len(ci["jobs"])},
         "image": image, "bundle": bundle, "locks": locks, "build_files": files,
+        "image_elf_sha256": (build / image["file"]).read_bytes()[176:208].hex(),
         "release_manifest": manifest, "release_signature": signature,
         "initial_wired_install": {"flash_files": evidence_files,
             "flash_settings": flash["flash_settings"],
@@ -148,7 +151,8 @@ def main():
             "performed": False},
         "physical_gates": {g: "NOT RUN" for g in (
             "startup_resources", "touch_render", "controller_midi_led", "main_cue_audio",
-            "seek_cue_scratch_loop", "reconnect_ota_rollback", "dual_deck_180_minutes",
+            "seek_cue_scratch_loop", "signed_ota_startup_rollback", "campaign_a_30_cycles",
+            "campaign_b_worst_case_60_minutes", "operator_audio_ui_confirmation",
             *( ("ethernet_peer_browse_download", "network_sync_phase_handoff") if args.project == "main-deck-jc1060" else () ))},
     }
     output = release / "candidate-evidence.json"

@@ -1,6 +1,6 @@
-# Custom partition table for the JC4880P443C_I_W (16 MB flash).
-# Factory recovery plus two 4 MB OTA slots. Install this table with a full
-# wired flash before enclosure; app-only OTA cannot migrate a partition table.
+# Existing M3 partition table (16 MiB flash), retained by identity migration.
+# Factory recovery plus two 4 MiB OTA slots. The migration tool verifies the
+# installed table and preserves it; app-only OTA cannot migrate partitions.
 # Name,     Type, SubType,  Offset,    Size
 nvs,        data, nvs,      0x9000,    0x6000
 phy_init,   data, phy,      0xf000,    0x1000

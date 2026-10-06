@@ -140,7 +140,7 @@ add_executable(ui_link_wide_e2e ${runtime_sources} simulator_link.c)
 target_include_directories(ui_link_wide_e2e PRIVATE ${runtime_includes}
     "${REPO_ROOT}/firmware/common/dj_link_core/include"
     "${REPO_ROOT}/firmware/common/djlink/include"
-    "${REPO_ROOT}/firmware/boards/jc1060/dj_link_service/include")
+    "${REPO_ROOT}/firmware/p4-core/components/dj_link_service/include")
 target_compile_definitions(ui_link_wide_e2e PRIVATE ${runtime_definitions}
     UI_LINK_SIMULATOR=1 DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
 target_link_libraries(ui_link_wide_e2e PRIVATE lvgl m)
