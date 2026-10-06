@@ -117,3 +117,56 @@ snapshots isolate each playback window from startup/load outliers.
 Installation and software verification are not a physical repair PASS.
 Raw installation and preflight evidence is private under
 `.cache/m3-migration/20261006-c698fa67`. No public release/channel was modified.
+
+## Installed measurement candidate and measured failure
+
+Signed candidate `M3-dev-g2fa8a6373847`, clean source
+`2fa8a6373847decad971a815e1bf6d817a8c5ad1`, is VALID in `ota_1` after HTTP 200 OTA.
+ELF SHA-256 is `1cb10ca022ceec0e4b6cbc17d372af699a69682c3fa5296bb324796b944f58d3`.
+Image: 2,568,176 B, SHA-256
+`ba61d232b8dda816ff7fe45a314f6bb628da165cf7134e3c0d15e3ee8a75feae`.
+Bundle: 2,568,364 B, SHA-256
+`42e5e0a2f99b3d72487908ea0b5f324f0749f2f07b8b4a69725329ef63b6f535`.
+
+All three clean-source ordinary builds, unchanged locks, signature/project/budget
+checks and local full host qualification passed. Exact-source CI passed:
+[12-job matrix](https://github.com/dvucinozd/Pajoniiir/actions/runs/37518777918),
+[USB gates](https://github.com/dvucinozd/Pajoniiir/actions/runs/37518777839),
+[documentation](https://github.com/dvucinozd/Pajoniiir/actions/runs/37518777872).
+The separate [Advanced Security run](https://github.com/dvucinozd/Pajoniiir/actions/runs/37518788650)
+failed with HTTP 402/monthly quota; no security review completed.
+
+The operator re-enabled MT on both decks and eight-beat zoom. Three approximately
+12-second windows used the same sources, pitches and loops; only initial/final
+API snapshots were taken, without continuous polling. Both decks were stopped
+automatically at completion. Raw records are private under
+`.cache/m3-migration/20261006-2fa8a637/mt-8-beat`.
+
+| Measurement | Stopped | Solo D1 | Dual |
+|---|---:|---:|---:|
+| Refresh interrupts | 608 | 607 | 606 |
+| Coalesced refreshes | 0 | 0 | 57 |
+| Frame interval mean, us | 19,999.1 | 19,999.1 | 22,063.2 |
+| Wake latency mean, us | 12.5 | 188.6 | 2,631.9 |
+| Overview entry after refresh mean, us | 96.5 | 415.3 | 3,827.6 |
+| Callback duration mean, us | 475.3 | 5,652.7 | 17,165.7 |
+| D1 cache / blit mean, us | No redraw | 186.9 / 3,841.5 | 211.9 / 4,173.8 |
+| D2 cache / blit mean, us | No redraw | No redraw | 237.4 / 4,565.5 |
+| D1 finish after refresh mean, us | No redraw | 4,623.4 | 8,636.6 |
+| D2 finish after refresh mean, us | No redraw | No redraw | 15,521.3 |
+
+There were 549 dual redraws; 42 D1 finishes and 113 D2 finishes exceeded 20 ms.
+The operator confirmed solo D1 sharp, dual deformed, audio clean. PCM underrun,
+UAC dropped/overflow and output-late counters stayed zero in this short test.
+This is a visual FAIL and diagnostic measurement, not timing-soak acceptance.
+
+The next focused repair removes the wrapper's duplicate whole-strip source
+cache sync: the pinned IDF 6.0.2 PPA SRM driver already writes back its complete
+input row window and invalidates the destination before DMA. Cache maintenance
+is then owned by the driver and included in PPA duration. It also rebuilds the
+waveform-first frame context after Library only when UI track/ANLZ publication or target/tab
+changes. A changed load or media clear still refreshes immediately; unchanged
+playback avoids a second round of audio/file-mutex-backed reads. Other board
+policies retain their existing refreshed-context behavior. Panel timing,
+two-deck redraw order, cadence and geometry remain unchanged. Quantitative and
+operator retests must establish whether this repair is sufficient.

@@ -401,11 +401,10 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
     }
 
     int64_t total_start_us = esp_timer_get_time();
-    int64_t msync_start_us = esp_timer_get_time();
-    esp_cache_msync((void *)src,
-                    src_bytes,
-                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-    uint32_t msync_us = ui_lvgl_backend_perf_elapsed_us(msync_start_us);
+    /* IDF 6.0.2 ppa_do_scale_rotate_mirror() writes back the complete input
+     * row window and invalidates the output window before DMA. Repeating a
+     * whole-strip C2M sync here scans the same large PSRAM source twice per
+     * segment and consumes the single-framebuffer scanout deadline. */
 
     ppa_srm_oper_config_t op = {
         .in.buffer          = (void *)src,
@@ -442,7 +441,7 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
     uint32_t total_us = ui_lvgl_backend_perf_elapsed_us(total_start_us);
 
     if (perf) {
-        perf->msync_us = msync_us;
+        perf->msync_us = 0; /* cache maintenance is included in driver/PPA time */
         perf->ppa_us = ppa_us;
         perf->total_us = total_us;
     }

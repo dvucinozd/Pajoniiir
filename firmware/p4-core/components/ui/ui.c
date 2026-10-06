@@ -138,6 +138,10 @@ static lv_obj_t *s_label_status_indicator = NULL;
 
 // Sub-screen elements
 static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
+/* Published by UI callbacks under the LVGL owner lock. A library completion
+ * or clear must refresh retained frame metadata immediately; steady playback
+ * must not resample every audio/file-mutex-backed field twice per frame. */
+static uint32_t s_deck_frame_revision;
 static ui_deck_anlz_store_t s_deck_anlz_store;
 static ui_controls_state_t s_controls;
 
@@ -224,6 +228,7 @@ static void ui_deck_track_info_clear(uint8_t deck)
 {
     uint8_t idx = ui_deck_index(deck);
     memset(&s_deck_track_info[idx], 0, sizeof(s_deck_track_info[idx]));
+    s_deck_frame_revision++;
 }
 
 static void ui_deck_track_info_set(uint8_t deck,
@@ -246,6 +251,7 @@ static void ui_deck_track_info_set(uint8_t deck,
     ui_copy_str(info->key, sizeof(info->key), key ? key : "");
     info->duration_ms = duration_ms;
     info->valid = true;
+    s_deck_frame_revision++;
 }
 
 static uint32_t ui_deck_duration_ms(uint8_t deck)
@@ -462,6 +468,7 @@ static void ui_set_performance_deck(uint8_t deck)
 
 static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *meta)
 {
+    s_deck_frame_revision++;
     uint8_t idx = ui_deck_index(deck);
     if (!meta || !ui_deck_anlz_store_set(&s_deck_anlz_store, idx, meta)) {
         ui_deck_anlz_store_clear(&s_deck_anlz_store, idx);
@@ -1424,6 +1431,7 @@ void ui_update(void) {
 
     ui_frame_context_t ctx;
     ui_build_frame_context(&ctx);
+    uint32_t frame_revision = s_deck_frame_revision;
 #ifndef WIN32
     ui_idle_service(&ctx);
 #endif
@@ -1444,11 +1452,14 @@ void ui_update(void) {
         ui_performance_tabs_update_hot_cues();
     }
 #endif
-    /* A completed load/USB clear can publish a new immutable ANLZ snapshot
-     * during ui_library_update(). Refresh the frame so overview/status never
-     * re-publish the pre-update handle for one extra tick. */
-    ui_release_frame_context(&ctx);
-    ui_build_frame_context(&ctx);
+    /* Keep immediate load/USB-clear publication, without a second round of
+     * audio mutex reads on the waveform-first scanout path. Combined-update
+     * boards retain their existing refreshed-context semantics. */
+    if (!waveform_first || frame_revision != s_deck_frame_revision || ctx.active_tab != s_active_tab ||
+        ctx.active_deck != ui_controls_active_deck(&s_controls)) {
+        ui_release_frame_context(&ctx);
+        ui_build_frame_context(&ctx);
+    }
 
 #ifdef WIN32
     deck_state_t state = ctx.deck_state[CTRL_DECK_1];

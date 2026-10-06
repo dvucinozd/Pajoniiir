@@ -265,3 +265,10 @@ in M3 ota_0. Its operator retest failed: watery waveforms persisted and visual
 stutter appeared while audio remained clean. Bounded RAM scanout timing counters
 are the next diagnostic step. Physical acceptance remains failed in the
 [regression/retest record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
+
+Measurement candidate 2fa8a637 is now signed and installed VALID in M3 ota_1.
+All three builds and exact-source CI passed. The operator again confirmed solo
+D1 sharp, dual deformed and clean sound. A roughly 12-second dual window measured
+57 coalesced refreshes and a 15.5-ms mean lower-waveform finish after refresh.
+The next focused repair removes duplicate PPA cache sync and unchanged-frame
+resampling; neither this measurement nor a successful build is visual acceptance.
