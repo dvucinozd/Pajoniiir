@@ -36,6 +36,20 @@ typedef struct {
     media_catalog_row_t *rows;
 } media_catalog_snapshot_t;
 
+/* Mounted-medium evidence; no ANLZ load or deck state mutation. */
+typedef struct {
+    uint32_t track_key;
+    uint32_t rekordbox_track_id;
+    char path[256];
+    char title[96];
+    uint8_t export_digest[32];
+    media_persistent_id_t persistent_id;
+    uint64_t file_size;
+    int64_t mtime;
+} media_catalog_identity_record_t;
+esp_err_t media_catalog_identity_record(int index, uint32_t generation,
+                                        media_catalog_identity_record_t *out);
+
 typedef struct {
     uint32_t track_key;
     media_persistent_id_t persistent_id;

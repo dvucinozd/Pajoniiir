@@ -165,7 +165,8 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
 
 static esp_err_t derive_persistent_id(const library_track_t *track,
                                       uint32_t expected_generation,
-                                      media_persistent_id_t *out)
+                                      media_persistent_id_t *out,
+                                      uint64_t *file_size, int64_t *mtime)
 {
     if (!track || !out) return ESP_ERR_INVALID_ARG;
     media_persistent_id_clear(out);
@@ -199,7 +200,39 @@ static esp_err_t derive_persistent_id(const library_track_t *track,
         media_persistent_id_clear(out);
         return ESP_ERR_INVALID_STATE;
     }
+    if (file_size) *file_size = (uint64_t)before.st_size;
+    if (mtime) *mtime = (int64_t)before.st_mtime;
     return ESP_OK;
+}
+
+esp_err_t media_catalog_identity_record(int index, uint32_t generation,
+                                        media_catalog_identity_record_t *out)
+{
+    if (!out || index < 0) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    SemaphoreHandle_t mutex = catalog_mutex();
+    if (!mutex) return ESP_ERR_NO_MEM;
+    if (xSemaphoreTake(mutex, pdMS_TO_TICKS(500)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    library_track_t *track = heap_caps_calloc(1, sizeof(*track),
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    esp_err_t rc = track ? ESP_OK : ESP_ERR_NO_MEM;
+    if (rc == ESP_OK && library_generation() != generation) rc = ESP_ERR_INVALID_STATE;
+    if (rc == ESP_OK) rc = library_get(index, track);
+    if (rc == ESP_OK) {
+        out->track_key = library_track_key(track);
+        out->rekordbox_track_id = track->track_id;
+        copy_str(out->path, sizeof(out->path), track->path);
+        copy_str(out->title, sizeof(out->title), track->title);
+        uint32_t digest_generation = 0;
+        rc = library_export_digest(out->export_digest, &digest_generation);
+        if (rc == ESP_OK && digest_generation != generation) rc = ESP_ERR_INVALID_STATE;
+        if (rc == ESP_OK) rc = derive_persistent_id(track, generation,
+            &out->persistent_id, &out->file_size, &out->mtime);
+    }
+    if (library_generation() != generation) rc = ESP_ERR_INVALID_STATE;
+    free(track);
+    xSemaphoreGive(mutex);
+    return rc;
 }
 
 esp_err_t media_catalog_snapshot_acquire(media_catalog_snapshot_t *out_snapshot)
@@ -326,7 +359,7 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
                       1u, track_key, 0u, 0u, 0u, NULL);
 
     esp_err_t identity_rc = derive_persistent_id(track, expected_generation,
-                                                 &track->persistent_id);
+                                                  &track->persistent_id, NULL, NULL);
     if (identity_rc != ESP_OK) {
         ESP_LOGW(TAG, "persistent cue/cache identity unavailable for track 0x%08x: %s",
                  (unsigned)track_key, esp_err_to_name(identity_rc));

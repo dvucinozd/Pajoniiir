@@ -83,6 +83,23 @@ USB peripherals are not required. Startup readiness/timeout/rollback decision
 tests pass. Physical interrupted upload, boot timeout and rollback remain
 NOT RUN on the integrated image. No device was flashed and no channel changed.
 
+Phase 4 software gate PASS: full host runner exit 0 and all three IDF 6.0.2
+builds pass with unchanged dependency locks. Standard PQTZ phases 1–4 and
+downbeat 1 are covered by a real binary section fixture, alongside existing
+title-index-17, tagged PCPT, memory/Hot Cue list and persistent merge regressions.
+The new read-only paged catalog API exports P4 FAT metadata and persistent IDs
+without loading ANLZ or changing decks; generation/file-change tests execute
+the production catalog helper.
+
+The offline legacy-cue migration tool requires the selected old export and
+backup SHA, runs the production PDB parser, validates official NVS CRC/chunk
+structures, and compares every setting/key after generating the merged image.
+Ten executable tests cover lossless settings/blob preservation, ambiguous IDs,
+wrong exports, missing audio, conflicting newer cues, damaged backups and a
+complete CLI round trip. Old blobs remain intact; absent slots do not create
+tombstones. See `M3_CUE_MIGRATION.md`. Software preparation performs no device
+write. Wired NVS apply and physical set/delete/restore/reboot remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

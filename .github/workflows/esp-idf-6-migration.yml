@@ -104,7 +104,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends ripgrep
           python3 -m pip install --quiet --upgrade cryptography
 
+      - name: Install pinned NVS migration verification tools
+        run: |
+          python3 -m pip install --quiet esp-idf-nvs-partition-gen==0.1.9
+          git init "$RUNNER_TEMP/cue-nvs-idf"
+          git -C "$RUNNER_TEMP/cue-nvs-idf" remote add origin https://github.com/espressif/esp-idf.git
+          git -C "$RUNNER_TEMP/cue-nvs-idf" sparse-checkout set tools/cmake components/nvs_flash/nvs_partition_tool components/nvs_flash/nvs_partition_generator
+          git -C "$RUNNER_TEMP/cue-nvs-idf" fetch --depth=1 origin 7101770dc6db2667b3c477cc31365dd1acd6db4e
+          git -C "$RUNNER_TEMP/cue-nvs-idf" checkout --detach FETCH_HEAD
+
       - name: Run host regression suites
+        env:
+          IDF_PATH: ${{ runner.temp }}/cue-nvs-idf
         shell: pwsh
         run: |
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log

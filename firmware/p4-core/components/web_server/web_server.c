@@ -57,6 +57,7 @@ static httpd_handle_t s_web_server = NULL;
 static bool s_mdns_started;
 
 static bool api_parse_deck(const char *value, uint8_t *out_deck);
+static bool api_parse_u32(const char *value, uint32_t *out_value);
 
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
 typedef struct {
@@ -1946,6 +1947,82 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* Bounded, read-only evidence for offline legacy-cue migration. Refuse stale
+ * pages before sending any body. Missing audio remains an explicit row. */
+static esp_err_t api_cue_migration_catalog_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before exporting cue identities", HTTPD_RESP_USE_STRLEN);
+    }
+    char query[64] = {0}, value[24] = {0};
+    uint32_t offset = 0, expected = 0;
+    if (httpd_req_get_url_query_len(req) > 0) {
+        if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "query too long");
+        if (httpd_query_key_value(query, "offset", value, sizeof(value)) == ESP_OK &&
+            !api_parse_u32(value, &offset))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid offset");
+        if (httpd_query_key_value(query, "generation", value, sizeof(value)) == ESP_OK &&
+            !api_parse_u32(value, &expected))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid generation");
+    }
+    const uint32_t generation = media_catalog_generation();
+    const int count = media_catalog_count();
+    if ((expected && expected != generation) || count <= 0 || offset > (uint32_t)count) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Catalog unavailable or changed", HTTPD_RESP_USE_STRLEN);
+    }
+    typedef struct {
+        media_catalog_identity_record_t row;
+        char path[1537], title[577], id[65], digest[65];
+        char json[24576];
+    } migration_work_t;
+    migration_work_t *w = heap_caps_calloc(1, sizeof(*w), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!w) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No PSRAM");
+    const board_capabilities_t *board = board_capabilities_get();
+    int used = snprintf(w->json, sizeof(w->json),
+        "{\"schema\":1,\"board_id\":\"%s\",\"project\":\"%s\",\"source_sha\":\"%s\","
+        "\"generation\":%u,\"count\":%d,\"offset\":%u,\"tracks\":[",
+        board_id_name(board->id), board->project, board_build_source_sha(),
+        (unsigned)generation, count, (unsigned)offset);
+    uint32_t end = offset + 8u;
+    if (end > (uint32_t)count) end = (uint32_t)count;
+    bool failed = used < 0;
+    for (uint32_t i = offset; i < end && !failed; i++) {
+        esp_err_t rc = media_catalog_identity_record((int)i, generation, &w->row);
+        if (rc != ESP_OK && rc != ESP_ERR_NOT_FOUND) { failed = true; break; }
+        web_api_json_escape(w->row.path, w->path, sizeof(w->path));
+        web_api_json_escape(w->row.title, w->title, sizeof(w->title));
+        for (unsigned j = 0; j < 32; j++) {
+            snprintf(w->id + 2*j, 3, "%02x", w->row.persistent_id.bytes[j]);
+            snprintf(w->digest + 2*j, 3, "%02x", w->row.export_digest[j]);
+        }
+        int n = snprintf(w->json + used, sizeof(w->json) - (size_t)used,
+            "%s{\"index\":%u,\"legacy_key\":%u,\"track_id\":%u,\"path\":\"%s\",\"title\":\"%s\","
+            "\"status\":\"%s\",\"export_digest\":\"%s\",\"persistent_id\":\"%s\",\"file_size\":%llu,\"mtime\":%lld}",
+            i == offset ? "" : ",", (unsigned)i, (unsigned)w->row.track_key,
+            (unsigned)w->row.rekordbox_track_id, w->path, w->title,
+            rc == ESP_OK ? "ok" : "missing", w->digest, w->id,
+            (unsigned long long)w->row.file_size, (long long)w->row.mtime);
+        if (n < 0 || (size_t)n >= sizeof(w->json) - (size_t)used) failed = true;
+        else used += n;
+    }
+    if (media_catalog_generation() != generation || media_catalog_count() != count) failed = true;
+    esp_err_t result;
+    if (failed) {
+        httpd_resp_set_status(req, "409 Conflict");
+        result = httpd_resp_send(req, "Catalog changed; restart export", HTTPD_RESP_USE_STRLEN);
+    } else {
+        snprintf(w->json + used, sizeof(w->json) - (size_t)used, "],\"next_offset\":%u}", (unsigned)end);
+        httpd_resp_set_type(req, "application/json");
+        result = httpd_resp_send(req, w->json, HTTPD_RESP_USE_STRLEN);
+    }
+    free(w);
+    return result;
+}
+
 // GET /api/library
 static esp_err_t api_library_handler(httpd_req_t *req)
 {
@@ -2339,7 +2416,7 @@ esp_err_t web_server_start(void)
     /* Must stay above the number of register_uri_or_stop() calls below: a single
      * failed registration stops the whole server, so an over-tight limit takes
      * every endpoint (including OTA) down with it. */
-    config.max_uri_handlers = 28; /* all 27 routes, including recorder builds */
+    config.max_uri_handlers = 30; /* includes migration and recorder routes */
     config.task_priority = 3;
     config.core_id = 0;
 
@@ -2400,6 +2477,11 @@ esp_err_t web_server_start(void)
     httpd_uri_t resources_uri = {.uri="/api/resources", .method=HTTP_GET,
                                  .handler=api_resources_handler};
     rc = register_uri_or_stop(s_web_server, &resources_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t cue_migration_uri = {.uri="/api/cue-migration/catalog*", .method=HTTP_GET,
+                                    .handler=api_cue_migration_catalog_handler};
+    rc = register_uri_or_stop(s_web_server, &cue_migration_uri);
     if (rc != ESP_OK) return rc;
 
 #if CONFIG_AUDIO_RECORDER_ENABLED

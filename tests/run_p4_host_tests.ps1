@@ -3891,6 +3891,9 @@ Invoke-Step -Name "run profile compiler and converter" -WorkingDirectory $RepoRo
 Invoke-Step -Name "run UI runtime memory budget gate" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/firmware_resources/test_runtime_budget.py")
 
+Invoke-Step -Name "run offline M3 cue migration" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/cue_migration/test_cue_migration.py")
+
 # Keep source-text contracts after executable suites: a stale UI spelling must
 # not prevent functional regressions from running. Default CI still runs both.
 Invoke-SourceContracts
