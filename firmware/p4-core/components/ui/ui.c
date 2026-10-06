@@ -1277,6 +1277,11 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
         if (audio_engine_deck_try_get_status(deck, &s_display_audio_status[deck]) == ESP_OK)
             s_display_audio_status_valid[deck] = true;
         ctx->deck_audio_status[deck] = s_display_audio_status[deck];
+        const audio_engine_deck_status_t *audio = &ctx->deck_audio_status[deck];
+        const bool same_session = s_display_audio_status_valid[deck] &&
+            ui_library_deck_observation_matches(deck, audio->loaded, audio->session_generation);
+        ctx->deck_loop_display[deck] = deck_core_get_loop_display_observed(deck,
+            same_session && audio->loop_active, audio->loop_start_ms, audio->loop_end_ms);
         ctx->deck_state[deck] = deck_core_get_deck_control_state(deck);
         if (s_display_audio_status_valid[deck])
             ctx->deck_state[deck].position_ms = ctx->deck_audio_status[deck].position_ms;

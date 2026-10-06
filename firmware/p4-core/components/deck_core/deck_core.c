@@ -3479,15 +3479,21 @@ deck_core_beat_jump_page_t deck_core_get_beat_jump_page(void)
 
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
 {
-    deck_core_loop_display_t out = {0};
-    if (deck >= DECK_CORE_DECK_COUNT) return out;
-
-    deck_loop_shadow_t shadow = {0};
-    copy_state_snapshot(deck, NULL, &shadow, NULL);
     bool active = false;
     uint32_t start_ms = 0u;
     uint32_t end_ms = 0u;
-    if (read_active_loop(deck, &active, &start_ms, &end_ms) && active && end_ms > start_ms) {
+    (void)read_active_loop(deck, &active, &start_ms, &end_ms);
+    return deck_core_get_loop_display_observed(deck, active, start_ms, end_ms);
+}
+
+deck_core_loop_display_t deck_core_get_loop_display_observed(uint8_t deck,
+    bool active, uint32_t start_ms, uint32_t end_ms)
+{
+    deck_core_loop_display_t out = {0};
+    if (deck >= DECK_CORE_DECK_COUNT) return out;
+    deck_loop_shadow_t shadow = {0};
+    copy_state_snapshot(deck, NULL, &shadow, NULL);
+    if (active && end_ms > start_ms) {
         out.active = true;
         out.start_ms = start_ms;
         out.end_ms = end_ms;

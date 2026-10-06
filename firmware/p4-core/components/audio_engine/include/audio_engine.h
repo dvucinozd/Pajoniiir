@@ -380,6 +380,10 @@ typedef struct {
     uint32_t analysis_span_ms;
     uint32_t duration_ms;
     uint32_t session_generation;
+    /* Same decoder/session observation as position and duration. */
+    bool loop_active;
+    uint32_t loop_start_ms;
+    uint32_t loop_end_ms;
 } audio_engine_deck_status_t;
 
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);

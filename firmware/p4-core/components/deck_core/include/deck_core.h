@@ -153,6 +153,10 @@ typedef struct {
 } deck_core_loop_display_t;
 
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck);
+/* Display only: merge the retained audio observation with the short control
+ * shadow. Does not query/wait for the decoder. Transport uses the API above. */
+deck_core_loop_display_t deck_core_get_loop_display_observed(uint8_t deck,
+    bool active, uint32_t start_ms, uint32_t end_ms);
 
 // Queue a control event (from touch screen or other source).
 /* Called for every queued controller/UI event, from whatever task produced

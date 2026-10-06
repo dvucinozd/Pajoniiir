@@ -133,6 +133,8 @@ void ui_library_cycle_source(void);
 void ui_library_dj_enable(void);
 #endif
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms);
+bool ui_library_deck_observation_matches(uint8_t deck, bool loaded,
+                                         uint32_t session_generation);
 uint32_t ui_library_deck_duration_observed(uint8_t deck, uint32_t fallback_duration_ms,
                                          bool loaded, uint32_t session_generation,
                                          uint32_t decoded_duration_ms);

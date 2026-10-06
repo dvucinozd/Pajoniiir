@@ -1583,12 +1583,18 @@ static void test_deck_loops_are_independent(void)
            "deck 1 loop read returns ESP_OK");
     EXPECT(active && start == 3000 && end == 5000,
            "deck 1 loop state is independent");
+    audio_engine_deck_status_t observed = {0};
+    EXPECT(audio_engine_deck_try_get_status(1, &observed) == ESP_OK &&
+           observed.loop_active && observed.loop_start_ms == start && observed.loop_end_ms == end,
+           "zero-wait status observes the same complete loop state");
 
     EXPECT(audio_engine_deck_clear_loop(0) == ESP_OK,
            "deck 0 loop clear returns ESP_OK");
     EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
            "deck 0 cleared loop read returns ESP_OK");
     EXPECT(!active, "deck 0 loop clears");
+    EXPECT(audio_engine_deck_try_get_status(0, &observed) == ESP_OK && !observed.loop_active,
+           "zero-wait status observes loop deletion");
 
     active = false;
     start = 0;

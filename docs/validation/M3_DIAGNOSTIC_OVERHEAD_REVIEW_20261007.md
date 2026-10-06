@@ -88,8 +88,6 @@ Raw installation/preflight/measurement evidence is under
 `.cache/m3-migration/20261007-e4536de2`; its copied package evidence remains
 immutable and separately records physical gates as NOT RUN.
 
-## Follow-up
-
 ## Canonical history cross-check
 
 Fetched `origin` with prune; canonical master remains `9af99cd2`. Inspected

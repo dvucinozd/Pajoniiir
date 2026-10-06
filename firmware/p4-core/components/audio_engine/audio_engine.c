@@ -5296,6 +5296,9 @@ static void audio_engine_copy_deck_status(uint8_t deck, audio_engine_deck_status
     out->last_error = eng->last_error;
     snprintf(out->last_error_text, sizeof(out->last_error_text), "%s", eng->last_error_text);
     out->loaded = eng->loaded;
+    out->loop_active = eng->loop_active;
+    out->loop_start_ms = eng->loop_start_ms;
+    out->loop_end_ms = eng->loop_end_ms;
     if (eng->loaded) {
         out->analysis_span_ms = eng->analysis_span_ms;
         out->duration_ms = eng->duration_ms;

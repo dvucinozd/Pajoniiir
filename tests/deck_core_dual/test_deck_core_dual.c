@@ -1653,6 +1653,13 @@ static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
     ctrl_event_t loop_out = deck_button(CTRL_ID_DECK2_LOOP_OUT);
 
     deck_core_test_apply_event(&loop_in);
+    deck_core_loop_display_t observed = deck_core_get_loop_display_observed(
+        CTRL_DECK_2, false, 0, 0);
+    assert(observed.armed && !observed.active && observed.start_ms == 1000);
+    /* The display must consume its supplied observation even if the decoder
+     * fake currently disagrees. It must not query that backend again. */
+    observed = deck_core_get_loop_display_observed(CTRL_DECK_2, true, 800, 1800);
+    assert(observed.active && !observed.armed && observed.start_ms == 800 && observed.end_ms == 1800);
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 2600;
     deck_core_test_apply_event(&loop_out);
 

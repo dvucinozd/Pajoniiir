@@ -650,9 +650,17 @@ int main(int argc, char **argv)
         fail("display duration did not refresh after decoder contention ended");
     audio_engine_stub_duration_ms[CTRL_DECK_1] = analysis_ms + 30000u;
     ++audio_engine_stub_session_generation[CTRL_DECK_1];
+    if (ui_library_deck_observation_matches(CTRL_DECK_1, true,
+            audio_engine_stub_session_generation[CTRL_DECK_1]))
+        fail("replaced audio session was accepted for waveform loop display");
     if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != analysis_ms)
         fail("stale audio session leaked its duration into current track");
     --audio_engine_stub_session_generation[CTRL_DECK_1];
+    if (!ui_library_deck_observation_matches(CTRL_DECK_1, true,
+            audio_engine_stub_session_generation[CTRL_DECK_1]) ||
+        ui_library_deck_observation_matches(CTRL_DECK_1, false,
+            audio_engine_stub_session_generation[CTRL_DECK_1]))
+        fail("waveform loop observation loaded/session fence is incorrect");
     audio_engine_stub_duration_ms[CTRL_DECK_1] = 100u;
     if (ui_library_deck_duration_ms(CTRL_DECK_1, 0) != 100u)
         fail("metadata duration overrode shorter decoded duration");

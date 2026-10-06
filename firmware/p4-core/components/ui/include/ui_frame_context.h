@@ -44,6 +44,7 @@ typedef struct {
     deck_state_t deck_state[DECK_CORE_DECK_COUNT];
     deck_state_t active_state;
     audio_engine_deck_status_t deck_audio_status[DECK_CORE_DECK_COUNT];
+    deck_core_loop_display_t deck_loop_display[DECK_CORE_DECK_COUNT];
 
     uint32_t deck_duration_ms[DECK_CORE_DECK_COUNT];
     uint32_t deck_analysis_span_ms[DECK_CORE_DECK_COUNT];

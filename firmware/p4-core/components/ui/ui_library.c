@@ -2697,6 +2697,14 @@ void ui_library_update(const ui_frame_context_t *ctx)
 #endif
 }
 
+bool ui_library_deck_observation_matches(uint8_t deck, bool loaded,
+                                         uint32_t session_generation)
+{
+    uint8_t idx = ui_library_deck_index(deck);
+    return loaded && s_deck_loaded_track_valid[idx] && session_generation != 0u &&
+           session_generation == s_deck_audio_session[idx];
+}
+
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
 {
     audio_engine_deck_status_t status = {0};

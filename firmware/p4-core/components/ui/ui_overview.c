@@ -430,6 +430,7 @@ static lv_obj_t *s_overview_mini_cue_markers[DECK_CORE_DECK_COUNT][8];
 static uint32_t s_overview_cue_fingerprint[DECK_CORE_DECK_COUNT];
 static bool s_overview_cue_fingerprint_valid[DECK_CORE_DECK_COUNT];
 static uint32_t s_overview_deck_duration_ms[DECK_CORE_DECK_COUNT];
+static deck_core_loop_display_t s_overview_loop_display[DECK_CORE_DECK_COUNT];
 static uint32_t s_overview_deck_analysis_span_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
 static anlz_snapshot_t *s_overview_deck_snapshot[DECK_CORE_DECK_COUNT];
@@ -1581,7 +1582,7 @@ static void armed_loop_burn_save_and_fill(ui_overview_wave_cache_t *cache,
         return;
     }
 
-    deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+    deck_core_loop_display_t loop = s_overview_loop_display[ui_overview_deck_index(deck)];
     if (!loop.armed) {
         return;
     }
@@ -2188,7 +2189,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     uint32_t loop_end_ms = 0;
 #ifndef WIN32
     {
-        deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+        deck_core_loop_display_t loop = s_overview_loop_display[idx];
         static bool s_last_loop_armed[DECK_CORE_DECK_COUNT] = {false};
         if (loop.active) {
             loop_active = true;
@@ -2647,6 +2648,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
         bool cues_changed = s_overview_deck_snapshot[deck] != ctx->deck_anlz[deck] ||
             s_overview_edit_revision[deck] != deck_core_hot_cue_revision();
         s_overview_deck_duration_ms[deck] = ctx->deck_duration_ms[deck];
+        s_overview_loop_display[deck] = ctx->deck_loop_display[deck];
         s_overview_deck_analysis_span_ms[deck] = ctx->deck_analysis_span_ms[deck];
         s_overview_deck_bpm[deck] = ctx->deck_bpm[deck];
         ui_overview_replace_snapshot(deck, ctx->deck_anlz[deck]);

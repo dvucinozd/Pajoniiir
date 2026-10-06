@@ -281,3 +281,19 @@ mutex, including a second query in the armed-loop overlay. The next focused
 repair must observe loop state without waiting and reuse it throughout the
 frame, preserving authoritative transport APIs and loaded-session fencing.
 Diagnostic sampling/UART risks are tracked separately in the audit.
+
+## Nonblocking loop observation repair
+
+The candidate extends the existing coherent zero-wait audio status with active
+loop bounds. A short control-shadow merge supplies armed/manual IN state without
+querying audio again. UI session fencing rejects observations from a replaced
+track; the frame carries one loop display value per deck, reused for both cache
+invalidation and the armed-loop burn/blit/restore path. No decoder mutex is
+acquired in either waveform-phase loop query. The authoritative loop getter
+remains available for transport/controller decisions.
+
+Production status tests cover observed loop set/clear in addition to existing
+held-decoder contention and recovery checks. Deck tests cover manual IN shadow
+and a supplied observation that deliberately disagrees with the fake backend.
+Software qualification and the new image's measured/operator retest remain
+required. The installed e4536de2 visual FAIL is not superseded by source edits.
