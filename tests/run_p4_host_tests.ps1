@@ -1275,10 +1275,17 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_restore_ap", "STA_BIT_GOT_IP", "xEventGroupWaitBits")
 
-Assert-FileDoesNotContain `
-    -Name "p4 STA switch does not tear down ESP-Hosted" `
-    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
-    -LiteralPatterns @("stop_hosted_transport()")
+# Full operator OFF releases Hosted on boards that share the controller.
+# Scope this guard to the temporary service visit and its return path.
+Write-Host "==> static p4 STA visit does not tear down ESP-Hosted"
+$wifiSource = Get-Content (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") -Raw
+$visitStart = $wifiSource.IndexOf('esp_err_t wifi_link_switch_to_sta(')
+$visitEnd = $wifiSource.IndexOf('bool wifi_link_is_sta(', $visitStart)
+if ($visitStart -lt 0 -or $visitEnd -le $visitStart) { throw 'Missing STA visit boundaries' }
+$visitBody = $wifiSource.Substring($visitStart, $visitEnd - $visitStart)
+foreach ($teardown in @('stop_hosted_transport()', 'esp_hosted_deinit()', 'bsp_wifi_release_hosted()')) {
+    if ($visitBody.Contains($teardown)) { throw "STA visit can call $teardown" }
+}
 
 # Pull OTA must gain no authority from having arrived over TLS: the same signed
 # manifest, verified by the same code, before anything reaches flash.
@@ -1945,6 +1952,33 @@ $tests = @(
             "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "-lm"
         )
+    },
+    @{
+        Name = "audio_keylock_m3"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock_m3.exe"
+        Args = @("-O2", "-Wall", "-Wextra", "-Werror", "-std=c99",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-o", "test_audio_keylock_m3.exe", "test_audio_keylock_m3.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c", "-lm")
+    },
+    @{
+        Name = "audio_resampler_antialias"
+        Dir = "tests/audio_resampler"
+        Target = "test_antialias.exe"
+        Args = @("-O2", "-Wall", "-Wextra", "-Werror", "-std=c99",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-o", "test_antialias.exe", "test_antialias.c",
+            "../../firmware/p4-core/components/audio_engine/audio_resampler.c", "-lm")
+    },
+    @{
+        Name = "bsp_scanout"
+        Dir = "tests/bsp_scanout"
+        Target = "test_bsp_scanout.exe"
+        Args = @("-O2", "-Wall", "-Wextra", "-Werror", "-std=c99",
+            "-I../../firmware/boards/m3/bsp_p4_m3/include",
+            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-o", "test_bsp_scanout.exe", "test_bsp_scanout.c")
     },
     @{
         Name = "audio_keylock_search"
@@ -2922,6 +2956,7 @@ $tests = @(
             "-I../../firmware/p4-core/components/wifi_link/include",
             "-o", "test_wifi_link_retry.exe",
             "test_wifi_link_retry.c",
+            "../../firmware/p4-core/components/wifi_link/wifi_link_control.c",
             "../../firmware/p4-core/components/wifi_link/wifi_link_retry.c"
         )
     },
@@ -3247,6 +3282,17 @@ $tests = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_JC1060",
             "-I../../firmware/p4-core/components/board_adapter/include",
             "-o", "test_board_capabilities_jc1060.exe", "test_board_capabilities.c",
+            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
+        )
+    },
+    @{
+        Name = "board_adapter_m3"
+        Dir = "tests/board_adapter"
+        Target = "test_board_capabilities_m3.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_M3",
+            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-o", "test_board_capabilities_m3.exe", "test_board_capabilities.c",
             "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
         )
     },

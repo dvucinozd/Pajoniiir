@@ -417,7 +417,8 @@ void pajoniiir_common_app_main(void)
 
     // ── Web UI / status API transport ───────────────────────────────────────
     // Wi-Fi remote (ESP-Hosted SoftAP + web UI) is user-controlled from the
-    // Settings tab and defaults to OFF. wifi_link_init() only prepares state;
+    // Settings tab; its fresh-NVS default is a product configuration.
+    // wifi_link_init() only prepares state;
     // the AP + web server come up asynchronously when the saved setting is on
     // (or when the user flips the Settings switch), so boot is never blocked on
     // the SDIO/C6 bring-up.

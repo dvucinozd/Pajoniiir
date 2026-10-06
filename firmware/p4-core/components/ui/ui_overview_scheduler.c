@@ -8,6 +8,7 @@ void ui_overview_scheduler_init(ui_overview_scheduler_t *scheduler)
 
     scheduler->main_redraw_budget = 0;
     scheduler->deck_order_flip = false;
+    scheduler->top_to_bottom = false;
 }
 
 void ui_overview_scheduler_begin_tick(ui_overview_scheduler_t *scheduler,
@@ -47,14 +48,15 @@ void ui_overview_scheduler_next_deck_order(ui_overview_scheduler_t *scheduler,
                                            uint8_t *first,
                                            uint8_t *second)
 {
-    bool flip = scheduler && scheduler->deck_order_flip;
+    bool ordered = scheduler && scheduler->top_to_bottom && scheduler->main_redraw_budget >= 2u;
+    bool flip = scheduler && !ordered && scheduler->deck_order_flip;
     if (first) {
         *first = flip ? deck_b : deck_a;
     }
     if (second) {
         *second = flip ? deck_a : deck_b;
     }
-    if (scheduler) {
+    if (scheduler && !ordered) {
         scheduler->deck_order_flip = !scheduler->deck_order_flip;
     }
 }

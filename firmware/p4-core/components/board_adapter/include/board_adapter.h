@@ -15,6 +15,9 @@
 #ifdef CONFIG_PAJONIIIR_BOARD_JC1060
 #define BSP_LCD_H_RES 1024
 #define BSP_LCD_V_RES 600
+#elif defined(CONFIG_PAJONIIIR_BOARD_M3)
+#define BSP_LCD_H_RES 800
+#define BSP_LCD_V_RES 480
 #else
 #define BSP_LCD_H_RES 480
 #define BSP_LCD_V_RES 800
@@ -95,3 +98,7 @@ void bsp_audio_main_dma_snapshot(bsp_main_dma_diag_t *out, bool reset_gap);
 /* Disable the PCM5102 TX channel so a blocked bounded write wakes during STOP.
  * The next set_sample_rate call re-enables the channel. */
 esp_err_t bsp_audio_main_i2s_abort_write(void);
+
+/* Target-owned C6 lifecycle. JC providers keep Hosted alive for the boot. */
+esp_err_t bsp_wifi_quiesce(void);
+esp_err_t bsp_wifi_release_hosted(void);

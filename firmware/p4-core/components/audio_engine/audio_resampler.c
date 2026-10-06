@@ -1,4 +1,5 @@
 #include "audio_resampler.h"
+#include "audio_resampler_filters.h"
 
 #include <math.h>
 #include <string.h>
@@ -44,11 +45,29 @@ static float phase_fraction_float(uint32_t phase_q32)
 void audio_resampler_reset(audio_resampler_state_t *state)
 {
     if (!state) return;
+    memset(state, 0, sizeof(*state));
+    state->filter_bank = state->previous_filter_bank = -1;
     state->previous = (audio_mixer_frame_t){ 0 };
     state->current = (audio_mixer_frame_t){ 0 };
     state->phase_q32 = 0u;
     state->pitch_factor_bits = UINT32_MAX;
     state->step_q32 = 0u;
+}
+
+static audio_mixer_frame_t filtered(const audio_resampler_state_t *s, int bank, float t)
+{
+    float l = 0, r = 0;
+    unsigned n = bank < 0 ? 1 : audio_aa_banks[bank].taps;
+    for (unsigned k = 0; k < n; ++k) {
+        audio_mixer_frame_t a = s->history[(s->history_head - k - 1u) & 1023u];
+        audio_mixer_frame_t b = s->history[(s->history_head - k) & 1023u];
+        float c = bank < 0 ? 1.0f : audio_aa_banks[bank].coeff[k];
+        l += c * ((1.0f - t) * a.left + t * b.left);
+        r += c * ((1.0f - t) * a.right + t * b.right);
+    }
+    l = fmaxf(-32768, fminf(32767, l));
+    r = fmaxf(-32768, fminf(32767, r));
+    return (audio_mixer_frame_t){ (int16_t)l, (int16_t)r };
 }
 
 audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
@@ -61,6 +80,18 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
     if (!state) return (audio_mixer_frame_t){ 0 };
 
     float factor = sanitize_pitch_factor(pitch_factor);
+    if (state->antialias && !state->filter_fade) {
+        int bank = -1;
+        if (factor > 1.0f) {
+            bank = 0;
+            while ((unsigned)(bank + 1) < AUDIO_AA_BANKS && factor > audio_aa_banks[bank].upper) ++bank;
+        }
+        if (bank != state->filter_bank) {
+            state->previous_filter_bank = state->filter_bank;
+            state->filter_bank = bank;
+            state->filter_fade = 128;
+        }
+    }
     uint32_t factor_bits = float_bits(factor);
     if (factor_bits != state->pitch_factor_bits) {
         state->pitch_factor_bits = factor_bits;
@@ -76,6 +107,8 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
         audio_mixer_frame_t next = { 0 };
         if (pop_source && pop_source(source_ctx, &next)) {
             state->current = next;
+            state->history_head = (state->history_head + 1u) & 1023u;
+            state->history[state->history_head] = next;
             if (out_consumed) (*out_consumed)++;
         }
         /* Ring underrun: leave `current` unchanged instead of snapping it to 0.
@@ -85,6 +118,16 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
     }
 
     float t = phase_fraction_float(state->phase_q32);
+    if (state->filter_bank >= 0 || state->filter_fade) {
+        audio_mixer_frame_t out = filtered(state, state->filter_bank, t);
+        if (state->filter_fade) {
+            audio_mixer_frame_t old = filtered(state, state->previous_filter_bank, t);
+            float mix = (float)(128u - --state->filter_fade) / 128.0f;
+            out.left = (int16_t)((1 - mix) * old.left + mix * out.left);
+            out.right = (int16_t)((1 - mix) * old.right + mix * out.right);
+        }
+        return out;
+    }
     float inv = 1.0f - t;
     return (audio_mixer_frame_t) {
         .left = (int16_t)(inv * (float)state->previous.left +

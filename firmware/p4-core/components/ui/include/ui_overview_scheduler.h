@@ -10,6 +10,7 @@ extern "C" {
 typedef struct {
     uint8_t main_redraw_budget;
     bool deck_order_flip;
+    bool top_to_bottom;
 } ui_overview_scheduler_t;
 
 void ui_overview_scheduler_init(ui_overview_scheduler_t *scheduler);

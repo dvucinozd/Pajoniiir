@@ -143,6 +143,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
 }
 #else
 #include "board_adapter.h"
+#include "board_scanout.h"
 #include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_heap_caps.h"
@@ -415,13 +416,14 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
         .in.srm_cm          = PPA_SRM_COLOR_MODE_RGB565,
 
         .out.buffer         = s_dsi_fb[s_dsi_active_fb_idx],
-        .out.buffer_size    = ALIGN_UP_BY((size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * 2,
+        .out.buffer_size    = ALIGN_UP_BY((size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * board_capabilities_get()->scanout_bytes_per_pixel,
                                           s_cache_align),
         .out.pic_w          = BSP_LCD_H_RES,
         .out.pic_h          = BSP_LCD_V_RES,
         .out.block_offset_x = (uint32_t)physical->x,
         .out.block_offset_y = (uint32_t)physical->y,
-        .out.srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
+        .out.srm_cm         = board_capabilities_get()->scanout_bytes_per_pixel == 3 ?
+                              PPA_SRM_COLOR_MODE_RGB888 : PPA_SRM_COLOR_MODE_RGB565,
 
         .rotation_angle     = board_capabilities_get()->panel_rotation == 270 ?
                               PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_0,
@@ -523,7 +525,10 @@ static void ui_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
     esp_lcd_touch_point_data_t point = {0};
     uint8_t cnt = 0;
-    esp_lcd_touch_read_data(tp);
+    if (esp_lcd_touch_read_data(tp) != ESP_OK) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     esp_err_t rc = esp_lcd_touch_get_data(tp, &point, &cnt, 1);
     if (rc == ESP_OK && cnt > 0) {
         /* Any touch counts as activity. The screensaver is a separate LVGL
@@ -834,6 +839,16 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (board_capabilities_get()->scanout_bytes_per_pixel == 3) {
+        uint8_t *fb = s_dsi_fb[s_dsi_active_fb_idx];
+        size_t stride = (size_t)BSP_LCD_H_RES * 3u;
+        if (!bsp_scanout_fill_rect_rgb565(fb, stride * BSP_LCD_V_RES,
+                BSP_LCD_H_RES, BSP_LCD_V_RES, physical.x, physical.y,
+                physical.w, physical.h, color)) return ESP_ERR_INVALID_ARG;
+        return esp_cache_msync(fb + (size_t)physical.y * stride,
+                (size_t)physical.h * stride,
+                ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    }
     uint16_t *fb = (uint16_t *)s_dsi_fb[s_dsi_active_fb_idx];
     uint32_t stride = BSP_LCD_H_RES;
 

@@ -47,6 +47,24 @@ Only dependency-lock manifest hashes changed; resolved versions/hashes did not.
 Real external MP3/PDB optional cases remain SKIP in this phase's host run.
 No flash, physical acceptance, remote push or publication has occurred.
 
+Phase 2 software gate PASS: all three IDF 6.0.2 targets build and pass BSP,
+dependency and descriptor checks: JC4880 2,600,720 B, JC1060 2,657,632 B,
+M3 2,562,000 B. The full host runner passes, including M3 scanout primitives,
+board capability selection, scheduler ordering, Wi-Fi decisions and FIR/cache
+regressions. The regular and M3-policy 300 s MT soaks pass with zero source-clock
+drift and no detected clicks/clipping. Compact and wide product simulator
+screenshots match the existing baselines without updating them. Linked USB/SD
+wrappers and float32-only keylock/resampler objects were verified on all boards.
+
+The shared DSP retains donor transport/timeline publication and uses board
+policy for the M3 FIR reuse and denser bounded correlation search. JC defaults
+retain the original faster search and unfiltered resampler. M3 uses fixed 48 kHz
+MAIN, RGB888 native scanout and waveform-first/top-to-bottom updates. Wi-Fi
+retains JC WPA2/WPA3/STA and M3 WPA2/APSTA policies, coherent M3 readiness, and
+the shared exclusive OTA/probe/control lease and bounded association retries.
+Real external MP3/PDB cases remain optional SKIP until the qualification fixture
+gate is added. M3 image memory headroom and all physical gates remain NOT RUN.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

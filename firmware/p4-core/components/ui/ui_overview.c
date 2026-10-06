@@ -1,3 +1,6 @@
+#ifndef WIN32
+#include "board_adapter.h"
+#endif
 #include "ui_overview.h"
 #include "ui_color_preview.h"
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
@@ -2598,6 +2601,9 @@ void ui_overview_init(const ui_overview_config_t *config)
         s_overview_config = *config;
     }
     ui_overview_scheduler_init(&s_overview_scheduler);
+#ifndef WIN32
+    s_overview_scheduler.top_to_bottom = board_capabilities_get()->waveform_top_to_bottom;
+#endif
 }
 
 void ui_overview_update(const ui_frame_context_t *ctx)

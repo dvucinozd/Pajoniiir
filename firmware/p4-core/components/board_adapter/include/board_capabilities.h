@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum { BOARD_JC4880, BOARD_JC1060 } board_id_t;
+typedef enum { BOARD_JC4880, BOARD_JC1060, BOARD_M3 } board_id_t;
 typedef struct {
     board_id_t id;
     const char *name;
@@ -12,6 +12,14 @@ typedef struct {
     uint16_t panel_rotation;
     uint8_t storage_root, controller_root, fs_phy_index;
     bool ethernet, wifi, pcm5102a, sd_internal_bounce;
+    uint8_t scanout_bytes_per_pixel;
+    bool waveform_top_to_bottom, waveform_first, hosted_release_on_stop;
+    uint32_t fixed_output_sample_rate;
+    const char *softap_ssid;
+    bool keylock_dense_correlation;
+    bool audio_antialias;
+    bool wifi_wpa3_transition;
+    bool wifi_apsta;
 } board_capabilities_t;
 
 /* Pure immutable descriptions; root roles never depend on enumeration order. */

@@ -9,8 +9,8 @@
 # Pajoniiir
 
 Shared-core development: portable P4 firmware lives in `firmware/p4-core`,
-with hardware providers under `firmware/boards`. JC4880 and JC1060 use linked
-common startup; the M3 target is being integrated on `codex/shared-p4-core-m3`.
+with hardware providers under `firmware/boards`. JC4880, JC1060 and M3 use linked
+common startup; the M3 entrypoint is `firmware/main-deck-m3`.
 See the [integration ledger](docs/SHARED_P4_CORE_INTEGRATION.md). This work does
 not change the published M2.5 release or its accepted hardware scope.
 

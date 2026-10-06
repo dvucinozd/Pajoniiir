@@ -77,13 +77,18 @@ static void ota_write_unlock(void)
 }
 
 /* Defaults match the firmware's out-of-the-box behaviour. */
+#if defined(CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE) && CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE
+#define APP_SETTINGS_DEFAULT_WIFI 1
+#else
+#define APP_SETTINGS_DEFAULT_WIFI 0
+#endif
 #define APP_SETTINGS_DEFAULTS (app_settings_t){ \
     .audio_out     = APP_SETTINGS_AUDIO_OUT_RCA, \
     .backlight_pct = 80,                         \
     .time_remain   = 0,                          \
     .cue_mode      = 0,                          \
     .master_trim_preset = 0,                     \
-    .wifi_remote   = 0,                          \
+    .wifi_remote   = APP_SETTINGS_DEFAULT_WIFI,  \
 }
 
 static app_settings_t s_cfg = {
@@ -92,7 +97,7 @@ static app_settings_t s_cfg = {
     .time_remain   = 0,
     .cue_mode      = 0,
     .master_trim_preset = 0,
-    .wifi_remote   = 0,
+    .wifi_remote   = APP_SETTINGS_DEFAULT_WIFI,
 };
 
 static char s_ota_ssid[APP_SETTINGS_OTA_SSID_CAP];

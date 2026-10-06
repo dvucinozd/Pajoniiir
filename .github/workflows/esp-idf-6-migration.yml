@@ -42,6 +42,49 @@ env:
   IDF_IMAGE: espressif/idf:v6.0.2@sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67
 
 jobs:
+  build-m3:
+    name: ESP32-P4 M3 shared-core firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Clean M3 build with pinned ESP-IDF
+        run: |
+          docker run --rm -e HOME=/tmp -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" -w /project/firmware/main-deck-m3 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              git config --global core.autocrlf true
+              idf.py --version
+              idf.py set-target esp32p4
+              idf.py build
+              object=build/esp-idf/audio_engine/CMakeFiles/__idf_audio_engine.dir/audio_resampler.c.obj
+              if riscv32-esp-elf-nm -u "$object" | grep -Eq "__[[:alnum:]_]*df[[:alnum:]_]*$"; then exit 1; fi
+              riscv32-esp-elf-nm build/main-deck-m3.elf | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"
+              for wrapper in sdmmc_wait_for_idle sdmmc_read_sectors sdmmc_write_sectors; do
+                riscv32-esp-elf-nm build/main-deck-m3.elf | grep -q " T __wrap_${wrapper}$"
+              done
+            ' > m3-idf-build.log 2>&1
+      - name: Verify M3 board identity and dependency lock
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" firmware/main-deck-m3/build
+          python3 tools/check_board_build.py --build firmware/main-deck-m3/build --project main-deck-m3
+          git diff --exit-code -- firmware/main-deck-m3/dependencies.lock
+          sha256sum firmware/main-deck-m3/build/main-deck-m3.bin firmware/main-deck-m3/dependencies.lock > m3-SHA256SUMS.txt
+      - name: Upload M3 software evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: main-deck-m3-idf-6.0.2
+          path: |
+            m3-idf-build.log
+            m3-SHA256SUMS.txt
+            firmware/main-deck-m3/build/*.bin
+            firmware/main-deck-m3/build/*.elf
+            firmware/main-deck-m3/build/*.map
+            firmware/main-deck-m3/dependencies.lock
+
   host-tests:
     name: Host regression tests
     runs-on: ubuntu-latest

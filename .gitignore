@@ -13,6 +13,7 @@ managed_components/
 dependencies.lock
 !firmware/main-deck-p4/dependencies.lock
 !firmware/main-deck-jc1060/dependencies.lock
+!firmware/main-deck-m3/dependencies.lock
 sdkconfig
 sdkconfig.old
 releases/

@@ -1,6 +1,17 @@
 menu "Pajoniiir board"
+choice PAJONIIIR_BOARD
+    prompt "P4 board target"
+    default PAJONIIIR_BOARD_JC4880
+config PAJONIIIR_BOARD_JC4880
+    bool "JC4880P443C_I_W target"
 config PAJONIIIR_BOARD_JC1060
     bool "JC1060P470C_I_W_Y target"
+config PAJONIIIR_BOARD_M3
+    bool "JC-ESP32P4-M3-DEV target"
+endchoice
+config PAJONIIIR_DEFAULT_WIFI_REMOTE
+    bool
+    default y if PAJONIIIR_BOARD_M3
     default n
 config PAJONIIIR_SD_INTERNAL_BOUNCE
     bool "Force microSD PSRAM buffers through internal DMA memory"

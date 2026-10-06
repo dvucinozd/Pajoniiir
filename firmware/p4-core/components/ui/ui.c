@@ -1,3 +1,6 @@
+#ifndef WIN32
+#include "board_adapter.h"
+#endif
 #include "ui.h"
 #include "lvgl.h"
 #include "ui_theme.h"   // centralised colour palette (COL_*); needs lvgl.h above
@@ -1421,6 +1424,13 @@ void ui_update(void) {
 #ifndef WIN32
     ui_idle_service(&ctx);
 #endif
+    bool waveform_first = false;
+#ifndef WIN32
+    waveform_first = board_capabilities_get()->waveform_first;
+#if !CONFIG_PAJONIIIR_DJ_OVERVIEW
+    if (waveform_first) ui_overview_update(&ctx);
+#endif
+#endif
     ui_library_update(&ctx);
     ui_performance_tabs_update_jog_mode();
 #ifndef WIN32
@@ -1455,7 +1465,7 @@ void ui_update(void) {
 #if CONFIG_PAJONIIIR_DJ_OVERVIEW
     ui_dj_bridge_update(&ctx);
 #else
-    ui_overview_update(&ctx);
+    if (!waveform_first) ui_overview_update(&ctx);
 #endif
     ui_settings_update(&ctx);
     ui_release_frame_context(&ctx);

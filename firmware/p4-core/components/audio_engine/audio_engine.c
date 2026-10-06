@@ -1388,6 +1388,8 @@ static void audio_output_apply_master_tempo_commands(void)
 
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 {
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) deck = AE_DECK_0;
+    s_resamplers[deck].antialias = board_capabilities_get()->audio_antialias;
     if (deck < AUDIO_ENGINE_DECK_COUNT) {
         return &s_resamplers[deck];
     }
@@ -1416,6 +1418,8 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
     uint32_t generation = audio_pcm_timeline_generation(timeline);
     if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation) {
         audio_keylock_reset(&s_keylocks[deck], audio_pcm_timeline_play_seq(timeline));
+        s_keylocks[deck].dense_correlation = board_capabilities_get()->keylock_dense_correlation;
+        s_keylocks[deck].antialias = board_capabilities_get()->audio_antialias;
         s_keylock_generation[deck] = generation;
     }
     audio_keylock_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
@@ -3733,6 +3737,8 @@ static void audio_output_apply_fx_sample_rate(uint32_t sample_rate)
 
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 {
+    uint32_t fixed_rate = board_capabilities_get()->fixed_output_sample_rate;
+    if (fixed_rate) sample_rate = fixed_rate;
     if (sample_rate == 0) return ESP_ERR_INVALID_ARG;
 
     AE_LOCK();

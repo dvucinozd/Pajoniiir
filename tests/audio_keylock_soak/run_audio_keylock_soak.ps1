@@ -1,7 +1,8 @@
 param(
     [ValidateRange(1, 3600)]
     [int]$VirtualSeconds = 300,
-    [switch]$KeepArtifact
+    [switch]$KeepArtifact,
+    [switch]$M3Policy
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,14 +29,12 @@ if ($env:Path -notlike "*$GccDirectory*") {
 
 Push-Location $TestDir
 try {
-    & $GccPath `
-        -O2 -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration `
-        -std=c99 `
-        "-I../../firmware/p4-core/components/audio_engine/include" `
-        -o $Target `
-        "test_audio_keylock_soak.c" `
-        "../../firmware/p4-core/components/audio_engine/audio_keylock.c" `
-        -lm
+    $GccArgs = @("-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration",
+        "-std=c99", "-I../../firmware/p4-core/components/audio_engine/include",
+        "-o", $Target, "test_audio_keylock_soak.c",
+        "../../firmware/p4-core/components/audio_engine/audio_keylock.c", "-lm")
+    if ($M3Policy) { $GccArgs += "-DM3_DSP_POLICY_TEST" }
+    & $GccPath @GccArgs
     if ($LASTEXITCODE -ne 0) {
         throw "audio key-lock soak build failed with exit code $LASTEXITCODE"
     }

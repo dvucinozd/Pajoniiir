@@ -7,6 +7,7 @@
 typedef bool (*audio_resampler_pop_fn)(void *ctx, audio_mixer_frame_t *out_frame);
 
 typedef struct {
+    bool antialias;
     audio_mixer_frame_t previous;
     audio_mixer_frame_t current;
     /* Q0.32 phase plus cached Q32 step. The input pitch is binary32, so every
@@ -16,6 +17,10 @@ typedef struct {
     uint32_t phase_q32;
     uint32_t pitch_factor_bits;
     uint64_t step_q32;
+    audio_mixer_frame_t history[1024];
+    unsigned history_head;
+    int filter_bank, previous_filter_bank;
+    unsigned filter_fade;
 } audio_resampler_state_t;
 
 void audio_resampler_reset(audio_resampler_state_t *state);

@@ -12,8 +12,9 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
     assert description["target"] == "esp32p4", "wrong silicon target"
     components = set(description["build_components"])
     jc1060 = project == "main-deck-jc1060"
-    assert ("bsp_jc1060" in components) == jc1060, "wrong display BSP"
-    assert ("bsp_jc4880" in components) != jc1060, "wrong display BSP"
+    m3 = project == "main-deck-m3"
+    selected_bsp = {"main-deck-p4": "bsp_jc4880", "main-deck-jc1060": "bsp_jc1060", "main-deck-m3": "bsp_p4_m3"}[project]
+    assert components & {"bsp_jc4880", "bsp_jc1060", "bsp_p4_m3"} == {selected_bsp}, "exactly one matching BSP required"
     assert ("board_ethernet" in components) == jc1060, "wrong Ethernet transport"
     for link_component in ("djlink", "dj_link_core", "dj_link_service"):
         assert (link_component in components) == jc1060, "DJ Link must be isolated to JC1060 Ethernet"
@@ -32,6 +33,11 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
         assert jc1060, "JC4880 USB DMA policy must stay internal"
         assert "#define CONFIG_PAJONIIIR_SD_INTERNAL_BOUNCE 1" in config, "PSRAM USB DMA requires internal SD bounce"
     assert ("#define CONFIG_PAJONIIIR_BOARD_JC1060 1" in config) == jc1060
+    assert ("#define CONFIG_PAJONIIIR_BOARD_M3 1" in config) == m3
+    if m3:
+        assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" in config, "M3 MAIN must use PCM5102A"
+        assert "#define CONFIG_BSP_ES8311_MONITOR 1" not in config, "M3 monitor codec is retired"
+        assert "#define CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE 1" in config, "M3 defaults must keep Wi-Fi enabled"
     if jc1060:
         assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" not in config, "Ethernet pin conflict"
         assert "#define CONFIG_BSP_ES8311_MONITOR 1" not in config, "USB-only sink must not use codec pacing"
@@ -52,7 +58,7 @@ def verify(build: Path, project: str, experimental_recorder: bool = False) -> No
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--build", type=Path, required=True)
-    parser.add_argument("--project", choices=["main-deck-p4", "main-deck-jc1060"], required=True)
+    parser.add_argument("--project", choices=["main-deck-p4", "main-deck-jc1060", "main-deck-m3"], required=True)
     parser.add_argument("--experimental-recorder", action="store_true")
     args = parser.parse_args()
     verify(args.build, args.project, args.experimental_recorder)

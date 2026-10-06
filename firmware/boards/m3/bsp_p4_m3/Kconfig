@@ -1,0 +1,16 @@
+menu "Pajoniiir JC-ESP32P4-M3 BSP"
+
+config BSP_PCM5102A_MAIN_OUT
+    bool "Enable PCM5102A main I2S output"
+    default y
+    help
+        Enable the I2S TX channel for the external PCM5102A MAIN OUT DAC.
+
+config BSP_ES8311_MONITOR
+    bool "Enable ES8311 onboard monitor codec"
+    default n
+    help
+        Bring up the ES8311 codec on I2S unit 0 for the onboard monitor
+        speaker/headphones path.
+
+endmenu

@@ -118,6 +118,21 @@ static void test_null_arguments_are_safe(void)
 
 int main(void)
 {
+    ui_overview_scheduler_t ordered;
+    uint8_t first, second;
+    ui_overview_scheduler_init(&ordered);
+    ordered.top_to_bottom = true;
+    for (unsigned i = 0; i < 4; ++i) {
+        ui_overview_scheduler_begin_tick(&ordered, 2);
+        ui_overview_scheduler_next_deck_order(&ordered, 0, 1, &first, &second);
+        assert(first == 0 && second == 1);
+    }
+    ui_overview_scheduler_begin_tick(&ordered, 1);
+    ui_overview_scheduler_next_deck_order(&ordered, 0, 1, &first, &second);
+    assert(first == 0 && second == 1);
+    ui_overview_scheduler_begin_tick(&ordered, 1);
+    ui_overview_scheduler_next_deck_order(&ordered, 0, 1, &first, &second);
+    assert(first == 1 && second == 0);
     test_init_sets_empty_budget_and_default_order();
     test_single_redraw_budget_allows_exactly_one_consume();
     test_zero_redraw_budget_allows_no_consume();

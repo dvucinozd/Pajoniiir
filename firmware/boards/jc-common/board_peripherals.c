@@ -654,3 +654,7 @@ esp_err_t bsp_sd_get_status(bsp_sd_status_t *out_status)
     out_status->total_bytes = total_clusters * cluster_bytes;
     return ESP_OK;
 }
+
+/* JC boards keep the Hosted SDMMC transport for the entire boot. */
+esp_err_t bsp_wifi_quiesce(void) { return ESP_OK; }
+esp_err_t bsp_wifi_release_hosted(void) { return ESP_OK; }

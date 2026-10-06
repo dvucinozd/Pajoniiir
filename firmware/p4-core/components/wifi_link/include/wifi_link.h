@@ -5,18 +5,30 @@
 
 #include "esp_err.h"
 
-/* Three i's, matching the product name, the mDNS hostname `pajoniiir.local` and
- * the update host. The former AP spelling omitted one i until 2026-07-24,
- * exactly the kind of near-miss that later produces a wrong URL by hand. */
-#define WIFI_LINK_SOFTAP_SSID "Pajoniiir"
+/* Three i's plus the M3 product suffix, matching the operator-facing device
+ * name. Keep the password separate: renaming the network must not silently
+ * invalidate the accepted bench credential. */
+#define WIFI_LINK_SOFTAP_SSID "Pajoniiir" /* runtime uses board SSID */
 #define WIFI_LINK_PASSWORD    "Pajoniiir"
+
+typedef enum {
+    WIFI_LINK_MODE_OFF = 0,
+    WIFI_LINK_MODE_STARTING,
+    WIFI_LINK_MODE_AP,
+    WIFI_LINK_MODE_STA,
+    WIFI_LINK_MODE_RESTORING_AP,
+    WIFI_LINK_MODE_STOPPING,
+    WIFI_LINK_MODE_ERROR,
+} wifi_link_mode_t;
 
 typedef struct {
     bool initialized;
     bool active;            // SoftAP + web server currently running
     uint8_t ap_clients;
     esp_err_t last_error;
+    wifi_link_mode_t mode;
     char ssid[33];
+    char address[16];        // current AP or temporary STA IPv4
 } wifi_link_status_t;
 
 /*
@@ -93,6 +105,9 @@ esp_err_t wifi_link_init(void);
 // Bring the Wi-Fi remote up/down synchronously (ESP-Hosted + SoftAP + web
 // server + captive DNS). Idempotent. Blocking (~1-2 s) — do NOT call from the
 // LVGL task; use wifi_link_request_enable() from UI contexts instead.
+// wifi_link_stop() returns ESP_ERR_INVALID_STATE while probe/OTA owns an
+// AP->STA->AP transition; the async request path keeps the disable pending and
+// applies it after the AP is restored.
 esp_err_t wifi_link_start(void);
 esp_err_t wifi_link_stop(void);
 

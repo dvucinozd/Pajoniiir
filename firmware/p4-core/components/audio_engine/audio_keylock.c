@@ -1,4 +1,5 @@
 #include "audio_keylock.h"
+#include "audio_resampler_filters.h"
 
 #include <math.h>
 #include <string.h>
@@ -68,9 +69,73 @@ static bool read_fractional(audio_keylock_read_fn read, void *ctx,
     return true;
 }
 
+static bool filter_read(audio_keylock_t *s, audio_keylock_read_fn read, void *ctx,
+                        uint64_t seq, audio_mixer_frame_t *out)
+{
+    unsigned index = (unsigned)seq & 511u;
+    if (s->filter_valid[index] && s->filter_seq[index] == seq) {
+        *out = s->filter_frames[index];
+        return true;
+    }
+    if (!read(ctx, seq, out)) return false;
+    s->filter_valid[index] = 1;
+    s->filter_seq[index] = seq;
+    s->filter_frames[index] = *out;
+    return true;
+}
+
 static uint32_t absolute_i32(int32_t value)
 {
     return (uint32_t)(value < 0 ? -value : value);
+}
+
+static bool read_filtered_integer(audio_keylock_t *s, audio_keylock_read_fn read,
+    void *ctx, uint64_t absolute, unsigned bank, float *left, float *right)
+{
+    unsigned index = (unsigned)absolute & 511u;
+    if ((s->filter_valid[index] & 2u) && s->filter_seq[index] == absolute) {
+        *left = s->filtered_left[index];
+        *right = s->filtered_right[index];
+        return true;
+    }
+    audio_mixer_frame_t current;
+    if (!filter_read(s, read, ctx, absolute, &current)) return false;
+    float l = 0.0f, r = 0.0f;
+    for (unsigned k = 0; k < audio_aa_banks[bank].taps; ++k) {
+        audio_mixer_frame_t a = {0};
+        if (absolute >= k) (void)filter_read(s, read, ctx, absolute - k, &a);
+        float c = audio_aa_banks[bank].coeff[k];
+        l += c * a.left;
+        r += c * a.right;
+    }
+    s->filtered_left[index] = *left = l;
+    s->filtered_right[index] = *right = r;
+    s->filter_valid[index] |= 2u;
+    s->filter_evaluations++;
+    return true;
+}
+
+static bool read_render_frame(audio_keylock_t *s, audio_keylock_read_fn read,
+    void *ctx, float seq, audio_mixer_frame_t *out)
+{
+    if (!s->antialias || s->rate_ratio <= 1.0f) return read_fractional(read, ctx, s->origin_seq, seq, out);
+    if (seq < 0.0f) return false;
+    unsigned bank = 0;
+    while (bank + 1u < AUDIO_AA_BANKS && s->rate_ratio > audio_aa_banks[bank].upper) ++bank;
+    uint64_t absolute = s->origin_seq + (uint32_t)seq;
+    float fraction = seq - (float)(uint32_t)seq;
+    float left, right;
+    if (!read_filtered_integer(s, read, ctx, absolute, bank, &left, &right)) return false;
+    if (fraction > .000001f) {
+        float next_left, next_right;
+        if (read_filtered_integer(s, read, ctx, absolute + 1u, bank, &next_left, &next_right)) {
+            left += fraction * (next_left - left);
+            right += fraction * (next_right - right);
+        }
+    }
+    out->left = (int16_t)fmaxf(-32768.0f, fminf(32767.0f, left));
+    out->right = (int16_t)fmaxf(-32768.0f, fminf(32767.0f, right));
+    return true;
 }
 
 static bool candidate_sad(audio_keylock_t *s,
@@ -85,7 +150,7 @@ static bool candidate_sad(audio_keylock_t *s,
     s->last_search_candidates++;
     for (uint32_t sample = 0u; sample < reference_count; sample++) {
         audio_mixer_frame_t b;
-        float offset = (float)(sample * KEYLOCK_REFERENCE_STRIDE) *
+        float offset = (float)(sample * (s->dense_correlation ? 16u : KEYLOCK_REFERENCE_STRIDE)) *
                        s->rate_ratio;
         if (!read_fractional(read_cached, cache, s->origin_seq,
                              candidate + offset, &b)) {
@@ -113,9 +178,9 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
     /* The reference window is identical for every candidate.  Reading and
      * interpolating it inside the candidate loop doubled canonical-timeline
      * traffic in the most expensive Master Tempo hot path. */
-    audio_mixer_frame_t reference_frames[KEYLOCK_REFERENCE_COUNT];
+    audio_mixer_frame_t reference_frames[4];
     uint32_t reference_count = 0u;
-    for (uint32_t i = 0; i < 64u; i += KEYLOCK_REFERENCE_STRIDE) {
+    for (uint32_t i = 0; i < 64u; i += s->dense_correlation ? 16u : KEYLOCK_REFERENCE_STRIDE) {
         float offset = (float)i * s->rate_ratio;
         if (!read_fractional(read, ctx, s->origin_seq, reference + offset,
                              &reference_frames[reference_count])) {
@@ -148,6 +213,50 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
      * the best point. This caps every hop at 15 candidates; the previous
      * multi-stage search reached 30 and starved the high-rate decoder. */
     s->last_search_candidates = 0u;
+    if (s->dense_correlation) {
+    int center = 0;
+    int span = radius;
+    int step = radius / 3;
+    if (step < 1) step = 1;
+    while (step > 1) {
+        int first_delta = center - span;
+        int last_delta = center + span;
+        if (first_delta < -radius) first_delta = -radius;
+        if (last_delta > radius) last_delta = radius;
+        int stage_best = center;
+        for (int delta = first_delta; delta <= last_delta; delta += step) {
+            float candidate = nominal + (float)delta;
+            if (candidate < 0.0f) continue;
+            uint32_t error = 0u;
+            if (candidate_sad(s, &cache, reference_frames, reference_count,
+                              candidate, best_error, &error) &&
+                error < best_error) {
+                best_error = error;
+                best = candidate;
+                stage_best = delta;
+            }
+        }
+        center = stage_best;
+        span = step - 1;
+        step /= 4;
+        if (step < 1) step = 1;
+    }
+    int first_delta = center - span;
+    int last_delta = center + span;
+    if (first_delta < -radius) first_delta = -radius;
+    if (last_delta > radius) last_delta = radius;
+    for (int delta = first_delta; delta <= last_delta; delta++) {
+        float candidate = nominal + (float)delta;
+        if (candidate < 0.0f) continue;
+        uint32_t error = 0u;
+        if (candidate_sad(s, &cache, reference_frames, reference_count,
+                          candidate, best_error, &error) &&
+            error < best_error) {
+            best_error = error;
+            best = candidate;
+        }
+    }
+    } else {
     int center = 0;
     for (int point = 0; point < KEYLOCK_COARSE_POINTS; point++) {
         int delta = -radius +
@@ -177,6 +286,7 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
             best_error = error;
             best = candidate;
         }
+    }
     }
     return best;
 }
@@ -209,6 +319,9 @@ void audio_keylock_configure(audio_keylock_t *s, float tempo, float ratio)
     float next_tempo = clamp_factor(tempo, 0.50f, 2.00f);
     float next_ratio = clamp_factor(ratio, 0.25f, 4.00f);
     if (s->tempo_factor == next_tempo && s->rate_ratio == next_ratio) return;
+    if (s->rate_ratio != next_ratio) {
+        for (unsigned i = 0; i < 512u; ++i) s->filter_valid[i] &= 1u;
+    }
     s->tempo_factor = next_tempo;
     s->rate_ratio = next_ratio;
 }
@@ -221,14 +334,14 @@ bool audio_keylock_next(audio_keylock_t *s, audio_keylock_read_fn read, void *ct
     if (!s || !s->initialized || !read || !out) return false;
     float ratio = s->rate_ratio;
     if (s->initial_half) {
-        if (!read_fractional(read, ctx, s->origin_seq,
+        if (!read_render_frame(s, read, ctx,
                              s->grain_a + s->phase * ratio, out)) return false;
     } else {
         audio_mixer_frame_t a = {0}, b = {0};
         float pa = s->grain_a + (AUDIO_KEYLOCK_SYNTH_HOP + s->phase) * ratio;
         float pb = s->grain_b + s->phase * ratio;
-        if (!read_fractional(read, ctx, s->origin_seq, pa, &a) ||
-            !read_fractional(read, ctx, s->origin_seq, pb, &b)) return false;
+        if (!read_render_frame(s, read, ctx, pa, &a) ||
+            !read_render_frame(s, read, ctx, pb, &b)) return false;
         float fade = (float)(s->phase + 1u) / AUDIO_KEYLOCK_SYNTH_HOP;
         out->left = lerp_i16(a.left, b.left, fade);
         out->right = lerp_i16(a.right, b.right, fade);
