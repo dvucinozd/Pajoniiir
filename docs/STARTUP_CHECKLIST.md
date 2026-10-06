@@ -1,5 +1,9 @@
 # P4 operation and release checklist
 
+For the shared-core/M3 development branch, use the exact target identity and
+[integration gates](SHARED_P4_CORE_INTEGRATION.md). Existing physical records
+remain image-specific; successful builds do not qualify the new M3 target.
+
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the
 [M2.5 release](validation/M2_5_RELEASE_20261006.md) is not a request to

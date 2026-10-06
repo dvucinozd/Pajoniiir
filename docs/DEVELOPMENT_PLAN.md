@@ -1,5 +1,10 @@
 # P4 post-release development plan
 
+Shared-core/M3 implementation is tracked in
+[the integration ledger](SHARED_P4_CORE_INTEGRATION.md). Portable code now lives
+under `firmware/p4-core`; hardware providers live under `firmware/boards`.
+This development branch does not extend the physical scope of M2.5.
+
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).
 

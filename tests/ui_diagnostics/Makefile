@@ -2,7 +2,7 @@
 
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 \
-           -I../../firmware/main-deck-p4/components/ui/include
+           -I../../firmware/p4-core/components/ui/include
 
 TARGET_DEFAULT = test_ui_diagnostics_default
 TARGET_ENABLED = test_ui_diagnostics_enabled

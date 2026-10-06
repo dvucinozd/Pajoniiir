@@ -3,7 +3,7 @@
 `dj_link_discovery` is a single-owner, heap-free discovery and dual-player claim
 model. Claim stages/timing and the 5/6 keep-alive compatibility byte derive from
 kayrozen/Pajoniiir `428b97dd4a175f03d3a172c8db9c4d5ed94195fb`,
-`firmware/main-deck-jc1060/components/dj_link/dj_link_session.c` (MIT).
+`firmware/boards/jc1060/dj_link/dj_link_session.c` (MIT).
 The associated codec and its license are preserved in `../djlink`.
 `LICENSE` retains kayrozen's codec attribution; `LICENSE.Pajoniiir` preserves
 the frozen donor application's MIT copyright notice for the derived session

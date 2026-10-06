@@ -1,7 +1,7 @@
 /* JC1060 entrypoint: common P4 startup/core, board-local Ethernet bring-up. */
-#define app_main pajoniiir_common_app_main
-#include "../../main-deck-p4/main/app_main.c"
-#undef app_main
+#include "p4_app.h"
+#include "board_adapter.h"
+#include "esp_log.h"
 #include "board_ethernet.h"
 #include "dj_link_service.h"
 void app_main(void)

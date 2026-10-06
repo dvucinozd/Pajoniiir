@@ -40,6 +40,13 @@ separate authorization after exact-image physical acceptance.
 
 ## Validation status
 
+Phase 1 software gate PASS: full P4 host runner exit 0; IDF 6.0.2 builds and
+`check_board_build.py` pass for JC4880 (2,576,928 B) and JC1060 (2,633,968 B).
+The initial builds found a relocated BSP-private timer dependency, now fixed.
+Only dependency-lock manifest hashes changed; resolved versions/hashes did not.
+Real external MP3/PDB optional cases remain SKIP in this phase's host run.
+No flash, physical acceptance, remote push or publication has occurred.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const sharp = require('sharp');
 
 async function main() {
-    const ui = path.resolve(__dirname, '../firmware/main-deck-p4/components/ui');
+    const ui = path.resolve(__dirname, '../firmware/p4-core/components/ui');
     const svg = fs.readFileSync(path.join(ui, 'assets/default_artwork.svg'));
     const hash = crypto.createHash('sha256').update(svg).digest('hex');
     const lines = [

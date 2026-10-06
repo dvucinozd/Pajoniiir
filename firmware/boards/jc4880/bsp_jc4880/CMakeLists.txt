@@ -1,6 +1,8 @@
 idf_component_register(
-    SRCS "bsp_jc4880.c"
+    SRCS "bsp_jc4880.c" "../../jc-common/board_peripherals.c"
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "../../../p4-core/components/audio_engine/include"
+    PRIV_REQUIRES esp_timer
     REQUIRES board_adapter log esp_driver_gpio esp_driver_ledc esp_driver_i2c esp_driver_i2s esp_driver_sdmmc esp_lcd esp_lcd_st7701 esp_lcd_touch esp_lcd_touch_gt911 esp_codec_dev fatfs sdmmc
 )
 

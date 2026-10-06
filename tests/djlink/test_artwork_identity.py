@@ -5,7 +5,7 @@ import shutil
 import subprocess
 
 root = Path(__file__).resolve().parents[2]
-component = root / "firmware/main-deck-p4/components"
+component = root / "firmware/p4-core/components"
 source = (component / "ui/ui_artwork.c").read_text(encoding="utf-8")
 out = root / ".cache/artwork-identity"
 out.mkdir(parents=True, exist_ok=True)

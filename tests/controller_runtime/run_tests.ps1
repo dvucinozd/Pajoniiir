@@ -4,12 +4,12 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $BuildDir = Join-Path $PSScriptRoot "build"
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
-$Runtime = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_runtime"
-$Codec = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host"
-$Profile = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile"
-$ProfileRuntime = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_runtime"
-$HostManager = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager"
-$Control = Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/include"
+$Runtime = Join-Path $RepoRoot "firmware/p4-core/components/controller_runtime"
+$Codec = Join-Path $RepoRoot "firmware/p4-core/components/controller_usb_host"
+$Profile = Join-Path $RepoRoot "firmware/p4-core/components/controller_profile"
+$ProfileRuntime = Join-Path $RepoRoot "firmware/p4-core/components/controller_profile_runtime"
+$HostManager = Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager"
+$Control = Join-Path $RepoRoot "firmware/p4-core/components/control_link/include"
 $Reconciler = Join-Path $RepoRoot "firmware/common/control_state_reconciler/include"
 $Stubs = Join-Path $PSScriptRoot "stubs"
 

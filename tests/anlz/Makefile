@@ -11,10 +11,10 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic \
            -DANLZ_STANDALONE_TEST \
-           -I../../firmware/main-deck-p4/components/library/include
+           -I../../firmware/p4-core/components/library/include
 
 SRCS    = test_anlz.c \
-          ../../firmware/main-deck-p4/components/library/rekordbox_anlz.c
+          ../../firmware/p4-core/components/library/rekordbox_anlz.c
 
 TARGET  = test_anlz
 

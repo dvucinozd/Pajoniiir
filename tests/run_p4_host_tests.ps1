@@ -174,10 +174,10 @@ function Invoke-ApiContract {
     $dir = Join-Path $RepoRoot "tests/api_contract"
     $inc = @(
         "-I../support/stubs",
-        "-I../../firmware/main-deck-p4/components/library/include",
-        "-I../../firmware/main-deck-p4/components/audio_engine/include",
-        "-I../../firmware/main-deck-p4/components/usb_storage/include",
-        "-I../../firmware/main-deck-p4/components/wifi_link/include"
+        "-I../../firmware/p4-core/components/library/include",
+        "-I../../firmware/p4-core/components/audio_engine/include",
+        "-I../../firmware/p4-core/components/usb_storage/include",
+        "-I../../firmware/p4-core/components/wifi_link/include"
     )
 
     Invoke-Step -Name "static public API contract compiles" `
@@ -214,7 +214,7 @@ function Invoke-ApiContract {
 }
 
 function Assert-OverviewInactiveGuardBeforeCacheUpdate {
-    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    $Path = Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c"
     Write-Host "==> static overview inactive tab does not validate waveform cache"
     $text = Get-Content -LiteralPath $Path -Raw
     $start = $text.IndexOf("static void ui_render_overview_main_waveform")
@@ -269,7 +269,7 @@ function Assert-NoTestSideCompilationWrappers {
 }
 
 function Invoke-SinglePrecisionContract {
-    $dir = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine"
+    $dir = Join-Path $RepoRoot "firmware/p4-core/components/audio_engine"
     $sources = @(
         "audio_keylock.c", "audio_filter.c", "audio_eq.c", "audio_resampler.c",
         "audio_smart_cfx.c", "audio_delay_fx.c", "audio_flanger_fx.c",
@@ -293,7 +293,7 @@ function Invoke-SinglePrecisionContract {
 # The decode loops warm the pages first and take the lock afterwards. The
 # ordering is the entire point, so check the order rather than only presence.
 function Assert-DecodeWarmsCacheBeforeEngineLock {
-    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+    $Path = Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c"
     Write-Host "==> static decode warms the compressed cache before taking AE_LOCK"
     $lines = Get-Content -LiteralPath $Path
     $audioEngineText = Get-Content -LiteralPath $Path -Raw
@@ -320,7 +320,7 @@ function Assert-DecodeWarmsCacheBeforeEngineLock {
 }
 
 function Assert-OverviewMainRenderCommitGuard {
-    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    $Path = Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c"
     Write-Host "==> static overview main waveform commits only after successful render"
     $text = Get-Content -LiteralPath $Path -Raw
     $start = $text.IndexOf("static void ui_render_overview_main_waveform")
@@ -343,7 +343,7 @@ function Assert-OverviewMainRenderCommitGuard {
 }
 
 function Assert-OverviewLoadDefersMainWaveRender {
-    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    $Path = Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c"
     Write-Host "==> static overview load defers main waveform render to scheduler"
     $text = Get-Content -LiteralPath $Path -Raw
     $start = $text.IndexOf("void ui_overview_load_waveform_data")
@@ -364,7 +364,7 @@ function Assert-OverviewLoadDefersMainWaveRender {
 }
 
 function Assert-FatfsBoolDefaults {
-    $path = Join-Path $RepoRoot "firmware/main-deck-p4/components/fatfs/Kconfig"
+    $path = Join-Path $RepoRoot "firmware/p4-core/components/fatfs/Kconfig"
     Write-Host "==> static FatFS bool defaults use Kconfig y/n syntax"
     $text = Get-Content -LiteralPath $path -Raw
     foreach ($symbol in @("FATFS_PRINT_LLI", "FATFS_PRINT_FLOAT")) {
@@ -420,21 +420,21 @@ Invoke-Step -Name "web UI browser contract" `
 
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
 
 # These file-static helpers had no callers, so a host link contract cannot
 # observe them. The firmware build remains the authoritative warning check.
 Assert-FileDoesNotContain `
     -Name "project-local ESP-IDF 6 dead diagnostics stay removed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("static int64_t ae_now_us(", "static void ae_diag_log_memory(")
 
 # A UART warning at 115200 baud is longer than one 256-frame audio period and
 # can turn the first timing outlier into a permanent warning/deadline cascade.
 # Keep all ESP_LOG formatting outside the ae_output block accounting helper;
 # the periodic health monitor owns aggregated service-log reporting.
-$audioEnginePath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+$audioEnginePath = Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c"
 $audioEngineSource = Get-Content -LiteralPath $audioEnginePath -Raw
 $outputDiagMatch = [regex]::Match(
     $audioEngineSource,
@@ -473,13 +473,13 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 late-output anomalies are aggregated outside the audio task" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_app/app_main.c") `
     -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late",
         "#define AUDIO_MON_PRIORITY        2u", "xTaskCreatePinnedToCore(health_monitor_task")
 
 Assert-FileContains `
     -Name "p4 media acceptance counters are exposed by status" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         '\"locked_backend_reads1\":%u',
         '\"locked_backend_reads2\":%u',
@@ -497,7 +497,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 library load worker preserves internal RAM for audio task startup" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @(
         "xTaskCreateWithCaps(ui_track_load_worker",
         "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT",
@@ -512,77 +512,77 @@ Assert-CiDependenciesPinned
 # behind #ifndef WIN32). They are narrow ownership markers, not behaviour tests.
 Assert-FileContains `
     -Name "p4 ANLZ short-read detection is per-task, not a shared global" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
 
 Assert-FileContains `
     -Name "p4 discarded track load retires only its own generated audio session" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("audio_session_generation", "ui_library_release_deck_audio_session", "audio_engine_deck_stop_session")
 
 Assert-FileContains `
     -Name "p4 UI load worker always has a fixed completion token" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_track_load_result_t result_storage = {0}", "sizeof(ui_track_load_result_t) <= UI_TRACK_LOAD_STACK / 2u", "xQueueSend(s_track_load_result_q, result, portMAX_DELAY)")
 
 Assert-FileDoesNotContain `
     -Name "p4 UI load completion no longer depends on heap allocation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("heap_caps_calloc(1, sizeof(*result)", "calloc(1, sizeof(*result)", "track load result allocation failed")
 
 Assert-FileContains `
     -Name "p4 deck LOAD lifecycle is serialized and generation-owned" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("lifecycle_begin_load", "lifecycle_advance_generation", "audio_engine_deck_stop_session")
 
 Assert-FileContains `
     -Name "deck core owns coherent loaded-track publication" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("deck_loaded_track_store_publish", "deck_loaded_track_store_acquire", "deck_loaded_track_store_clear_all")
 
 Assert-FileContains `
     -Name "ANLZ readers retain immutable snapshots without cloning" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/anlz_snapshot.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/anlz_snapshot.c") `
     -LiteralPatterns @("anlz_snapshot_create", "anlz_snapshot_retain", "anlz_snapshot_release", "__atomic_compare_exchange_n")
 
 Assert-FileDoesNotContain `
     -Name "deck ANLZ acquire no longer deep-copies payloads" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_loaded_track_store.c") `
     -LiteralPatterns @("deck_loaded_track_store_clone", "anlz_clone(&store->")
 
 Assert-FileDoesNotContain `
     -Name "UI ANLZ acquire no longer deep-copies payloads" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_deck_anlz_store.c") `
     -LiteralPatterns @("ui_deck_anlz_store_get", "anlz_clone(&store->", "ANLZ_READER_BANKS")
 
 Assert-FileContains `
     -Name "UI frame and Overview retain ANLZ for their complete pointer lifetime" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui.c") `
     -LiteralPatterns @("ctx->deck_anlz[deck] = ui_deck_anlz_acquire(deck)", "ui_release_frame_context(&ctx)")
 
 Assert-FileContains `
     -Name "Overview owns ANLZ across LVGL callbacks" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("s_overview_deck_snapshot[idx] = next", "anlz_snapshot_release(old)")
 
 Assert-FileDoesNotContain `
     -Name "deck core no longer borrows loaded-track fields from UI" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("ui_library_loaded_track_key_for_deck", "ui_get_deck_anlz_metadata", "ui_library_deck_bpm")
 
 Assert-FileDoesNotContain `
     -Name "library cross-task events no longer use lossy volatile flags" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("s_library_needs_refresh", "s_usb_removed_pending")
 
 Assert-FileContains `
     -Name "library refresh and USB removal use durable event generations" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_event_counter_request", "ui_event_counter_sample", "s_library_refresh_applied", "s_usb_removed_applied")
 
 Assert-FileContains `
     -Name "P4 OTA requires signed bundle before flash begin" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "ddj_ota_manifest_parse",
         "ddj_ota_manifest_verify_signature",
@@ -592,17 +592,17 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "P4 OTA UI selects signed bundle" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web/index.html") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web/index.html") `
     -LiteralPatterns @(".ddjota", "signed P4")
 
 Assert-FileContains `
     -Name "P4 Wi-Fi Remote uses the accepted shared service credential" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/include/wifi_link.h") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/include/wifi_link.h") `
     -LiteralPatterns @('WIFI_LINK_PASSWORD    "Pajoniiir"')
 
 Assert-FileContains `
     -Name "P4 SoftAP offers WPA2/WPA3 transition mode with PMF capability" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @(
         "cfg.ap.authmode = WIFI_AUTH_WPA2_WPA3_PSK;",
         "cfg.ap.pmf_cfg.capable = true;",
@@ -619,17 +619,17 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];")
 
 Assert-FileDoesNotContain `
     -Name "overview main RGB565 runtime path" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("if (!overlay_rendered)")
 
 Assert-FileDoesNotContain `
     -Name "overview runtime avoids full RGB565 redraw" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
 Assert-NoTestSideCompilationWrappers
@@ -640,28 +640,28 @@ Assert-OverviewMainRenderCommitGuard
 Assert-OverviewLoadDefersMainWaveRender
 
 Assert-FileDoesNotContain `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview_wave_cache.c") `
     -Pattern "memmove\s*\(" `
     -Description "overview waveform cache must not use CPU memmove for steady scroll"
 
 Assert-FileDoesNotContain `
     -Name "overview mini waveform avoids full canvas invalidation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("lv_obj_invalidate(panel->mini_wave_canvas);")
 
 Assert-FileDoesNotContain `
     -Name "overview title avoids continuous LVGL marquee invalidation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("LV_LABEL_LONG_SCROLL_CIRCULAR", "LV_LABEL_LONG_DOT")
 
 Assert-FileDoesNotContain `
     -Name "overview timer avoids frame-rate LVGL text invalidation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("remain_ms / 10u")
 
 Assert-FileContains `
     -Name "P4 Overview shows elapsed + remaining time on the BPM row at BPM font size" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_TIME_X",
         "OVERVIEW_ELAPSED_W",
@@ -675,7 +675,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview blue title strip is title-only (no time pill)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_TITLE_TIME_X",
         "OVERVIEW_TITLE_TIME_W"
@@ -683,7 +683,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview title strip avoids split timer labels" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "label_time_secs",
         "label_time_fraction",
@@ -694,7 +694,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "P4 Overview beat strip geometry derives from waveform center" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_BEAT_STRIP_CENTER_GAP_PX",
         "OVERVIEW_BEAT_STRIP_STEP_PX",
@@ -704,7 +704,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview beat strip avoids legacy hardcoded dot positions" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "pulse_x = 358",
         "pulse_x = 382",
@@ -715,12 +715,12 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "P4 Overview beat strip uses interpolated deck position" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_update_overview_beat_strip(deck, elapsed_ms)")
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview removes disabled legacy phase meter" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "ui_create_overview_phase_meter",
         "ui_update_phase_meter",
@@ -732,7 +732,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "P4 Overview tempo cluster keeps pitch readable" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_PITCH_CHIP_W",
         "lv_font_montserrat_18",
@@ -743,7 +743,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "P4 Overview tempo cluster displays decimal effective BPM" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "ui_overview_base_bpm_x100",
         "bpm_centi",
@@ -752,7 +752,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "P4 Overview shows deck-local VU meters beside transport controls" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_TRANSPORT_X",
         "OVERVIEW_TRANSPORT_W",
@@ -766,7 +766,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview VU meters avoid transport button overlap" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "#define OVERVIEW_VU_X 67",
         "panel->play_button = ui_overview_compact_button(panel->panel, deck, 4, top_y + 60, 76",
@@ -775,7 +775,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "P4 Overview deck badges stay clear of VU meters" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_DECK_BADGE_W",
         "_Static_assert(OVERVIEW_DECK_BADGE_X + OVERVIEW_DECK_BADGE_W + 4 <= OVERVIEW_VU_X",
@@ -784,7 +784,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview deck badges avoid legacy wide labels" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         '"DECK 1"',
         '"DECK 2"',
@@ -793,7 +793,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "P4 Overview deck badges match play/cue size and Library LOAD fill colours" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "_Static_assert(OVERVIEW_DECK_BADGE_W == OVERVIEW_TRANSPORT_W",
         "_Static_assert(OVERVIEW_DECK_BADGE_H == OVERVIEW_SIDE_BTN_H",
@@ -803,7 +803,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "P4 Overview Beat FX uses compact right rail with effect-colour coding" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_FX_PANEL_H",
         "OVERVIEW_FX_DEPTH_BAR_H",
@@ -815,7 +815,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "P4 Overview Beat FX avoids deck2 title overlap" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "lv_obj_set_size(s_overview_fx_panel, fx_w, 316)",
         "s_overview_fx.enabled_bar = ui_overview_bar(s_overview_fx_panel, row_x, 258, row_w, 40"
@@ -823,69 +823,69 @@ Assert-FileDoesNotContain `
 
 Assert-FileDoesNotContain `
     -Name "deck_core UI-only buttons use semantic button mapping" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("on_button(DECK_CORE_COMPAT_DECK, (button_id_t)ev.id")
 
 Assert-FileDoesNotContain `
     -Name "audio output pacing includes render time" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("write_elapsed_us")
 
 # ui.c needs LVGL; the screen registry cannot be executed on the host.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Key Shift screen" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui.c") `
     -LiteralPatterns @('"KEY SHIFT"', "ui_performance_tabs_create_key_shift")
 
 # ui_performance_tabs.c needs LVGL, which the host toolchain does not build.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Key Shift controls" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_performance_tabs.c") `
     -LiteralPatterns @("KEY TRANSPOSE", "NO TRANSPOSITION", "ui_performance_tabs_create_key_shift")
 
 # ui_performance_tabs.h pulls in LVGL, which the host toolchain does not build,
 # so this stays a text check rather than a compile contract.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs API excludes removed Key Shift screen" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_key_shift", "toggle_master_tempo")
 
 # ui.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Loop and Beat Jump screens" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui.c") `
     -LiteralPatterns @('"BEAT JUMP"', "UI_TAB_LOOP", "UI_TAB_BEAT_JUMP", "ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump")
 
 # ui_performance_tabs.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Loop and Beat Jump controls" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_performance_tabs.c") `
     -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "loop_btn_event_cb", "jump_btn_event_cb", "EXIT LOOP")
 
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs API excludes removed Loop and Beat Jump screens" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "ui_performance_tabs_update_loop_screen_state")
 
 # ui_settings.c needs LVGL.
 Assert-FileDoesNotContain `
     -Name "P4 Settings excludes retired monitor speaker switch" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_settings.c") `
     -LiteralPatterns @("MONITOR SPEAKER", "audio_out_event_cb", "monitor_route_label")
 
 Assert-FileDoesNotContain `
     -Name "P4 Settings update avoids removed tab index" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_settings.c") `
     -LiteralPatterns @("active_tab != 6")
 
 Assert-FileContains `
     -Name "P4 Settings wireless switches use dark off-state styling" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_settings.c") `
     -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ")
 
 Assert-FileContains `
     -Name "P4 Settings mixer status strip keeps title clear of controls" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_settings.c") `
     -LiteralPatterns @(
         'ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS")',
         "mixer_section, 18, 34, 110, 22",
@@ -895,12 +895,12 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 OTA validates chip and project before activation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota/p4_ota.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota/p4_ota.c") `
     -LiteralPatterns @("P4_OTA_PROJECT_NAME", "wrong firmware project", "esp_ota_set_boot_partition")
 
 Assert-FileContains `
     -Name "p4 status API exposes controller and service-log health" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "service_log_get_status",
         "web_api_format_controller_json",
@@ -909,7 +909,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 status exposes USB1 probe diagnostics" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         '\"p4_usb\"',
         "usb_host_manager_get_diagnostics",
@@ -920,7 +920,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 JC4880 Full-Speed connector selects PHY0 without burning eFuse" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage_shared.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_storage_shared.c") `
     -LiteralPatterns @(
         ".override_fs_phy_index = true",
         ".fs_phy_index = board_capabilities_get()->fs_phy_index",
@@ -929,7 +929,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 USB host manager applies the requested Full-Speed PHY route" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager/usb_host_manager.c") `
     -LiteralPatterns @(
         "usb_wrap_ll_phy_select(&USB_WRAP, s_config.fs_phy_index)",
         '"USB Full-Speed root routed to PHY%u"'
@@ -937,7 +937,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 USB recovery only succeeds after indexed root power-on completes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager/usb_host_manager.c") `
     -LiteralPatterns @(
         "RECOVERY_POWER_ON_TIMEOUT_MS",
         "if (rc == ESP_OK)",
@@ -948,7 +948,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 USB recovery atomically preserves an active per-root enumeration" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_idle_recovery_patch.cmake") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/cmake/apply_espressif_usb_idle_recovery_patch.cmake") `
     -LiteralPatterns @(
         "pajoniiir_hcd_port_power_off_if_disconnected",
         "port->state == HCD_PORT_STATE_DISCONNECTED",
@@ -960,7 +960,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 USB manager suppresses recovery once attach or enumeration is active" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager/usb_host_manager.c") `
     -LiteralPatterns @(
         "recovery_power_off_if_idle",
         "RECOVERY_CYCLE_SUPPRESSED_ACTIVE",
@@ -970,7 +970,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 USB recovery resumes a prior half-completed power cycle" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_host_manager/usb_host_manager.c") `
     -LiteralPatterns @(
         "const bool powered_off_now = rc == ESP_OK",
         "rc != ESP_OK && rc != ESP_ERR_INVALID_STATE",
@@ -980,7 +980,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 status exposes USB root recovery outcomes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         '\"recovery_coalesced\"',
         "host_diag.recovery_successes",
@@ -1001,7 +1001,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 dual USB FIFO patch preserves bulk HS and periodic OUT FS capacity" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_fifo_patch.cmake") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/cmake/apply_espressif_usb_fifo_patch.cmake") `
     -LiteralPatterns @(
         "idf_component_get_property(_pajoniiir_usb_dir usb COMPONENT_DIR)",
         "port->fifo_config.nptx_fifo_lines = 256;",
@@ -1014,7 +1014,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pins the esp-usb disconnect/recycle race fix" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/idf_component.yml") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/idf_component.yml") `
     -LiteralPatterns @(
         'version: "cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb"'
     )
@@ -1030,7 +1030,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 status exposes a safe crash summary without raw coredump bytes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "esp_core_dump_image_check",
         "esp_core_dump_get_summary",
@@ -1044,22 +1044,22 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 manager activates the matched profile locally" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/controller_profile_manager/controller_profile_manager.c") `
     -LiteralPatterns @("cpm_read_profile", "controller_profile_runtime_activate", "cpm_activate_bound_profile")
 
 Assert-FileContains `
     -Name "p4 controller events and LED output stay local" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_local_controller/p4_local_controller.c") `
     -LiteralPatterns @("control_link_inject_semantic", "control_link_set_led_sink", "controller_led_runtime_send")
 
 Assert-FileContains `
     -Name "p4 controller USB client remains scheduler-unpinned" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_local_controller/p4_local_controller.c") `
     -LiteralPatterns @(".task_core_id = tskNO_AFFINITY")
 
 Assert-FileDoesNotContain `
     -Name "p4 controller USB client excludes the experimental CPU0 pin" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_local_controller/p4_local_controller.c") `
     -LiteralPatterns @("LOCAL_CONTROLLER_USB_TASK_CORE")
 
 # The USB client consumes the UAC ring and ae_output is its sole producer.
@@ -1067,12 +1067,12 @@ Assert-FileDoesNotContain `
 # ae_output's blocking I2S write and explicit yield points still service USB.
 Assert-FileContains `
     -Name "p4 UAC consumer and audio producer share a scheduler priority" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host/controller_usb_host.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/controller_usb_host/controller_usb_host.c") `
     -LiteralPatterns @("#define CONTROLLER_USB_ACTIVE_PRIORITY 6u")
 
 Assert-FileContains `
     -Name "p4 audio output priority contract remains explicit" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
         "#define AE_OUTPUT_TASK_PRIORITY 6u",
         "AE_OUTPUT_TASK_PRIORITY"
@@ -1080,12 +1080,12 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 active control-link component compiles only the local adapter" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/control_link/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "control_link_local.c" "flx4_led_snapshot.c"')
 
 Assert-FileDoesNotContain `
     -Name "p4 active control-link component excludes legacy UART and bulk transport" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/control_link/CMakeLists.txt") `
     -LiteralPatterns @("control_link_uart.c", "ctrl_bulk.c", "cp_xfer.c", "control_link_rx_stats.c")
 
 Assert-FileDoesNotContain `
@@ -1105,7 +1105,7 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "p4 status API exposes bounded UAC ring health" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "audio_uac_ring_low_alarm_frames",
         "audio_uac_ring_high_alarm_frames",
@@ -1120,7 +1120,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "authenticated web controls wake without consuming the mutation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "deck_core_queue_remote_event",
         "web_wait_for_play_state",
@@ -1130,68 +1130,68 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 audio_engine exposes a per-deck platter-hold mute (vinyl phase 1)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_deck_hold", "audio_engine_deck_set_hold", "if (atomic_load_bool(&s_deck_hold[deck])) return false;")
 
 Assert-FileContains `
     -Name "p4 deck_core enters platter-hold on jog touch and scrubs while touched" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("case CTRL_DECK_CTL_JOG_TOUCH:", "handle_jog_touch", "audio_engine_deck_set_hold(deck, true)", "s_jog_touched[deck]")
 
 Assert-FileContains `
     -Name "p4 audio_engine exposes canonical PCM timeline to scratch without a second PCM copy" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "sync_scratch_view_from_timeline", "scratch begin D%u unavailable: canonical timeline not allocated -> platter hold")
 
 # File-static storage plus retired calls; see the ANLZ note above.
 Assert-FileDoesNotContain `
     -Name "p4 legacy independent scratch PCM store stays retired" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch")
 
 Assert-FileContains `
     -Name "p4 audio_scratch DSP engine renders bidirectional interpolated scratch (vinyl phase 3)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_scratch.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_scratch.c") `
     -LiteralPatterns @("audio_scratch_render", "audio_scratch_buffer_read_frame_back", "head_back -= s->velocity", "past_new_edge", "past_old_edge")
 
 Assert-FileContains `
     -Name "p4 audio_engine routes a scratching deck to the scratch engine (vinyl phase 4)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("ae_scratch_render_cb", "audio_engine_deck_scratch_begin", "audio_engine_deck_scratch_move", "audio_engine_deck_scratch_end", ".scratch_active = atomic_load_bool(&s_scratch_playing")
 
 Assert-FileContains `
     -Name "p4 audio_engine cross-fades the scratch->forward release handoff (vinyl phase 4b)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("AE_SCRATCH_HANDOFF_FADE_OUT", "AE_SCRATCH_HANDOFF_FADE_IN", "AE_SCRATCH_HANDOFF_RING", "AE_SCRATCH_XFADE_STEP")
 
 Assert-FileContains `
     -Name "p4 scratch handoff is output-owned and preserves the 64-bit timeline epoch" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("static uint64_t          s_scratch_origin_play_seq", "scratch_handoff_publish_command", "scratch_handoff_apply_pending_command")
 
 Assert-FileContains `
     -Name "p4 MAIN I2S writes are bounded and STOP wakes the channel" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_output_sink_write_all", "audio_output_mark_sink_fault", "bsp_audio_main_i2s_abort_write")
 
 Assert-FileDoesNotContain `
     -Name "p4 MAIN I2S output never uses an unbounded driver wait" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY)")
 
 Assert-FileContains `
     -Name "p4 FLAC cache faults trigger decoder replacement instead of EOF" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_fw_preload_stream_fault_epoch", "flac_recovery_pending", "ae_flac_recover_decoder")
 
 Assert-FileContains `
     -Name "p4 deck_core gates jog touch to scratch behind CONFIG_AUDIO_SCRATCH_ENABLED (vinyl phase 4)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_SCRATCH_ENABLED", "audio_engine_deck_scratch_begin(deck)", "audio_engine_deck_scratch_move(deck, delta)", "audio_engine_deck_scratch_end(deck)")
 
 Assert-FileContains `
     -Name "p4 mixer supports an optional scratch frame source (vinyl phase 4)" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_output_mixer.c") `
     -LiteralPatterns @("deck->scratch_active && deck->scratch_render", "deck->scratch_render(deck->scratch_ctx")
 
 Assert-FileContains `
@@ -1204,7 +1204,7 @@ Assert-FileContains `
 # pass plays that lead - about four beats, off the grid at most tempos.
 Assert-FileContains `
     -Name "p4 loop wrap withdraws decoded frames published past the loop out point" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("deck_pcm_drop_newest", "publish_frames", "uint64_t published = eng->frames_since_seek", "AE_LOOP_TRIM_MIN_RUNWAY_FRAMES")
 
 # The one rule that must not rot: the service-network passphrase is never
@@ -1212,18 +1212,18 @@ Assert-FileContains `
 # be logged. Status reports only whether one is stored.
 Assert-FileContains `
     -Name "p4 OTA config status reports only whether a password is stored" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @('app_settings_ota_get_config(&config)', 'const bool has_password = config.password[0]', 'memset(config.password, 0', '\"has_password\":%s')
 
 # Absence of a field in a hand-formatted JSON string; no symbol involved.
 Assert-FileDoesNotContain `
     -Name "p4 web server never serialises the OTA passphrase" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("app_settings_ota_copy_password")
 
 Assert-FileContains `
     -Name "p4 settings log the transactional OTA passphrase snapshot's presence, never its value" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/app_settings.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/app_settings/app_settings.c") `
     -LiteralPatterns @('next_pass[0] ? "set" : "none"')
 
 # An AP-to-STA switch must stop the AP service without tearing down the C6
@@ -1231,12 +1231,12 @@ Assert-FileContains `
 # transition silently becomes a full radio restart.
 Assert-FileContains `
     -Name "p4 Wi-Fi teardown keeps the AP service and the C6 transport separable" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("static void stop_ap_services(void)", "static void stop_wifi_stack(void)", "static void stop_ap_netif(void)")
 
 Assert-FileDoesNotContain `
     -Name "p4 Wi-Fi OFF keeps the one-per-boot ESP-Hosted transport alive" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("esp_hosted_deinit();")
 
 Assert-FileContains `
@@ -1254,12 +1254,12 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "p4 Wi-Fi start retries are bounded" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_retry_note_failure(&retry)", "giving up, radio stays off")
 
 Assert-FileContains `
     -Name "p4 STA association retries are bounded and diagnostic" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @(
         "wifi_link_retry_note_failure(&join_retry)",
         "wifi_link_retry_exhausted(&join_retry)",
@@ -1272,29 +1272,29 @@ Assert-FileContains `
 # without a wired flash.
 Assert-FileContains `
     -Name "p4 STA visit keeps the C6 transport and always has a way back" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_restore_ap", "STA_BIT_GOT_IP", "xEventGroupWaitBits")
 
 Assert-FileDoesNotContain `
     -Name "p4 STA switch does not tear down ESP-Hosted" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("stop_hosted_transport()")
 
 # Pull OTA must gain no authority from having arrived over TLS: the same signed
 # manifest, verified by the same code, before anything reaches flash.
 Assert-FileContains `
     -Name "p4 pull OTA verifies the bundle signature before writing flash" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("ddj_ota_manifest_verify_signature(header, sizeof(header))", "rc = p4_ota_begin(&manifest);")
 
 Assert-FilePatternsOrdered `
     -Name "p4 pull OTA binds the signed version before opening the OTA partition" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("p4_ota_pull_validate_bundle_release", "p4_ota_begin(&manifest)")
 
 Assert-FileContains `
     -Name "p4 pull OTA reports the failing download or flash stage" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
         'stage = "read signed header"',
         'stage = "stop audio"',
@@ -1306,7 +1306,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pull OTA web status preserves the concrete ESP-IDF error" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_app/app_main.c") `
     -LiteralPatterns @(
         "chk.state == P4_OTA_PULL_FAILED",
         "p4_ota_pull_format_failure_detail",
@@ -1315,7 +1315,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pull OTA retries transport idle without accepting EOF" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
         "HTTP_IDLE_RETRY_MAX 3u",
         "got != -ESP_ERR_HTTP_EAGAIN",
@@ -1327,7 +1327,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pull OTA preserves connection-open transport errors" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
         "esp_http_client_open(client, 0)",
         "http_transport_error(client, rc)"
@@ -1340,7 +1340,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strcmp(expected_release, s_status.available_release)")
 
 # The recorder is off by default: its write latency is dominated by the microSD
@@ -1349,12 +1349,12 @@ Assert-FileContains `
 # keep the audio hot path from paying for a feature that is not built.
 Assert-FileContains `
     -Name "p4 gates the recorder master tap behind CONFIG_AUDIO_RECORDER_ENABLED" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("#if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED")
 
 Assert-FileContains `
     -Name "p4 gates the recording endpoints behind CONFIG_AUDIO_RECORDER_ENABLED" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_RECORDER_ENABLED")
 
 # sdkconfig content; a build-configuration property, not a code one.
@@ -1365,52 +1365,52 @@ Assert-FileDoesNotContain `
 
 Assert-FileContains `
     -Name "p4 audio_engine tears down scratch playback on reload/stop and when a deck stops mid-scratch" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("clear_scratch_playback_state", "atomic_load_bool(&s_scratch_playing[d]) && !deck_output_active(d)")
 
 Assert-FileContains `
     -Name "p4 audio_engine permits loaded cue scratch and no-ops an unmatched release" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("if (!eng->loaded || eng->sample_rate == 0u || eng->loading)", "s_scratch_started_paused", "if (!atomic_load_bool(&s_scratch_playing[deck])) {")
 
 Assert-FileContains `
     -Name "p4 audio_engine publishes the scratch handoff phase with release/acquire" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("scratch_handoff_store", "scratch_handoff_load", "__ATOMIC_ACQUIRE", "__ATOMIC_RELEASE")
 
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB)", "scratch_handoff_apply_pending_command(d)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("scratch_head_snapshot(deck)", "audio_scratch_track_position_ms", "scratch_position_authoritative ? 0.0f")
 
 Assert-FileContains `
     -Name "p4 waveform disables forward interpolation for scratch-authoritative position" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_overview.c") `
     -LiteralPatterns @("scratch_position_authoritative", "? 0u", "mixer_snapshot.scratch_position_authoritative")
 
 Assert-FileContains `
     -Name "p4 paused seek pre-roll centers cue scratch history and future" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_cue_preroll_arm(", "publish_cue_preroll(", "timeline_preroll_generation", "audio_pcm_timeline_set_playhead")
 
 Assert-FileContains `
     -Name "p4 scratch position and release wrap inside active loops" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_scratch_track_position_ms", "eng->loop_active", "s_engines[deck].loop_start_ms", "s_engines[deck].loop_end_ms")
 
 Assert-FileContains `
     -Name "p4 pitch changes are deferred until scratch fade-out reaches silence" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_pending_pitch_factor_bits", "s_pending_pitch_valid", "apply_pending_pitch(deck)", "atomic_load_bool(&s_scratch_playing[deck])")
 
 Assert-FileContains `
     -Name "p4 pitch and jog state use atomic float bits across control and output tasks" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
         "pitch_factor_bits",
         "s_jog_bend_bits",
@@ -1420,13 +1420,13 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 canonical PCM timeline drives decode, output and frame-accurate scratch release" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("AE_TIMELINE_FORWARD_MS", "deck_pcm_push", "pop_deck_source", "sync_scratch_view_from_timeline", "audio_pcm_timeline_set_playhead_frames_back")
 
 # This path depends on the ESP-IDF scheduler and timer, so the real acceptance
 # is the instrumented P4 run. These source guards only prevent a release build
 # from silently enabling or bypassing the dedicated qualification switch.
-$timelineKconfigPath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/Kconfig"
+$timelineKconfigPath = Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/Kconfig"
 $timelineKconfig = Get-Content -LiteralPath $timelineKconfigPath -Raw
 $timelineOption = [regex]::Match(
     $timelineKconfig,
@@ -1444,7 +1444,7 @@ Write-Host "    PASS"
 
 Assert-FileContains `
     -Name "p4 PCM timeline scheduler probe uses an isolated timeline and bounded repetitions" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_pcm_timeline.c") `
     -LiteralPatterns @(
         "TIMELINE_QUALIFICATION_ITERATIONS 100u",
         "s_qualification_timeline",
@@ -1455,7 +1455,7 @@ Assert-FileContains `
 
 Assert-FilePatternsOrdered `
     -Name "p4 PCM timeline scheduler handoff occurs after the cursor critical section" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_pcm_timeline.c") `
     -LiteralPatterns @(
         "static void cursor_store_absolute",
         "CURSOR_PUBLISH_ENTER();",
@@ -1467,12 +1467,12 @@ Assert-FilePatternsOrdered `
 
 Assert-FilePatternsOrdered `
     -Name "p4 starts the opt-in PCM timeline scheduler probe after audio initialization" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_app/app_main.c") `
     -LiteralPatterns @("audio_engine_init()", "audio_pcm_timeline_start_scheduler_probe();")
 
 Assert-FileContains `
     -Name "p4 decoder EOF drains pending PCM before natural transport completion" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
         "complete_eof_drain_if_ready",
         "audio_eof_policy_should_finish",
@@ -1482,17 +1482,17 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "p4 transport flags use atomic access across decode output and control tasks" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
 
 Assert-FileContains `
     -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_output_should_force_idle", "vTaskDelay(pdMS_TO_TICKS(1))", "IDLE0 one real tick")
 
 Assert-FileContains `
     -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu")
 
 # The DWC channel-interrupt decoder must stay wrapped. The HAL asserts that every
@@ -1504,10 +1504,10 @@ Assert-FileContains `
 # would reintroduce a reboot mid-set.
 Assert-FileContains `
     -Name "p4 USB storage wraps the DWC channel interrupt decoder" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/CMakeLists.txt") `
     -LiteralPatterns @("usb_dwc_hal_compat.c", "--wrap=usb_dwc_hal_chan_decode_intr")
 
-$dwcShim = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
+$dwcShim = Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_dwc_hal_compat.c"
 if (-not (Test-Path -LiteralPath $dwcShim)) {
     throw "USB DWC channel decoder wrapper is missing: $dwcShim"
 }
@@ -1529,17 +1529,17 @@ Assert-FileContains `
 # so there is no compile contract to write. Text check is the only option.
 Assert-FileContains `
     -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("eng->file_pos = target_byte", "Estimate seek %u ms")
 
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
 
 Assert-FileContains `
     -Name "p4 pdb row-slot iterator validates the whole group before subtraction" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_pdb.c") `
     -LiteralPatterns @(
         "if (ptr > p->data_len || ptr < pb || ptr - pb < group_bytes) break;",
         "if (slot < pb || slot + 2u > p->data_len) continue;",
@@ -1548,7 +1548,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pdb backend reads are bounded and stop after media removal" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_pdb.c") `
     -LiteralPatterns @(
         "len > 8192u ? 8192u : len",
         "media_io_gate_is_available()",
@@ -1558,12 +1558,12 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 web library stream aborts when the client disconnects" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
 
 Assert-FileContains `
     -Name "p4 web mutations require allow-listed-host marked POST requests and report queue pressure" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "api_request_allowed(req, true)",
         "web_api_host_allowed(host, ap_ipv4)",
@@ -1575,7 +1575,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 Library-load validation gate is guarded, bounded and requires USB0 absent" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "api_library_validation_gate_arm_handler",
         "api_request_allowed(req, true)",
@@ -1586,7 +1586,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 audio-load validation gate is guarded, bounded and requires USB0 present" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "api_audio_load_validation_gate_arm_handler",
         "api_request_allowed(req, true)",
@@ -1597,7 +1597,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 software-reboot validation endpoint is guarded and requires idle dual USB" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "api_validation_reboot_handler",
         "api_request_allowed(req, true)",
@@ -1612,7 +1612,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 delayed reboot task is pinned to core zero for ESP32-P4 cache reset" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "#define DELAYED_RESTART_STACK_BYTES 4096u",
         "#define DELAYED_RESTART_CORE 0",
@@ -1623,7 +1623,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 pull OTA install and restart task is pinned to core zero" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
         'xTaskCreatePinnedToCore(install_task, "ota_install", 10240, offer, 4,',
         "NULL, 0)"
@@ -1631,7 +1631,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 DSP applies control-task FX commands on output block boundaries" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
         "audio_output_apply_pending_fx_commands();",
         "publish_echo_command(deck, &config)",
@@ -1642,14 +1642,14 @@ Assert-FileContains `
 # Idiom in a response header string. web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web server does not expose wildcard CORS" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("Access-Control-Allow-Origin")
 
 # Idiom: atoi has no failure signal, so its absence is the check. There is
 # no symbol to link against and web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web mutations do not use permissive atoi parsing" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("atoi(")
 
 }
@@ -1662,10 +1662,10 @@ $tests = @(
         Dir = 'tests/deck_net_sync'
         Target = 'test_deck_net_sync.exe'
         Args = @('-Wall','-Wextra','-Werror','-std=c11','-DANLZ_STANDALONE_TEST',
-            '-I../../firmware/main-deck-p4/components/deck_core/include',
-            '-I../../firmware/main-deck-p4/components/library/include',
+            '-I../../firmware/p4-core/components/deck_core/include',
+            '-I../../firmware/p4-core/components/library/include',
             '-o','test_deck_net_sync.exe','test_deck_net_sync.c',
-            '../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c','-lm')
+            '../../firmware/p4-core/components/deck_core/deck_net_sync.c','-lm')
     }
     @{
         Name = 'djlink_sync'
@@ -1673,8 +1673,8 @@ $tests = @(
         Target = 'test_sync.exe'
         Args = @('-Wall','-Wextra','-Werror','-std=c11','-DANLZ_STANDALONE_TEST',
             '-I../../firmware/common/djlink/include','-I../../firmware/common/dj_link_core/include',
-            '-I../../firmware/main-deck-p4/components/deck_core/include',
-            '-I../../firmware/main-deck-p4/components/library/include',
+            '-I../../firmware/p4-core/components/deck_core/include',
+            '-I../../firmware/p4-core/components/library/include',
             '-o','test_sync.exe','test_sync.c',
             '../../firmware/common/dj_link_core/dj_link_sync.c',
             '../../firmware/common/dj_link_core/dj_link_discovery.c') + $djlinkSources + @('-lm')
@@ -1687,12 +1687,12 @@ $tests = @(
             Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
                 '-DANLZ_STANDALONE_TEST', '-DREKORDBOX_PDB_STANDALONE_TEST',
                 '-I../../firmware/common/dj_link_core/include',
-                '-I../../firmware/main-deck-p4/components/library/include',
+                '-I../../firmware/p4-core/components/library/include',
                 '-o', "$assetSuite.exe", "$assetSuite.c",
                 '../../firmware/common/dj_link_core/dj_link_pdb.c',
                 '../../firmware/common/dj_link_core/dj_link_anlz.c',
-                '../../firmware/main-deck-p4/components/library/rekordbox_pdb.c',
-                '../../firmware/main-deck-p4/components/library/rekordbox_anlz.c')
+                '../../firmware/p4-core/components/library/rekordbox_pdb.c',
+                '../../firmware/p4-core/components/library/rekordbox_anlz.c')
         }
     }
     @{
@@ -1701,10 +1701,10 @@ $tests = @(
         Target = 'test_cache.exe'
         Args = @('-Wall', '-Wextra', '-Werror', '-std=c11',
             '-I../../firmware/common/dj_link_core/include',
-            '-I../../firmware/main-deck-p4/components/media_identity/include',
+            '-I../../firmware/p4-core/components/media_identity/include',
             '-o', 'test_cache.exe', 'test_cache.c',
             '../../firmware/common/dj_link_core/dj_link_cache.c',
-            '../../firmware/main-deck-p4/components/media_identity/media_identity.c')
+            '../../firmware/p4-core/components/media_identity/media_identity.c')
     }
     @{
         Name = 'djlink_browse'
@@ -1751,9 +1751,9 @@ $tests = @(
         Target = "test_deck_load_lock.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
             "-o", "test_deck_load_lock.exe", "test_deck_load_lock.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c"
+            "../../firmware/p4-core/components/deck_core/deck_load_lock.c"
         )
     },
     @{
@@ -1762,9 +1762,9 @@ $tests = @(
         Target = "test_audio_loop_resize.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_loop_resize.exe", "test_audio_loop_resize.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_loop_resize.c"
+            "../../firmware/p4-core/components/audio_engine/audio_loop_resize.c"
         )
     },
     @{
@@ -1773,11 +1773,11 @@ $tests = @(
         Target = "test_audio_loop_prefix.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_loop_prefix.exe", "test_audio_loop_prefix.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_loop_prefix.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_loop_resize.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
+            "../../firmware/p4-core/components/audio_engine/audio_loop_prefix.c",
+            "../../firmware/p4-core/components/audio_engine/audio_loop_resize.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_timeline.c"
         )
     },
     @{
@@ -1786,9 +1786,9 @@ $tests = @(
         Target = "test_audio_seek_skip.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_seek_skip.exe", "test_audio_seek_skip.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c"
+            "../../firmware/p4-core/components/audio_engine/audio_seek_skip.c"
         )
     },
     @{
@@ -1797,10 +1797,10 @@ $tests = @(
         Target = "test_audio_track_length.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_track_length.exe", "test_audio_track_length.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c"
+            "../../firmware/p4-core/components/audio_engine/audio_track_length.c",
+            "../../firmware/p4-core/components/audio_engine/audio_seek_skip.c"
         )
     },
     @{
@@ -1809,10 +1809,10 @@ $tests = @(
         Target = "test_audio_cue_preroll.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_cue_preroll.exe", "test_audio_cue_preroll.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_cue_preroll.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
+            "../../firmware/p4-core/components/audio_engine/audio_cue_preroll.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_timeline.c"
         )
     },
     @{
@@ -1821,7 +1821,7 @@ $tests = @(
         Target = "test_audio_pvbr_validation.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_pvbr_validation.exe", "test_audio_pvbr_validation.c"
         )
     },
@@ -1832,10 +1832,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_ui_beat_indicator.exe", "test_ui_beat_indicator.c",
-            "../../firmware/main-deck-p4/components/ui/ui_beat_indicator.c"
+            "../../firmware/p4-core/components/ui/ui_beat_indicator.c"
         )
     },
     @{
@@ -1847,13 +1847,13 @@ $tests = @(
             "-DAUDIO_LOAD_VALIDATION_GATE_HOST_TEST",
             "-DMEDIA_IO_GATE_STANDALONE_TEST",
             "-I../support/rtos", "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_audio_load_validation_gate.exe",
             "test_audio_load_validation_gate.c",
             "../support/rtos/fake_rtos.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_load_validation_gate.c",
-            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+            "../../firmware/p4-core/components/audio_engine/audio_load_validation_gate.c",
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c"
         )
     },
     @{
@@ -1865,13 +1865,13 @@ $tests = @(
             "-DLIBRARY_VALIDATION_GATE_HOST_TEST",
             "-DMEDIA_IO_GATE_STANDALONE_TEST",
             "-I../support/rtos", "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/library/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_library_validation_gate.exe",
             "test_library_validation_gate.c",
             "../support/rtos/fake_rtos.c",
-            "../../firmware/main-deck-p4/components/library/library_validation_gate.c",
-            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+            "../../firmware/p4-core/components/library/library_validation_gate.c",
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c"
         )
     },
     @{
@@ -1881,10 +1881,10 @@ $tests = @(
         Target = "test_ui_load_gate.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_load_gate.exe",
             "test_ui_load_gate.c",
-            "../../firmware/main-deck-p4/components/ui/ui_load_gate.c"
+            "../../firmware/p4-core/components/ui/ui_load_gate.c"
         )
     },
     @{
@@ -1893,7 +1893,7 @@ $tests = @(
         Target = "test_ui_track_duration.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_track_duration.exe", "test_ui_track_duration.c"
         )
     },
@@ -1903,10 +1903,10 @@ $tests = @(
         Target = "test_audio_eof_policy.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_eof_policy.exe",
             "test_audio_eof_policy.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c"
+            "../../firmware/p4-core/components/audio_engine/audio_eof_policy.c"
         )
     },
     @{
@@ -1915,10 +1915,10 @@ $tests = @(
         Target = "test_audio_start_gate.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_start_gate.exe",
             "test_audio_start_gate.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_start_gate.c"
+            "../../firmware/p4-core/components/audio_engine/audio_start_gate.c"
         )
     },
     @{
@@ -1927,10 +1927,10 @@ $tests = @(
         Target = "test_audio_output_bookkeeping.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_output_bookkeeping.exe",
             "test_audio_output_bookkeeping.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_bookkeeping.c"
+            "../../firmware/p4-core/components/audio_engine/audio_output_bookkeeping.c"
         )
     },
     @{
@@ -1939,10 +1939,10 @@ $tests = @(
         Target = "test_audio_keylock.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock.exe",
             "test_audio_keylock.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "-lm"
         )
     },
@@ -1952,10 +1952,10 @@ $tests = @(
         Target = "test_audio_keylock_search.exe"
         Args = @(
             "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock_search.exe",
             "test_audio_keylock_search.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "-lm"
         )
     },
@@ -1965,11 +1965,11 @@ $tests = @(
         Target = "test_audio_keylock_tempo.exe"
         Args = @(
             "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock_tempo.exe",
             "test_audio_keylock_tempo.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_timeline.c",
             "-lm"
         )
     },
@@ -1980,10 +1980,10 @@ $tests = @(
         RunArgs = @("5")
         Args = @(
             "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_keylock_soak.exe",
             "test_audio_keylock_soak.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "-lm"
         )
     },
@@ -1993,10 +1993,10 @@ $tests = @(
         Target = "test_audio_diag.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_diag.exe",
             "test_audio_diag.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c"
+            "../../firmware/p4-core/components/audio_engine/audio_diag.c"
         )
     },
     @{
@@ -2005,10 +2005,10 @@ $tests = @(
         Target = "test_audio_mixer.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_mixer.exe",
             "test_audio_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c"
+            "../../firmware/p4-core/components/audio_engine/audio_mixer.c"
         )
     },
     @{
@@ -2017,10 +2017,10 @@ $tests = @(
         Target = "test_audio_format.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_format.exe",
             "test_audio_format.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c"
+            "../../firmware/p4-core/components/audio_engine/audio_format.c"
         )
     },
     @{
@@ -2029,10 +2029,10 @@ $tests = @(
         Target = "test_audio_recorder_wav.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
             "-o", "test_audio_recorder_wav.exe",
             "test_audio_recorder_wav.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_wav.c"
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_wav.c"
         )
     },
     @{
@@ -2041,11 +2041,11 @@ $tests = @(
         Target = "test_audio_recorder_pipeline.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
             "-o", "test_audio_recorder_pipeline.exe",
             "test_audio_recorder_pipeline.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_ring.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_writer.c"
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_ring.c",
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_writer.c"
         )
     },
     @{
@@ -2056,10 +2056,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DAUDIO_RECORDER_STOP_GATE_HOST_TEST",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
             "-o", "test_audio_recorder_stop_gate.exe",
             "test_audio_recorder_stop_gate.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c"
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_stop_gate.c"
         )
     },
     @{
@@ -2069,10 +2069,10 @@ $tests = @(
         Target = "test_audio_recorder_finalize.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
             "-o", "test_audio_recorder_finalize.exe",
             "test_audio_recorder_finalize.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c"
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_finalize.c"
         )
     },
     @{
@@ -2081,11 +2081,11 @@ $tests = @(
         Target = "test_audio_recorder_sink.exe"
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-D_POSIX_C_SOURCE=200809L", "-DSD_IO_GATE_STANDALONE_TEST",
-            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/audio_recorder",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include", "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
-            "test_audio_recorder_sink.c", "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_wav.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c",
-            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c", "-o", "test_audio_recorder_sink.exe"
+            "-Istubs", "-I../support/stubs", "-I../../firmware/p4-core/components/audio_recorder",
+            "-I../../firmware/p4-core/components/audio_recorder/include", "-I../../firmware/p4-core/components/sd_io_gate/include",
+            "test_audio_recorder_sink.c", "../../firmware/p4-core/components/audio_recorder/audio_recorder_wav.c",
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_finalize.c",
+            "../../firmware/p4-core/components/sd_io_gate/sd_io_gate.c", "-o", "test_audio_recorder_sink.exe"
         )
     },
     @{
@@ -2094,10 +2094,10 @@ $tests = @(
         Target = "test_sd_dma.exe"
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-Istubs", "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/board_adapter/include",
-            "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
-            "test_sd_dma.c", "../../firmware/main-deck-p4/components/board_adapter/board_sd_dma.c",
-            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_transfer_stats.c",
+            "-I../../firmware/p4-core/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/sd_idle_wait/include",
+            "test_sd_dma.c", "../../firmware/p4-core/components/board_adapter/board_sd_dma.c",
+            "../../firmware/p4-core/components/sd_idle_wait/sd_transfer_stats.c",
             "-o", "test_sd_dma.exe"
         )
     },
@@ -2107,9 +2107,9 @@ $tests = @(
         Target = "test_sd_idle_wrapper_on.exe"
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-DCONFIG_PAJONIIIR_SD_IDLE_WAIT=1",
-            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
-            "test_sd_idle_wrapper.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait.c",
-            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_on.exe"
+            "-Istubs", "-I../support/stubs", "-I../../firmware/p4-core/components/sd_idle_wait/include",
+            "test_sd_idle_wrapper.c", "../../firmware/p4-core/components/sd_idle_wait/sd_idle_wait.c",
+            "../../firmware/p4-core/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_on.exe"
         )
     },
     @{
@@ -2118,9 +2118,9 @@ $tests = @(
         Target = "test_sd_idle_wrapper_off.exe"
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-DCONFIG_PAJONIIIR_SD_IDLE_WAIT=0",
-            "-Istubs", "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
-            "test_sd_idle_wrapper.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait.c",
-            "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_off.exe"
+            "-Istubs", "-I../support/stubs", "-I../../firmware/p4-core/components/sd_idle_wait/include",
+            "test_sd_idle_wrapper.c", "../../firmware/p4-core/components/sd_idle_wait/sd_idle_wait.c",
+            "../../firmware/p4-core/components/sd_idle_wait/sd_idle_wait_core.c", "-o", "test_sd_idle_wrapper_off.exe"
         )
     },
     @{
@@ -2129,8 +2129,8 @@ $tests = @(
         Target = "test_sd_idle_wait.exe"
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror",
-            "-I../support/stubs", "-I../../firmware/main-deck-p4/components/sd_idle_wait/include",
-            "test_sd_idle_wait.c", "../../firmware/main-deck-p4/components/sd_idle_wait/sd_idle_wait_core.c",
+            "-I../support/stubs", "-I../../firmware/p4-core/components/sd_idle_wait/include",
+            "test_sd_idle_wait.c", "../../firmware/p4-core/components/sd_idle_wait/sd_idle_wait_core.c",
             "-o", "test_sd_idle_wait.exe"
         )
     },
@@ -2141,13 +2141,13 @@ $tests = @(
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-DSD_IO_GATE_STANDALONE_TEST",
             "-Istubs", "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/audio_recorder",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
-            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "-I../../firmware/p4-core/components/audio_recorder",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/sd_io_gate/include",
             "test_audio_recorder_runtime.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_ring.c",
-            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c",
-            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c",
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_ring.c",
+            "../../firmware/p4-core/components/audio_recorder/audio_recorder_stop_gate.c",
+            "../../firmware/p4-core/components/sd_io_gate/sd_io_gate.c",
             "-o", "test_audio_recorder_runtime.exe"
         )
     },
@@ -2158,10 +2158,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99", "-pthread",
             "-DSD_IO_GATE_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "-I../../firmware/p4-core/components/sd_io_gate/include",
             "-o", "test_sd_io_gate.exe",
             "test_sd_io_gate.c",
-            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c"
+            "../../firmware/p4-core/components/sd_io_gate/sd_io_gate.c"
         )
     },
     @{
@@ -2170,10 +2170,10 @@ $tests = @(
         Target = "test_service_log.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-I../../firmware/p4-core/components/service_log/include",
             "-o", "test_service_log.exe",
             "test_service_log.c",
-            "../../firmware/main-deck-p4/components/service_log/service_log_format.c"
+            "../../firmware/p4-core/components/service_log/service_log_format.c"
         )
     },
     @{
@@ -2184,15 +2184,15 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_audio_wav_decoder.exe",
             "test_audio_wav_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
-            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+            "../../firmware/p4-core/components/audio_engine/audio_format.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c"
         )
     },
     @{
@@ -2203,44 +2203,44 @@ $tests = @(
             "-Wall", "-Wextra", "-std=c99",
             "-pthread",
             "-DAUDIO_ENGINE_PC_TEST", "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST", "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/audio_engine",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/audio_engine",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/library/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
             "-I../support/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_track_length.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_seek_skip.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
-            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c",
+            "../../firmware/p4-core/components/audio_engine/audio_engine.c",
+            "../../firmware/p4-core/components/audio_engine/audio_track_length.c",
+            "../../firmware/p4-core/components/audio_engine/audio_seek_skip.c",
+            "../../firmware/p4-core/components/audio_engine/audio_eof_policy.c",
+            "../../firmware/p4-core/components/audio_engine/audio_format.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_diag.c",
+            "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
+            "../../firmware/p4-core/components/audio_engine/audio_censor.c",
+            "../../firmware/p4-core/components/audio_engine/audio_eq.c",
+            "../../firmware/p4-core/components/audio_engine/audio_filter.c",
+            "../../firmware/p4-core/components/audio_engine/audio_smart_cfx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_mixer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_ring.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_timeline.c",
+            "../../firmware/p4-core/components/audio_engine/audio_scratch_buffer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_scratch.c",
+            "../../firmware/p4-core/components/audio_engine/audio_resampler.c",
+            "../../firmware/p4-core/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_flanger_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pad_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_output_sink.c",
+            "../../firmware/p4-core/components/audio_engine/audio_compressed_cache.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_preload.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_task_context.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_task_plan.c",
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c",
             "-lm"
         )
     },
@@ -2250,10 +2250,10 @@ $tests = @(
         Target = "test_audio_eq.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_eq.exe",
             "test_audio_eq.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
+            "../../firmware/p4-core/components/audio_engine/audio_eq.c",
             "-lm"
         )
     },
@@ -2264,10 +2264,10 @@ $tests = @(
         Target = "test_audio_filter.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_filter.exe",
             "test_audio_filter.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
+            "../../firmware/p4-core/components/audio_engine/audio_filter.c",
             "-lm"
         )
     },
@@ -2277,10 +2277,10 @@ $tests = @(
         Target = "test_audio_smart_cfx.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_smart_cfx.exe",
             "test_audio_smart_cfx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c"
+            "../../firmware/p4-core/components/audio_engine/audio_smart_cfx.c"
         )
     },
     @{
@@ -2289,10 +2289,10 @@ $tests = @(
         Target = "test_audio_fw_task_plan.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_fw_task_plan.exe",
             "test_audio_fw_task_plan.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c"
+            "../../firmware/p4-core/components/audio_engine/audio_fw_task_plan.c"
         )
     },
     @{
@@ -2301,10 +2301,10 @@ $tests = @(
         Target = "test_audio_fw_runtime.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_fw_runtime.exe",
             "test_audio_fw_runtime.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
+            "../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c"
         )
     },
     @{
@@ -2314,10 +2314,10 @@ $tests = @(
         Target = "test_usb_storage_session.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-I../../firmware/p4-core/components/usb_storage/include",
             "-o", "test_usb_storage_session.exe",
             "test_usb_storage_session.c",
-            "../../firmware/main-deck-p4/components/usb_storage/usb_storage_session.c"
+            "../../firmware/p4-core/components/usb_storage/usb_storage_session.c"
         )
     },
     @{
@@ -2327,10 +2327,10 @@ $tests = @(
         Target = "test_usb_storage_recovery.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-I../../firmware/p4-core/components/usb_storage/include",
             "-o", "test_usb_storage_recovery.exe",
             "test_usb_storage_recovery.c",
-            "../../firmware/main-deck-p4/components/usb_storage/usb_storage_recovery.c"
+            "../../firmware/p4-core/components/usb_storage/usb_storage_recovery.c"
         )
     },
     @{
@@ -2339,10 +2339,10 @@ $tests = @(
         Target = "test_usb_media_partition.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-I../../firmware/p4-core/components/usb_storage/include",
             "-o", "test_usb_media_partition.exe",
             "test_usb_media_partition.c",
-            "../../firmware/main-deck-p4/components/usb_storage/usb_media_partition.c"
+            "../../firmware/p4-core/components/usb_storage/usb_media_partition.c"
         )
     },
     @{
@@ -2352,10 +2352,10 @@ $tests = @(
         Target = "test_audio_compressed_cache.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_compressed_cache.exe",
             "test_audio_compressed_cache.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c"
+            "../../firmware/p4-core/components/audio_engine/audio_compressed_cache.c"
         )
     },
     @{
@@ -2364,12 +2364,12 @@ $tests = @(
         Target = "test_audio_fw_preload.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_fw_preload.exe",
             "test_audio_fw_preload.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
+            "../../firmware/p4-core/components/audio_engine/audio_compressed_cache.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_preload.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c"
         )
     },
     @{
@@ -2378,12 +2378,12 @@ $tests = @(
         Target = "test_audio_fw_task_context.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_fw_task_context.exe",
             "test_audio_fw_task_context.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c"
+            "../../firmware/p4-core/components/audio_engine/audio_fw_task_context.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c",
+            "../../firmware/p4-core/components/audio_engine/audio_fw_task_plan.c"
         )
     },
     @{
@@ -2392,10 +2392,10 @@ $tests = @(
         Target = "test_audio_delay_fx.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_delay_fx.exe",
             "test_audio_delay_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c"
+            "../../firmware/p4-core/components/audio_engine/audio_delay_fx.c"
         )
     },
     @{
@@ -2404,10 +2404,10 @@ $tests = @(
         Target = "test_audio_flanger_fx.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_flanger_fx.exe",
             "test_audio_flanger_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_flanger_fx.c",
             "-lm"
         )
     },
@@ -2417,10 +2417,10 @@ $tests = @(
         Target = "test_audio_scratch_buffer.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_scratch_buffer.exe",
             "test_audio_scratch_buffer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
         )
     },
@@ -2430,11 +2430,11 @@ $tests = @(
         Target = "test_audio_scratch.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_scratch.exe",
             "test_audio_scratch.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_scratch.c",
+            "../../firmware/p4-core/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
         )
     },
@@ -2444,10 +2444,10 @@ $tests = @(
         Target = "test_audio_censor.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_censor.exe",
             "test_audio_censor.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
+            "../../firmware/p4-core/components/audio_engine/audio_censor.c",
             "-lm"
         )
     },
@@ -2457,12 +2457,12 @@ $tests = @(
         Target = "test_audio_pad_fx.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_pad_fx.exe",
             "test_audio_pad_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pad_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_filter.c",
+            "../../firmware/p4-core/components/audio_engine/audio_delay_fx.c",
             "-lm"
         )
     },
@@ -2472,10 +2472,10 @@ $tests = @(
         Target = "test_audio_resampler.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_resampler.exe",
             "test_audio_resampler.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "../../firmware/p4-core/components/audio_engine/audio_resampler.c",
             "-lm"
         )
     },
@@ -2485,17 +2485,17 @@ $tests = @(
         Target = "test_audio_output_mixer.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_output_mixer.exe",
             "test_audio_output_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "../../firmware/p4-core/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_eq.c",
+            "../../firmware/p4-core/components/audio_engine/audio_filter.c",
+            "../../firmware/p4-core/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_flanger_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pad_fx.c",
+            "../../firmware/p4-core/components/audio_engine/audio_mixer.c",
+            "../../firmware/p4-core/components/audio_engine/audio_resampler.c",
             "-lm"
         )
     },
@@ -2505,10 +2505,10 @@ $tests = @(
         Target = "test_audio_output_sink.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_output_sink.exe",
             "test_audio_output_sink.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c"
+            "../../firmware/p4-core/components/audio_engine/audio_output_sink.c"
         )
     },
     @{
@@ -2517,10 +2517,10 @@ $tests = @(
         Target = "test_audio_output_timing.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_output_timing.exe",
             "test_audio_output_timing.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_output_timing.c"
+            "../../firmware/p4-core/components/audio_engine/audio_output_timing.c"
         )
     },
     @{
@@ -2529,10 +2529,10 @@ $tests = @(
         Target = "test_audio_wdt_trace.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_wdt_trace.exe",
             "test_audio_wdt_trace.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_wdt_trace.c"
+            "../../firmware/p4-core/components/audio_engine/audio_wdt_trace.c"
         )
     },
     @{
@@ -2542,10 +2542,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
             "-DLIBRARY_LOAD_TRACE_HOST_TEST",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_library_load_trace.exe",
             "test_library_load_trace.c",
-            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
+            "../../firmware/p4-core/components/library/library_load_trace.c"
         )
     },
     @{
@@ -2554,10 +2554,10 @@ $tests = @(
         Target = "test_audio_uac_health.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_uac_health.exe",
             "test_audio_uac_health.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_uac_health.c"
+            "../../firmware/p4-core/components/audio_engine/audio_uac_health.c"
         )
     },
     @{
@@ -2567,15 +2567,15 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11", "-O2",
             "-Istubs",
-            "-I../../firmware/main-deck-p4/components/controller_usb_audio",
-            "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
-            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-I../../firmware/p4-core/components/controller_usb_audio",
+            "-I../../firmware/p4-core/components/controller_usb_audio/include",
+            "-I../../firmware/p4-core/components/service_log/include",
             "-o", "test_controller_usb_audio_stream.exe",
             "test_controller_usb_audio_stream.c",
-            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_ring.c",
-            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_resampler.c",
-            "../../firmware/main-deck-p4/components/controller_usb_audio/flx4_uac_packetizer.c",
-            "../../firmware/main-deck-p4/components/controller_usb_audio/flx4_uac_descriptors.c"
+            "../../firmware/p4-core/components/controller_usb_audio/controller_audio_ring.c",
+            "../../firmware/p4-core/components/controller_usb_audio/controller_audio_resampler.c",
+            "../../firmware/p4-core/components/controller_usb_audio/flx4_uac_packetizer.c",
+            "../../firmware/p4-core/components/controller_usb_audio/flx4_uac_descriptors.c"
         )
     },
     @{
@@ -2584,10 +2584,10 @@ $tests = @(
         Target = "test_controller_audio_resampler.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
+            "-I../../firmware/p4-core/components/controller_usb_audio/include",
             "-o", "test_controller_audio_resampler.exe",
             "test_controller_audio_resampler.c",
-            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_resampler.c"
+            "../../firmware/p4-core/components/controller_usb_audio/controller_audio_resampler.c"
         )
     },
     @{
@@ -2597,11 +2597,11 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/beat_jump/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/beat_jump/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_beat_jump.exe",
             "test_beat_jump.c",
-            "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c"
+            "../../firmware/p4-core/components/beat_jump/beat_jump.c"
         )
     },
     @{
@@ -2611,15 +2611,15 @@ $tests = @(
         Target = "test_deck_loaded_track_store.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11", "-pthread",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-I../support/stubs",
             "-o", "test_deck_loaded_track_store.exe",
             "test_deck_loaded_track_store.c",
             "anlz_clone_stub.c",
-            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
+            "../../firmware/p4-core/components/library/anlz_snapshot.c",
+            "../../firmware/p4-core/components/deck_core/deck_loaded_track_store.c"
         )
     },
     @{
@@ -2628,10 +2628,10 @@ $tests = @(
         Target = "test_media_identity.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
             "-o", "test_media_identity.exe",
             "test_media_identity.c",
-            "../../firmware/main-deck-p4/components/media_identity/media_identity.c"
+            "../../firmware/p4-core/components/media_identity/media_identity.c"
         )
     },
     @{
@@ -2641,13 +2641,13 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_ui_deck_anlz_store.exe",
             "test_ui_deck_anlz_store.c",
             "anlz_free_stub.c",
-            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
-            "../../firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c"
+            "../../firmware/p4-core/components/library/anlz_snapshot.c",
+            "../../firmware/p4-core/components/ui/ui_deck_anlz_store.c"
         )
     },
     @{
@@ -2657,10 +2657,10 @@ $tests = @(
         Target = "test_ui_event_counter.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_event_counter.exe",
             "test_ui_event_counter.c",
-            "../../firmware/main-deck-p4/components/ui/ui_event_counter.c"
+            "../../firmware/p4-core/components/ui/ui_event_counter.c"
         )
     },
     @{
@@ -2670,12 +2670,12 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DHOT_CUE_STORE_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-I../../firmware/p4-core/components/hot_cue_store/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
             "-o", "test_hot_cue_store.exe",
             "test_hot_cue_store.c",
-            "../../firmware/main-deck-p4/components/hot_cue_store/hot_cue_store.c",
-            "../../firmware/main-deck-p4/components/media_identity/media_identity.c"
+            "../../firmware/p4-core/components/hot_cue_store/hot_cue_store.c",
+            "../../firmware/p4-core/components/media_identity/media_identity.c"
         )
     },
     @{
@@ -2690,26 +2690,26 @@ $tests = @(
             # esp_timer.h and its own audio_engine.h component fake.
             "-Istubs",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/beat_jump/include",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/beat_jump/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
+            "-I../../firmware/p4-core/components/control_link/include",
+            "-I../../firmware/p4-core/components/hot_cue_store/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_deck_core_dual.exe",
             "test_deck_core_dual.c",
             "control_link_stub.c",
             "hot_cue_store_stub.c",
             "../deck_loaded_track_store/anlz_clone_stub.c",
-            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
-            "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
-            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
-            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
+            "../../firmware/p4-core/components/library/anlz_snapshot.c",
+            "../../firmware/p4-core/components/beat_jump/beat_jump.c",
+            "../../firmware/p4-core/components/control_link/flx4_led_snapshot.c",
+            "../../firmware/p4-core/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/p4-core/components/deck_core/deck_load_lock.c",
+            "../../firmware/p4-core/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c", "-lm"
+            "../../firmware/p4-core/components/deck_core/deck_net_sync.c", "-lm"
         )
     },
     @{
@@ -2719,10 +2719,10 @@ $tests = @(
         Target = "test_audio_pcm_timeline.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
             "-o", "test_audio_pcm_timeline.exe",
             "test_audio_pcm_timeline.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_timeline.c"
         )
     },
     @{
@@ -2735,26 +2735,26 @@ $tests = @(
             "-DDECK_CORE_PC_TEST", "-DCONFIG_AUDIO_SCRATCH_ENABLED=1",
             "-Istubs",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/beat_jump/include",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/beat_jump/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
+            "-I../../firmware/p4-core/components/control_link/include",
+            "-I../../firmware/p4-core/components/hot_cue_store/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_deck_core_dual_scratch.exe",
             "test_deck_core_dual.c",
             "control_link_stub.c",
             "hot_cue_store_stub.c",
             "../deck_loaded_track_store/anlz_clone_stub.c",
-            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
-            "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
-            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_load_lock.c",
-            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
+            "../../firmware/p4-core/components/library/anlz_snapshot.c",
+            "../../firmware/p4-core/components/beat_jump/beat_jump.c",
+            "../../firmware/p4-core/components/control_link/flx4_led_snapshot.c",
+            "../../firmware/p4-core/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/p4-core/components/deck_core/deck_load_lock.c",
+            "../../firmware/p4-core/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_net_sync.c", "-lm"
+            "../../firmware/p4-core/components/deck_core/deck_net_sync.c", "-lm"
         )
     },
     @{
@@ -2764,10 +2764,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/p4-core/components/control_link/include",
             "-o", "test_flx4_led_snapshot.exe",
             "test_flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
+            "../../firmware/p4-core/components/control_link/flx4_led_snapshot.c"
         )
     },
     @{
@@ -2778,10 +2778,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DUI_LIBRARY_HOST_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_library.exe",
             "test_ui_library.c",
-            "../../firmware/main-deck-p4/components/ui/ui_library.c"
+            "../../firmware/p4-core/components/ui/ui_library.c"
         )
     },
     @{
@@ -2790,10 +2790,10 @@ $tests = @(
         Target = "test_p4_ota_policy.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/p4_ota/include",
+            "-I../../firmware/p4-core/components/p4_ota/include",
             "-o", "test_p4_ota_policy.exe",
             "test_p4_ota_policy.c",
-            "../../firmware/main-deck-p4/components/p4_ota/p4_ota_policy.c"
+            "../../firmware/p4-core/components/p4_ota/p4_ota_policy.c"
         )
     },
     @{
@@ -2814,9 +2814,9 @@ $tests = @(
         Target = "test_ui_overlay_map.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_overlay_map.exe", "test_ui_overlay_map.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overlay_map.c"
+            "../../firmware/p4-core/components/ui/ui_overlay_map.c"
         )
     },
     @{
@@ -2861,10 +2861,10 @@ $tests = @(
         Args = @(
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2",
             "-Istubs", "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/service_log/include",
             "-o", "test_audio_engine_memory.exe", "test_audio_engine_memory.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_engine_memory.c"
+            "../../firmware/p4-core/components/audio_engine/audio_engine_memory.c"
         )
     },
     @{
@@ -2874,9 +2874,9 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DESP_PLATFORM", "-Istubs", "-o", "test_ui_psram_allocator.exe",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "test_ui_psram_allocator.c",
-            "../../firmware/main-deck-p4/components/ui/ui_psram_allocator.c"
+            "../../firmware/p4-core/components/ui/ui_psram_allocator.c"
         )
       },
       @{
@@ -2886,14 +2886,14 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DUI_SETTINGS_HOST_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
-            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/control_link/include",
+            "-I../../firmware/p4-core/components/audio_recorder/include",
+            "-I../../firmware/p4-core/components/service_log/include",
             "-I../support/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
-            "../../firmware/main-deck-p4/components/ui/ui_settings.c"
+            "../../firmware/p4-core/components/ui/ui_settings.c"
         )
     },
     @{
@@ -2903,14 +2903,14 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DUI_STATUS_HOST_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/audio_engine/include",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
+            "-I../../firmware/p4-core/components/control_link/include",
             "-I../support/stubs",
             "-o", "test_ui_status.exe",
             "test_ui_status.c",
-            "../../firmware/main-deck-p4/components/ui/ui_status.c"
+            "../../firmware/p4-core/components/ui/ui_status.c"
         )
     },
     @{
@@ -2919,10 +2919,10 @@ $tests = @(
         Target = "test_wifi_link_retry.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/wifi_link/include",
+            "-I../../firmware/p4-core/components/wifi_link/include",
             "-o", "test_wifi_link_retry.exe",
             "test_wifi_link_retry.c",
-            "../../firmware/main-deck-p4/components/wifi_link/wifi_link_retry.c"
+            "../../firmware/p4-core/components/wifi_link/wifi_link_retry.c"
         )
     },
     @{
@@ -2931,10 +2931,10 @@ $tests = @(
         Target = "test_p4_ota_pull_status.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-I../../firmware/p4-core/components/p4_ota_pull_core/include",
             "-o", "test_p4_ota_pull_status.exe",
             "test_p4_ota_pull_status.c",
-            "../../firmware/main-deck-p4/components/p4_ota_pull_core/p4_ota_pull_status.c"
+            "../../firmware/p4-core/components/p4_ota_pull_core/p4_ota_pull_status.c"
         )
     },
     @{
@@ -2943,10 +2943,10 @@ $tests = @(
         Target = "test_p4_ota_pull_config.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-I../../firmware/p4-core/components/p4_ota_pull_core/include",
             "-o", "test_p4_ota_pull_config.exe",
             "test_p4_ota_pull_config.c",
-            "../../firmware/main-deck-p4/components/p4_ota_pull_core/p4_ota_pull_config.c"
+            "../../firmware/p4-core/components/p4_ota_pull_core/p4_ota_pull_config.c"
         )
     },
     @{
@@ -2955,7 +2955,7 @@ $tests = @(
         Target = "test_p4_ota_pull_gate.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-I../../firmware/p4-core/components/p4_ota_pull_core/include",
             "-o", "test_p4_ota_pull_gate.exe",
             "test_p4_ota_pull_gate.c"
         )
@@ -2966,10 +2966,10 @@ $tests = @(
         Target = "test_p4_ota_pull_manifest.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-I../../firmware/p4-core/components/p4_ota_pull_core/include",
             "-o", "test_p4_ota_pull_manifest.exe",
             "test_p4_ota_pull_manifest.c",
-            "../../firmware/main-deck-p4/components/p4_ota_pull_core/p4_ota_pull_manifest.c"
+            "../../firmware/p4-core/components/p4_ota_pull_core/p4_ota_pull_manifest.c"
         )
     },
     @{
@@ -2978,10 +2978,10 @@ $tests = @(
         Target = "test_ui_idle.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_idle.exe",
             "test_ui_idle.c",
-            "../../firmware/main-deck-p4/components/ui/ui_idle.c"
+            "../../firmware/p4-core/components/ui/ui_idle.c"
         )
     },
     @{
@@ -2990,13 +2990,13 @@ $tests = @(
         Target = "test_ui_beat_fx_format.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/deck_core/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/deck_core/include",
+            "-I../../firmware/p4-core/components/control_link/include",
             "-I../support/stubs",
             "-o", "test_ui_beat_fx_format.exe",
             "test_ui_beat_fx_format.c",
-            "../../firmware/main-deck-p4/components/ui/ui_beat_fx_format.c"
+            "../../firmware/p4-core/components/ui/ui_beat_fx_format.c"
         )
     },
     @{
@@ -3005,11 +3005,11 @@ $tests = @(
         Target = "test_web_api_helpers.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/web_server/include",
+            "-I../../firmware/p4-core/components/web_server/include",
             "-o", "test_web_api_helpers.exe",
             "test_web_api_helpers.c",
-            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c",
-            "../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"
+            "../../firmware/p4-core/components/web_server/web_api_helpers.c",
+            "../../firmware/p4-core/components/web_server/web_firmware_json.c"
         )
     },
     @{
@@ -3018,10 +3018,10 @@ $tests = @(
         Target = "test_dns_reply.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/web_server/include",
+            "-I../../firmware/p4-core/components/web_server/include",
             "-o", "test_dns_reply.exe",
             "test_dns_reply.c",
-            "../../firmware/main-deck-p4/components/web_server/dns_reply.c"
+            "../../firmware/p4-core/components/web_server/dns_reply.c"
         )
     },
     @{
@@ -3031,12 +3031,12 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
             "-o", "test_ui_overview_motion.exe",
             "test_ui_overview_motion.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_motion.c"
+            "../../firmware/p4-core/components/ui/ui_overview_motion.c"
         )
     },
     @{
@@ -3045,10 +3045,10 @@ $tests = @(
         Target = "test_ui_overview_window.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_overview_window.exe",
             "test_ui_overview_window.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_window.c"
+            "../../firmware/p4-core/components/ui/ui_overview_window.c"
         )
     },
     @{
@@ -3057,10 +3057,10 @@ $tests = @(
         Target = "test_ui_overview_scheduler.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_overview_scheduler.exe",
             "test_ui_overview_scheduler.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_scheduler.c"
+            "../../firmware/p4-core/components/ui/ui_overview_scheduler.c"
         )
     },
     @{
@@ -3070,11 +3070,11 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_ui_overview_grid.exe",
             "test_ui_overview_grid.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c"
+            "../../firmware/p4-core/components/ui/ui_overview_grid.c"
         )
     },
     @{
@@ -3084,13 +3084,13 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_ui_overview_renderer.exe",
             "test_ui_overview_renderer.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_renderer.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c",
-            "../../firmware/main-deck-p4/components/ui/ui_waveform_model.c"
+            "../../firmware/p4-core/components/ui/ui_overview_renderer.c",
+            "../../firmware/p4-core/components/ui/ui_overview_grid.c",
+            "../../firmware/p4-core/components/ui/ui_waveform_model.c"
         )
     },
     @{
@@ -3099,10 +3099,10 @@ $tests = @(
         Target = "test_ui_artwork_jpeg.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/p4-core/components/ui/include",
             "-o", "test_ui_artwork_jpeg.exe",
             "test_ui_artwork_jpeg.c",
-            "../../firmware/main-deck-p4/components/ui/ui_artwork_jpeg.c"
+            "../../firmware/p4-core/components/ui/ui_artwork_jpeg.c"
         )
     },
     @{
@@ -3112,14 +3112,14 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DANLZ_STANDALONE_TEST", "-DUI_OVERVIEW_WAVE_CACHE_TESTING",
-            "-I../../firmware/main-deck-p4/components/ui/include",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/ui/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_ui_overview_wave_cache.exe",
             "test_ui_overview_wave_cache.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_renderer.c",
-            "../../firmware/main-deck-p4/components/ui/ui_waveform_model.c",
-            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c"
+            "../../firmware/p4-core/components/ui/ui_overview_wave_cache.c",
+            "../../firmware/p4-core/components/ui/ui_overview_renderer.c",
+            "../../firmware/p4-core/components/ui/ui_waveform_model.c",
+            "../../firmware/p4-core/components/ui/ui_overview_grid.c"
         )
     },
     @{
@@ -3131,10 +3131,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic",
             "-DANLZ_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_anlz.exe",
             "test_anlz.c",
-            "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
+            "../../firmware/p4-core/components/library/rekordbox_anlz.c"
         )
     },
     @{
@@ -3145,13 +3145,13 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
             "-DTRACK_META_CACHE_STANDALONE_TEST",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
-            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "-I../../firmware/p4-core/components/library/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/sd_io_gate/include",
             "-o", "test_track_meta_cache.exe",
             "test_track_meta_cache.c",
-            "../../firmware/main-deck-p4/components/library/track_meta_cache.c"
+            "../../firmware/p4-core/components/library/track_meta_cache.c"
         )
     },
     @{
@@ -3165,14 +3165,14 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
             "-DLIBRARY_LOAD_TRACE_HOST_TEST",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/media_identity/include",
-            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/p4-core/components/library/include",
+            "-I../../firmware/p4-core/components/media_identity/include",
+            "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
             "-DWIN32", "test_library_anlz.c",
-            "../../firmware/main-deck-p4/components/library/library.c",
-            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
-            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
+            "../../firmware/p4-core/components/library/library.c",
+            "../../firmware/p4-core/components/media_identity/media_identity.c",
+            "../../firmware/p4-core/components/library/library_load_trace.c"
         )
     },
     @{
@@ -3182,10 +3182,10 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic",
             "-DREKORDBOX_PDB_STANDALONE_TEST",
-            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/p4-core/components/library/include",
             "-o", "test_pdb.exe",
             "test_pdb.c",
-            "../../firmware/main-deck-p4/components/library/rekordbox_pdb.c"
+            "../../firmware/p4-core/components/library/rekordbox_pdb.c"
         )
     },
     @{
@@ -3221,10 +3221,10 @@ $tests = @(
             "-Istubs",
             "-I../support/rtos",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/app_settings/include",
+            "-I../../firmware/p4-core/components/app_settings/include",
             "-o", "test_app_settings.exe",
             "test_app_settings.c",
-            "../../firmware/main-deck-p4/components/app_settings/app_settings.c",
+            "../../firmware/p4-core/components/app_settings/app_settings.c",
             "../support/rtos/fake_rtos.c"
         )
     },
@@ -3234,9 +3234,9 @@ $tests = @(
         Target = "test_board_capabilities.exe"
         Args = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST",
-            "-I../../firmware/main-deck-p4/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/board_adapter/include",
             "-o", "test_board_capabilities.exe", "test_board_capabilities.c",
-            "../../firmware/main-deck-p4/components/board_adapter/board_capabilities.c"
+            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
         )
     },
     @{
@@ -3245,9 +3245,9 @@ $tests = @(
         Target = "test_board_capabilities_jc1060.exe"
         Args = @(
             "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_JC1060",
-            "-I../../firmware/main-deck-p4/components/board_adapter/include",
+            "-I../../firmware/p4-core/components/board_adapter/include",
             "-o", "test_board_capabilities_jc1060.exe", "test_board_capabilities.c",
-            "../../firmware/main-deck-p4/components/board_adapter/board_capabilities.c"
+            "../../firmware/p4-core/components/board_adapter/board_capabilities.c"
         )
     },
     @{
@@ -3258,10 +3258,10 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
             "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
+            "-I../../firmware/p4-core/components/controller_profile_manager/include",
             "-o", "test_controller_profile_manager.exe",
             "test_controller_profile_manager.c",
-            "../../firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c"
+            "../../firmware/p4-core/components/controller_profile_manager/controller_profile_manager.c"
         )
     }
 )
@@ -3437,44 +3437,44 @@ Write-Host "P4 host tests passed."
 
 Assert-FileContains `
     -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "usb_storage_recovery_observe", "usb_storage_recovery_cycle_due", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
 
 Assert-FileContains `
     -Name "p4 USB teardown detaches sole-owner handles before destructive cleanup" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("usb_media_mount_t *released_mount = s_mount", "s_mount = NULL", "s_msc_dev = NULL", "usb_media_unmount(released_mount)", "msc_host_uninstall_device(released_handle)")
 
 Assert-FileContains `
     -Name "p4 USB MSC patch preserves callback ownership through hot-unplug teardown" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_usb_host_msc_teardown_patch.cmake") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/cmake/apply_usb_host_msc_teardown_patch.cmake") `
     -LiteralPatterns @("usb_host_transfer_free(dev->xfer)", "dev->xfer = NULL", "vSemaphoreDelete(dev->transfer_done)", "DEFAULT_XFER_SIZE   (8 * 1024)", "return ESP_ERR_INVALID_SIZE", "if (xfer == NULL)", "fail-closed source")
 
 Assert-FileContains `
     -Name "p4 USB media bounds every FatFS transfer by bytes, not sector count" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_media_mount.c") `
     -LiteralPatterns @("USB_MEDIA_MAX_XFER_BYTES", "max_transfer_sectors", "USB_MEDIA_MAX_XFER_BYTES / sector_size", "batch = max_batch")
 
 Assert-FileContains `
     -Name "p4 USB Rekordbox probe distinguishes absent export from transport failure" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_media_mount.c") `
     -LiteralPatterns @("probe_rekordbox_export", "errno == ENOENT || errno == ENOTDIR", "return ESP_ERR_MSC_MOUNT_FAILED", "usb_media_unmount(candidate_mount)")
 
 Assert-FileContains `
     -Name "p4 status exposes USB storage hot-plug lifecycle evidence" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("usb_storage_diagnostics_t storage_diag", "storage_diag.connect_events", "storage_diag.mount_attempts", "storage_diag.last_uninstall_result", "usb_storage_get_diagnostics")
 
 Assert-FileDoesNotContain `
     -Name "p4 USB root-port recovery is not disabled by a firmware-lifetime seen-device latch" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("s_seen_device")
 
 # The session ownership transitions have host behaviour coverage; this guard
 # separately pins that callback delivery remains level-state/notification based.
 Assert-FileDoesNotContain `
     -Name "p4 USB disconnect is not dependent on a finite event queue" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
 
 # Behaviour for this is covered by tests/library_anlz/test_library_anlz.c
@@ -3483,12 +3483,12 @@ Assert-FileDoesNotContain `
 # being re-applied by each caller through a compilation wrapper.
 Assert-FileContains `
     -Name "p4 ANLZ enrichment treats the beatgrid as a duration fallback only" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/library.c") `
     -LiteralPatterns @("if (track->duration_ms == 0u && meta->beat_count > 0 && meta->beats)")
 
 Assert-FileContains `
     -Name "p4 library builds its real implementation, not a duration wrapper" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/CMakeLists.txt") `
     -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
 
 Assert-FileContains `
@@ -3525,35 +3525,40 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
     @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" }
 )) {
-    $wrapperPath = Join-Path $RepoRoot ("firmware/{0}/components/{1}/{2}" -f $retired.Board, $retired.Component, $retired.Wrapper)
+    $componentBase = if ($retired.Component -eq "bsp_jc4880") {
+        "firmware/boards/jc4880/bsp_jc4880"
+    } else {
+        "firmware/p4-core/components/$($retired.Component)"
+    }
+    $wrapperPath = Join-Path $RepoRoot "$componentBase/$($retired.Wrapper)"
     Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
     if (Test-Path -LiteralPath $wrapperPath) {
         throw ("retired compilation wrapper reappeared: {0}" -f $wrapperPath)
     }
     Assert-FileDoesNotContain `
         -Name ("{0} does not build through {1}" -f $retired.Component, $retired.Wrapper) `
-        -Path (Join-Path $RepoRoot ("firmware/{0}/components/{1}/CMakeLists.txt" -f $retired.Board, $retired.Component)) `
+        -Path (Join-Path $RepoRoot "$componentBase/CMakeLists.txt") `
         -LiteralPatterns @($retired.Wrapper)
 }
 
 Assert-FileContains `
     -Name "p4 audio_engine builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "audio_engine.c"')
 
 Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
 
 Assert-FileContains `
     -Name "p4 BSP builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/boards/jc4880/bsp_jc4880/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "bsp_jc4880.c"')
 
 Assert-FileContains `
     -Name "p4 microSD shares the IDF6 SDMMC controller already owned by ESP-Hosted" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/board_adapter/board_peripherals.c") `
+    -Path (Join-Path $RepoRoot "firmware/boards/jc-common/board_peripherals.c") `
     -LiteralPatterns @(
         "CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE",
         "bsp_sdmmc_host_already_initialized",
@@ -3564,34 +3569,34 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 app_settings builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/app_settings/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "app_settings.c"')
 
 Assert-FileContains `
     -Name "p4 pull OTA reserves and releases the transition lease itself" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA)", "Deliberately keeps the transition lease")
 
 # Absence of a preprocessor #define; invisible to the compiler by the time
 # any contract could observe it.
 Assert-FileDoesNotContain `
     -Name "p4 pull OTA does not hook vTaskDelete to release the lease" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("#define vTaskDelete")
 
 Assert-FileContains `
     -Name "p4 pull OTA builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_ota_pull/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "p4_ota_pull.c"')
 
 Assert-FileContains `
     -Name "p4 Wi-Fi probe reserves and releases the transition lease itself" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
 
 Assert-FileContains `
     -Name "p4 Wi-Fi ON/OFF control cannot tear down ESP-Hosted during OTA" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @(
         "wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL)",
         "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL)",
@@ -3601,59 +3606,59 @@ Assert-FileContains `
 # Absence of a preprocessor #define; see the p4_ota_pull gate above.
 Assert-FileDoesNotContain `
     -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("#define vTaskDelete")
 
 Assert-FileContains `
     -Name "p4 wifi_link builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/wifi_link/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "wifi_link.c"')
 
 Assert-FileContains `
     -Name "p4 deck LEDs leave through the single beat-jump-aware send helper" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/deck_core.c") `
     -LiteralPatterns @("static void deck_send_led(", "deck_send_led(led, state, deck)", "publish_state_snapshot();")
 
 Assert-FileContains `
     -Name "p4 deck_core builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/deck_core/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "deck_core.c"')
 
 # bsp_jc4880.h pulls in esp_lcd/esp_codec_dev, which the host toolchain does not
 # build, so this stays a text check rather than a compile contract.
 Assert-FileContains `
     -Name "p4 display shares one authoritative framebuffer count" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/include/bsp_jc4880.h") `
+    -Path (Join-Path $RepoRoot "firmware/boards/jc4880/bsp_jc4880/include/bsp_jc4880.h") `
     -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT 1")
 
 Assert-FileContains `
     -Name "p4 display allocates only the framebuffer the backend actually uses" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -Path (Join-Path $RepoRoot "firmware/boards/jc4880/bsp_jc4880/bsp_jc4880.c") `
     -LiteralPatterns @(".num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT", "_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u")
 
 Assert-FilePatternsOrdered `
     -Name "p4 product boot forces the retired speaker PA low before settings load" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/p4_app/app_main.c") `
     -LiteralPatterns @("bsp_audio_force_safe_boot_state()", "app_settings_init()")
 
 Assert-FileContains `
     -Name "p4 retired speaker route is compile-time rejected and keeps PA low" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/board_adapter/board_peripherals.c") `
+    -Path (Join-Path $RepoRoot "firmware/boards/jc-common/board_peripherals.c") `
     -LiteralPatterns @("BSP_SPEAKER_ROUTE_RETIRED", "gpio_set_level(BSP_AUDIO_PA_GPIO, 0)", "ESP_ERR_NOT_SUPPORTED")
 
 Assert-FileContains `
     -Name "p4 LVGL backend requests the shared framebuffer count" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_lvgl_backend.c") `
     -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT", "esp_lcd_dpi_panel_get_frame_buffer")
 
 Assert-FileContains `
     -Name "p4 firmware status strings are escaped before JSON formatting" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("web_collect_p4_ota_status", "web_firmware_json_escape_in_place")
 
 Assert-FileContains `
     -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_remote_event(&ev)")
 
 # api_control_handler and the embedded status formatter are file-static ESP-IDF
@@ -3661,7 +3666,7 @@ Assert-FileContains `
 # available host-side guard for the web-to-deck_core SYNC route.
 Assert-FileContains `
     -Name "p4 web sync uses authoritative deck_core state" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "web_queue_sync",
         "CTRL_ID_DECK1_SYNC",
@@ -3675,17 +3680,17 @@ Assert-FileContains `
 # call for this component - so no link contract can express it.
 Assert-FileDoesNotContain `
     -Name "p4 web server never mutates the audio engine loop directly" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("audio_engine_deck_set_loop", "audio_engine_deck_clear_loop")
 
 Assert-FileContains `
     -Name "p4 web server builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "web_server.c"')
 
 Assert-FileContains `
     -Name "p4 OTA handlers consume fragmented request bodies completely" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/web_server/web_server.c") `
     -LiteralPatterns @("while (len < wanted)", "wanted - len", "while (manifest_received < sizeof(manifest_header))")
 
 Assert-FileContains `
@@ -3695,66 +3700,66 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 recorder requires an explicit storage experiment" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED AND", "CONFIG_AUDIO_RECORDER_EXPERIMENTAL_BUILD", "PAJONIIIR_STORAGE_EXPERIMENT", "release enablement remains blocked")
 
 Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
 
 # File-static functions: nothing outside the translation unit can link
 # against them, so absence is only observable as text.
 Assert-FileDoesNotContain `
     -Name "production ANLZ parser has no byte-scan tag fallback" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("scan_bytes_for_tag", "find_tag(")
 
 # Absence of a #define over fread/fgetc; a macro leaves no symbol behind.
 Assert-FileDoesNotContain `
     -Name "production ANLZ parser routes every read through the checked helpers" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("#define fread", "#define fgetc")
 
 Assert-FileContains `
     -Name "library sorting uses immutable records and compact double-buffered order" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/library.c") `
     -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
 
 Assert-FileContains `
     -Name "library UI bounds LVGL cells to one eight-row page" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
 
 Assert-FileContains `
     -Name "library source defines production selected-row helpers directly" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/library.c") `
     -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
 
 Assert-FileDoesNotContain `
     -Name "library sources no longer contain selected-track mock aliases" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/library/library.c") `
     -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
 Assert-FileDoesNotContain `
     -Name "shared UI sources use only production selected-track names" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui.c") `
     -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
 Assert-FileDoesNotContain `
     -Name "shared library UI source uses only production selected-track names" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui_library.c") `
     -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
 Assert-FileContains `
     -Name "firmware UI compiles shared sources directly" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
 
 # Build-file content.
 Assert-FileDoesNotContain `
     -Name "firmware UI source-local selected API bridges stay retired" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/CMakeLists.txt") `
     -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
 
 Assert-FileContains `
@@ -3774,7 +3779,7 @@ Assert-FileContains `
 
 Assert-FileDoesNotContain `
     -Name "shared UI has no mock deck hooks" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/ui/ui.c") `
     -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
 
 Assert-FileDoesNotContain `
@@ -3790,28 +3795,28 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "firmware loader binds the fixed cache instead of allocating the whole track" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
 
 # Mixed: an error string and file-static calls, none of them linkable.
 Assert-FileDoesNotContain `
     -Name "firmware audio never requires one contiguous allocation per compressed track" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("TRACK TOO LARGE", "heap_caps_malloc(track_bytes", "heap_caps_get_largest_free_block", "drflac_open_memory", "build_seek_table", "audio_fw_preload_chunk_bytes", "file_buf")
 
 Assert-FileContains `
     -Name "recorder STOP closes admission and waits for active producers before drain" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("audio_recorder_stop_gate_close", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_try_enter")
 
 Assert-FileContains `
     -Name "recorder finalize publishes only after patch sync and close succeed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder_sink.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_recorder/audio_recorder_sink.c") `
     -LiteralPatterns @("audio_recorder_finalize_run", "recorder_finalize_patch", "recorder_finalize_sync", "recorder_finalize_close", "recorder_finalize_publish", "audio_recorder_sink_abort")
 
 Assert-FileContains `
     -Name "recorder stop propagates writer and finalize failures" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -Path (Join-Path $RepoRoot "firmware/p4-core/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
 
 # Run the controller suites here as well as in the dedicated dual-USB CI job.

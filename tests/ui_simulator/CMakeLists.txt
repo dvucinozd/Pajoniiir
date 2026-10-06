@@ -20,8 +20,8 @@ set(LV_FETCH_DEPENDENCIES OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl" EXCLUDE_FROM_ALL)
 
-set(UI_DIR "${REPO_ROOT}/firmware/main-deck-p4/components/ui")
-set(LIBRARY_DIR "${REPO_ROOT}/firmware/main-deck-p4/components/library")
+set(UI_DIR "${REPO_ROOT}/firmware/p4-core/components/ui")
+set(LIBRARY_DIR "${REPO_ROOT}/firmware/p4-core/components/library")
 
 add_executable(ui_simulator_e2e
     ui_simulator_e2e.c
@@ -63,13 +63,13 @@ add_executable(ui_simulator_e2e
 
     "${LIBRARY_DIR}/anlz_snapshot.c"
     "${LIBRARY_DIR}/rekordbox_anlz.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/beat_jump.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_core.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_net_sync.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_load_lock.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/media_identity.c"
+    "${REPO_ROOT}/firmware/p4-core/components/beat_jump/beat_jump.c"
+    "${REPO_ROOT}/firmware/p4-core/components/control_link/flx4_led_snapshot.c"
+    "${REPO_ROOT}/firmware/p4-core/components/deck_core/deck_core.c"
+    "${REPO_ROOT}/firmware/p4-core/components/deck_core/deck_net_sync.c"
+    "${REPO_ROOT}/firmware/p4-core/components/deck_core/deck_load_lock.c"
+    "${REPO_ROOT}/firmware/p4-core/components/deck_core/deck_loaded_track_store.c"
+    "${REPO_ROOT}/firmware/p4-core/components/media_identity/media_identity.c"
     "${REPO_ROOT}/tests/deck_core_dual/control_link_stub.c"
     "${REPO_ROOT}/tests/deck_core_dual/hot_cue_store_stub.c"
 )
@@ -91,15 +91,15 @@ target_include_directories(ui_simulator_e2e PRIVATE
     "${REPO_ROOT}/tests/support/stubs"
     "${UI_DIR}/include"
     "${LIBRARY_DIR}/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/hot_cue_store/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/audio_engine/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/audio_mixer/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/app_settings/include"
-    "${REPO_ROOT}/firmware/main-deck-p4/components/media_io_gate/include"
+    "${REPO_ROOT}/firmware/p4-core/components/deck_core/include"
+    "${REPO_ROOT}/firmware/p4-core/components/beat_jump/include"
+    "${REPO_ROOT}/firmware/p4-core/components/control_link/include"
+    "${REPO_ROOT}/firmware/p4-core/components/hot_cue_store/include"
+    "${REPO_ROOT}/firmware/p4-core/components/media_identity/include"
+    "${REPO_ROOT}/firmware/p4-core/components/audio_engine/include"
+    "${REPO_ROOT}/firmware/p4-core/components/audio_mixer/include"
+    "${REPO_ROOT}/firmware/p4-core/components/app_settings/include"
+    "${REPO_ROOT}/firmware/p4-core/components/media_io_gate/include"
 )
 
 target_link_libraries(ui_simulator_e2e PRIVATE lvgl m)
@@ -116,16 +116,16 @@ foreach(layout IN ITEMS compact wide)
         "${UI_DIR}/ui_beat_indicator.c" "${LIBRARY_DIR}/anlz_snapshot.c"
         "${LIBRARY_DIR}/rekordbox_anlz.c" simulator_artwork.c
         "${REPO_ROOT}/tests/deck_core_dual/hot_cue_store_stub.c"
-        "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/media_identity.c")
+        "${REPO_ROOT}/firmware/p4-core/components/media_identity/media_identity.c")
     target_include_directories(dj_ui_${layout}_e2e PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}" "${UI_DIR}/include" "${LIBRARY_DIR}/include"
         "${REPO_ROOT}/tests/support/stubs" "${REPO_ROOT}/tests/deck_core_dual/stubs"
-        "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/include"
-        "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/include"
-        "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/include"
-        "${REPO_ROOT}/firmware/main-deck-p4/components/audio_engine/include")
+        "${REPO_ROOT}/firmware/p4-core/components/deck_core/include"
+        "${REPO_ROOT}/firmware/p4-core/components/control_link/include"
+        "${REPO_ROOT}/firmware/p4-core/components/media_identity/include"
+        "${REPO_ROOT}/firmware/p4-core/components/audio_engine/include")
     target_include_directories(dj_ui_${layout}_e2e PRIVATE
-        "${REPO_ROOT}/firmware/main-deck-p4/components/hot_cue_store/include")
+        "${REPO_ROOT}/firmware/p4-core/components/hot_cue_store/include")
     target_compile_definitions(dj_ui_${layout}_e2e PRIVATE WIN32=1 REKORDBOX_PDB_STANDALONE_TEST=1)
     if(layout STREQUAL "wide")
         target_compile_definitions(dj_ui_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
@@ -140,7 +140,7 @@ add_executable(ui_link_wide_e2e ${runtime_sources} simulator_link.c)
 target_include_directories(ui_link_wide_e2e PRIVATE ${runtime_includes}
     "${REPO_ROOT}/firmware/common/dj_link_core/include"
     "${REPO_ROOT}/firmware/common/djlink/include"
-    "${REPO_ROOT}/firmware/main-deck-jc1060/components/dj_link_service/include")
+    "${REPO_ROOT}/firmware/boards/jc1060/dj_link_service/include")
 target_compile_definitions(ui_link_wide_e2e PRIVATE ${runtime_definitions}
     UI_LINK_SIMULATOR=1 DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600)
 target_link_libraries(ui_link_wide_e2e PRIVATE lvgl m)

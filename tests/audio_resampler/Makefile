@@ -1,9 +1,9 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c99 \
-           -I../../firmware/main-deck-p4/components/audio_engine/include
+           -I../../firmware/p4-core/components/audio_engine/include
 
 SRCS    = test_audio_resampler.c \
-          ../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c
+          ../../firmware/p4-core/components/audio_engine/audio_resampler.c
 
 TARGET  = test_audio_resampler
 

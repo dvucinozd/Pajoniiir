@@ -31,10 +31,10 @@ try {
     & $GccPath `
         -O2 -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration `
         -std=c99 `
-        "-I../../firmware/main-deck-p4/components/audio_engine/include" `
+        "-I../../firmware/p4-core/components/audio_engine/include" `
         -o $Target `
         "test_audio_keylock_soak.c" `
-        "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c" `
+        "../../firmware/p4-core/components/audio_engine/audio_keylock.c" `
         -lm
     if ($LASTEXITCODE -ne 0) {
         throw "audio key-lock soak build failed with exit code $LASTEXITCODE"

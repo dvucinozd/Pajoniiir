@@ -27,7 +27,8 @@ if(PAJONIIIR_PROJECT_VER_BYTES GREATER 31)
 endif()
 
 set(EXTRA_COMPONENT_DIRS
-    "components"
+    "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components"
+    "${CMAKE_CURRENT_LIST_DIR}/../boards/jc4880"
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
     "${CMAKE_CURRENT_LIST_DIR}/../common/ota_manifest")
@@ -50,9 +51,9 @@ project(main-deck-p4)
 # The dual-root image needs bulk-oriented HS FIFOs for storage and
 # periodic-OUT-oriented FS FIFOs for controller UAC. Apply the pinned,
 # fail-closed patch after Component Manager has materialized esp-usb.
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/apply_espressif_usb_fifo_patch.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/apply_espressif_usb_idle_recovery_patch.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/apply_usb_host_msc_teardown_patch.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../p4-core/cmake/apply_espressif_usb_fifo_patch.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../p4-core/cmake/apply_espressif_usb_idle_recovery_patch.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../p4-core/cmake/apply_usb_host_msc_teardown_patch.cmake")
 
 # Enlarge LVGL's per-display invalidate-area buffer (default 32). When many
 # small widgets invalidate in one refresh (e.g. the deck VU meters plus

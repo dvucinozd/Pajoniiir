@@ -8,6 +8,12 @@
 
 # Pajoniiir
 
+Shared-core development: portable P4 firmware lives in `firmware/p4-core`,
+with hardware providers under `firmware/boards`. JC4880 and JC1060 use linked
+common startup; the M3 target is being integrated on `codex/shared-p4-core-m3`.
+See the [integration ledger](docs/SHARED_P4_CORE_INTEGRATION.md). This work does
+not change the published M2.5 release or its accepted hardware scope.
+
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
 

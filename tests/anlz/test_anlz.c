@@ -4,8 +4,8 @@
  * Builds on Linux/macOS/Windows with:
  *   make
  * or manually:
- *   gcc -DANLZ_STANDALONE_TEST -I../../firmware/main-deck-p4/components/library/include \
- *       ../../firmware/main-deck-p4/components/library/rekordbox_anlz.c \
+ *   gcc -DANLZ_STANDALONE_TEST -I../../firmware/p4-core/components/library/include \
+ *       ../../firmware/p4-core/components/library/rekordbox_anlz.c \
  *       test_anlz.c -o test_anlz
  *
  * Usage:
