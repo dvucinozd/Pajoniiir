@@ -192,6 +192,40 @@ state separately from OTA transfer state; a signed manifest binds ELF and full
 binary/bundle digests. Physical crash/restart/resource and experiment gates
 remain NOT RUN.
 
+Migration software gate PASS: twelve executed tests cover full/region backup,
+old/new signed project identity, MAC/security/layout, app checksum/appended SHA,
+stale flash refusal, factory readback failure, interrupted selection write,
+unchanged settings/other regions, source-bound cue-only follow-up and signed
+pending-to-VALID observation. The real esptool adapter is pinned to 5.3.1 and
+has no full-chip erase path. Offline plan is reviewable; every device mutation
+stage is recorded before the write and failures do not request a reboot.
+See `M3_SHARED_CORE_MIGRATION.md`. Serial/HTTP behavior is mocked in this gate;
+actual device migration, operator settings and physical acceptance are NOT RUN.
+
+README remains English. Active architecture/profile/parser paths, development,
+startup, OTA, board policies, documentation status and risk register now point
+to the canonical shared architecture. Earlier source/release validation records
+retain their hashes/paths and do not qualify the integrated image. The final
+clean build, signed package and exact-SHA CI are separate candidate evidence;
+no public channel or existing release asset was changed.
+
+| Finding | Implemented software outcome | Open integrated-image acceptance |
+| --- | --- | --- |
+| P01 | Separate signed project/chip/version, channel and embedded descriptor checks | Signed install/interruption/wrong-target physical check |
+| P02 | Full media identity, source/local merge, tombstones/restore, explicit legacy migration | Cue migration/set/delete/restore/reboot on selected exports |
+| P03 | Default-on shared LOAD LOCK and atomic worker/transport reservation | MIDI/touch/web replacement while both decks play |
+| P04 | Standard tagged PCPT parsing and memory/Hot Cue list type | Real export comparison |
+| P05 | PDB title index 17 | Real export metadata/UI review |
+| P06 | PQTZ phase 1-4 and downbeat 1 | Real export grid/phase review |
+| P07 | Decoder seek/preroll/length/loop/CDJ and required PCM/media regressions | MAIN/PFL seek/onset/EOF/loops/CUE/MT/mixed rates |
+| P08 | Critical initialization plus requested real AP/DHCP/HTTP pending gate | Startup timeout/rollback on exact candidate |
+| P09 | Three ordinary targets, experiment matrix, no-SKIP qualification, isolation/budget/locks | Exact-SHA hosted CI and board hardware qualification |
+| P10 | Canonical docs/provenance/migration/capabilities and evidence separation | Final installed/operator campaign record |
+
+No integrated target has a new production PASS until its hardware gates pass.
+M3 Campaign A/B, waveform timing/artwork/Wi-Fi load and physical audio/operator
+confirmation remain NOT RUN. Isolated output-late stays monitoring, not zero-late.
+
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.

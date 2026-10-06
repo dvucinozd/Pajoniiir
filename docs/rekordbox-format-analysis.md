@@ -149,8 +149,8 @@ String indices in the offset table:
 
 ### Implementation
 
-- `firmware/main-deck-p4/components/library/include/rekordbox_pdb.h`
-- `firmware/main-deck-p4/components/library/rekordbox_pdb.c`
+- `firmware/p4-core/components/library/include/rekordbox_pdb.h`
+- `firmware/p4-core/components/library/rekordbox_pdb.c`
 - PC test harness: `tests/rekordbox_pdb/`
 
 **API:**
@@ -265,11 +265,11 @@ uint32_t time_ms;     // absolute time from track start (ms)
 ## ANLZ Parser Implementation
 
 **Files:**
-- `firmware/main-deck-p4/components/library/include/rekordbox_anlz.h`
-- `firmware/main-deck-p4/components/library/rekordbox_anlz.c`
+- `firmware/p4-core/components/library/include/rekordbox_anlz.h`
+- `firmware/p4-core/components/library/rekordbox_anlz.c`
 
 The public metadata structure is defined in
-[`rekordbox_anlz.h`](../firmware/main-deck-p4/components/library/include/rekordbox_anlz.h).
+[`rekordbox_anlz.h`](../firmware/p4-core/components/library/include/rekordbox_anlz.h).
 It includes owned beats/PWV3/PWV4, eight hot-cue slots, up to 16 separate memory
 cues, validated waveform span and explicit truncation flags. Use `anlz_free()`
 to release owned buffers; do not copy borrowed pointers into UI/cache state.

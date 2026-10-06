@@ -5,6 +5,15 @@ Shared-core/M3 implementation is tracked in
 under `firmware/p4-core`; hardware providers live under `firmware/boards`.
 This development branch does not extend the physical scope of M2.5.
 
+The shared-core implementation retains donor library/transport/profile features
+and accepted M3 BSP/DSP/UI policies in one runtime. Finish software variant gates,
+then use [M3 wired migration](M3_SHARED_CORE_MIGRATION.md) on the frozen candidate.
+New-image physical gates include GUI/touch, dual-deck MAIN/PFL, all five zooms,
+signed OTA/startup/rollback, 30 Campaign A cycles and at least 60 minutes of
+worst-case Campaign B timing. Legacy-image acceptance does not transfer.
+Unavailable hardware is NOT RUN. Public board-channel publication requires
+separate authorization after that board's acceptance.
+
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).
 

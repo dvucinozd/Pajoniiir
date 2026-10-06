@@ -3437,6 +3437,9 @@ if ($pythonSource) {
         -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
         -Executable $pythonSource `
         -Arguments @("test_ota_signing.py")
+    Invoke-Step -Name "run preserving M3 factory migration" `
+        -WorkingDirectory $RepoRoot -Executable $pythonSource `
+        -Arguments @("tests/m3_factory_migration/test_migration.py")
 }
 
 $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue

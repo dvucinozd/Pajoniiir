@@ -1,0 +1,276 @@
+import hashlib
+import json
+from pathlib import Path
+import struct
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
+import migrate_m3_factory as migration
+import ota_signing
+from create_integration_candidate import record
+
+
+def image(project, version):
+    data = bytearray(32 + 256)
+    data[0:2] = bytes((0xe9, 1))
+    struct.pack_into('<H', data, 12, 0x12)
+    data[23] = 1
+    struct.pack_into('<II', data, 24, 0x40000000, 256)
+    struct.pack_into('<I', data, 32, 0xabcd5432)
+    for offset, text in ((48, version), (80, project), (144, 'v6.0.2')):
+        data[offset:offset + len(text)] = text.encode()
+    data[176:208] = bytes(range(32))
+    checksum = 0xef
+    for byte in data[32:]:
+        checksum ^= byte
+    data += bytes(((len(data) + 16) & ~15) - len(data) - 1) + bytes((checksum,))
+    data += hashlib.sha256(data).digest()
+    return bytes(data)
+
+
+def table():
+    data = bytearray()
+    for name, (kind, subtype, offset, size) in migration.PARTITIONS.items():
+        data += struct.pack('<HBBII16sI', 0x50aa, kind, subtype, offset, size, name.encode(), 0)
+    data += b'\xeb\xeb' + b'\xff' * 14 + hashlib.md5(data).digest()
+    return bytes(data) + b'\xff' * (0x1000 - len(data))
+
+
+class Device:
+    def __init__(self, raw):
+        self.raw = bytearray(raw)
+        self.actions = []
+        self.corrupt_factory = False
+        self.fail_at = None
+        self.info = {'chip': 'ESP32-P4', 'revision': 100, 'mac': 'aa:bb:cc:dd:ee:ff',
+                     'flash_size': migration.FLASH_SIZE, 'secure_boot': False, 'flash_encrypted': False}
+
+    def identity(self):
+        return self.info
+
+    def read(self, offset, size):
+        self.actions.append(('read', offset, size))
+        return bytes(self.raw[offset:offset + size])
+
+    def write(self, offset, data):
+        self.actions.append(('write', offset, len(data)))
+        if offset == self.fail_at:
+            raise OSError('simulated interrupted write')
+        self.raw[offset:offset + len(data)] = data
+        if offset == 0x20000 and self.corrupt_factory:
+            self.raw[offset] ^= 1
+
+    def reset(self):
+        self.actions.append(('reset',))
+
+
+class MigrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.temp.name)
+        cls.old = image('main-deck-p4', 'M3-51-gafb2099')
+        raw = bytearray(b'\xff' * migration.FLASH_SIZE)
+        raw[0x8000:0x9000] = table()
+        raw[0x420000:0x420000 + len(cls.old)] = cls.old
+        raw[0x9000:0xf000] = (b'legacy cues and settings\0' * 1024)[:0x6000].ljust(0x6000, b'\xff')
+        cls.raw = bytes(raw)
+        cls.backup = cls.root / 'backup'
+        migration.backup(Device(raw), cls.backup)
+        cls.release = cls.root / 'release'
+        cls.release.mkdir()
+        (cls.release / 'wired').mkdir()
+        (cls.release / 'wired/partition-table.bin').write_bytes(table()[:0xc00])
+        cls.private = cls.root / 'private.pem'
+        cls.public = cls.root / 'public.der'
+        ota_signing.generate_key(cls.private, cls.public)
+        key = ota_signing._load_private(cls.private)
+        cls.version = 'M3-dev-g0123456789ab'
+        cls.new = image('main-deck-m3', cls.version)
+        (cls.release / 'main-deck-m3.bin').write_bytes(cls.new)
+        (cls.release / 'main-deck-m3.ddjota').write_bytes(ota_signing.create_bundle(
+            cls.new, key, 'p4', 0x12, 'main-deck-m3', cls.version, 'rel-001'))
+        app = record(cls.release / 'main-deck-m3.bin')
+        bundle = record(cls.release / 'main-deck-m3.ddjota')
+        cls.candidate = {'project': 'main-deck-m3', 'board': 'M3', 'software_verified': True,
+            'source_sha': '0123456789ab' + '0' * 28, 'version': cls.version, 'image': app, 'bundle': bundle,
+            'image_elf_sha256': cls.new[176:208].hex()}
+        migration.save_json(cls.release / 'candidate-evidence.json', cls.candidate)
+        target = {'target': 'p4', 'project': 'main-deck-m3', 'file': app['file'],
+            'ota_bundle': bundle['file'], 'size': app['size'], 'sha256': app['sha256'],
+            'bundle_size': bundle['size'], 'bundle_sha256': bundle['sha256'],
+            'image_elf_sha256': cls.candidate['image_elf_sha256']}
+        payload = json.dumps({'schema_version': 2, 'release_version': cls.version,
+            'source_sha': cls.candidate['source_sha'], 'targets': [target]}).encode()
+        (cls.release / 'manifest.json').write_bytes(payload)
+        (cls.release / 'manifest.sig').write_bytes(ota_signing._raw_sign(key, payload))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def plan(self, **kwargs):
+        options = dict(directory=self.backup, release=self.release, public_key=self.public,
+                       expected_mac='aa:bb:cc:dd:ee:ff', old_slot='ota_0', old_sha=migration.sha(self.old))
+        return migration.plan(**(options | kwargs))
+
+    def test_full_backup_retains_recovery_nvs_ota_and_identity(self):
+        info, raw = migration.load_backup(self.backup)
+        self.assertEqual(raw, self.raw)
+        self.assertEqual(info['apps']['ota_0']['sha256'], migration.sha(self.old))
+        self.assertEqual((self.backup / 'nvs.bin').stat().st_size, 0x6000)
+        self.assertFalse(info['device_written'])
+
+    def test_success_write_order_preserves_all_other_regions(self):
+        planned, raw, new, nvs = self.plan()
+        device = Device(raw)
+        path = self.root / 'success.json'
+        result = migration.apply(device, planned, raw, new, nvs, path)
+        writes = [event for event in device.actions if event[0] == 'write']
+        self.assertEqual(writes, [('write', 0x20000, len(new)), ('write', 0x10000, 0x2000)])
+        first_verify = device.actions.index(('read', 0x20000, len(new)))
+        ota_write = device.actions.index(('write', 0x10000, 0x2000))
+        self.assertLess(first_verify, ota_write)
+        self.assertEqual(device.actions[-1], ('reset',))
+        self.assertEqual(result['stage'], 'first_boot_requested')
+        self.assertEqual(device.raw[:0x10000], raw[:0x10000])
+        self.assertEqual(device.raw[0x12000:0x20000], raw[0x12000:0x20000])
+        self.assertEqual(device.raw[0x20000 + len(new):], raw[0x20000 + len(new):])
+
+    def test_factory_readback_failure_never_changes_selection_or_resets(self):
+        planned, raw, new, nvs = self.plan()
+        device = Device(raw)
+        device.corrupt_factory = True
+        path = self.root / 'readback-failure.json'
+        with self.assertRaisesRegex(ValueError, 'factory readback'):
+            migration.apply(device, planned, raw, new, nvs, path)
+        self.assertEqual([a[1] for a in device.actions if a[0] == 'write'], [0x20000])
+        self.assertNotIn(('reset',), device.actions)
+        self.assertTrue(json.loads(path.read_text())['recovery_required'])
+
+    def test_interrupted_selection_write_keeps_bootloader_and_backup(self):
+        planned, raw, new, nvs = self.plan()
+        device = Device(raw)
+        device.fail_at = 0x10000
+        with self.assertRaises(OSError):
+            migration.apply(device, planned, raw, new, nvs, self.root / 'interrupt.json')
+        self.assertNotIn(('reset',), device.actions)
+        self.assertEqual(migration.load_backup(self.backup)[1], raw)
+
+    def test_stale_flash_and_wrong_device_refuse_all_writes(self):
+        planned, raw, new, nvs = self.plan()
+        for wrong_identity in (False, True):
+            device = Device(raw)
+            if wrong_identity:
+                device.info = device.info | {'mac': '01:02:03:04:05:06'}
+            else:
+                device.raw[0x9000] ^= 1
+            with self.assertRaises(ValueError):
+                migration.apply(device, planned, raw, new, nvs, self.root / 'stale.json')
+            self.assertFalse(any(a[0] in ('write', 'reset') for a in device.actions))
+
+    def test_offline_wrong_mac_and_legacy_sha_are_rejected(self):
+        for options in ({'expected_mac': '01:02:03:04:05:06'}, {'old_sha': '0' * 64}, {'old_slot': 'factory'}):
+            with self.assertRaises(ValueError):
+                self.plan(**options)
+
+    def test_image_checksum_sha_length_chip_and_descriptor(self):
+        parsed, info = migration.app_image(self.new + b'\xff' * 100)
+        self.assertEqual(parsed, self.new)
+        self.assertEqual(info['project'], 'main-deck-m3')
+        for offset in (12, 23, 32, len(self.new) - 33, len(self.new) - 1):
+            corrupt = bytearray(self.new)
+            corrupt[offset] ^= 1
+            with self.assertRaises(ValueError):
+                migration.app_image(corrupt)
+        with self.assertRaises(ValueError):
+            migration.app_image(self.new[:-1])
+
+    def test_layout_flags_and_md5_are_rejected(self):
+        for offset in (0, 12, 28, 240):
+            bad = bytearray(table())
+            bad[offset] ^= 1
+            with self.assertRaises(ValueError):
+                migration.partition_table(bad)
+
+    def test_security_flash_size_and_revision_are_rejected(self):
+        for changed in ({'secure_boot': True}, {'flash_encrypted': True}, {'flash_size': 0x800000}, {'revision': 300}):
+            device = Device(self.raw)
+            device.info |= changed
+            with self.assertRaises(ValueError):
+                migration.device_identity(device)
+
+    def test_cue_nvs_requires_exact_backup_and_source_then_reads_back(self):
+        directory = self.root / 'cues'
+        directory.mkdir(exist_ok=True)
+        nvs = b'new settings and cues\0' * 1024
+        nvs = nvs.ljust(0x6000, b'\xff')
+        (directory / 'merged-nvs.bin').write_bytes(nvs)
+        report = {'schema': 1, 'board_id': 'm3', 'source_sha': self.candidate['source_sha'],
+                  'backup_sha256': migration.sha(self.raw[0x9000:0xf000]), 'merged_sha256': migration.sha(nvs)}
+        migration.save_json(directory / 'report.json', report)
+        planned, raw, new, merged = self.plan(cue_directory=directory)
+        device = Device(raw)
+        migration.apply(device, planned, raw, new, merged, self.root / 'cue-apply.json')
+        self.assertEqual([a[1] for a in device.actions if a[0] == 'write'], [0x20000, 0x9000, 0x10000])
+        self.assertEqual(device.raw[0x9000:0xf000], nvs)
+        migration.save_json(directory / 'report.json', report | {'backup_sha256': '0' * 64})
+        with self.assertRaisesRegex(ValueError, 'stale or corrupt'):
+            self.plan(cue_directory=directory)
+
+    def test_finish_requires_signed_same_image_and_valid_health(self):
+        planned, raw, new, nvs = self.plan()
+        wired = self.root / 'wired-result.json'
+        migration.apply(Device(raw), planned, raw, new, nvs, wired)
+        info = {'board_id': 'm3', 'project': 'main-deck-m3', 'source_sha': self.candidate['source_sha'],
+            'source_dirty': False, 'image_elf_sha256': self.candidate['image_elf_sha256'],
+            'running_version': self.version, 'running_slot': 'factory', 'running_image_state': 'factory', 'state': 'idle'}
+        values = [info, {'deck1': {'state': 'READY', 'playing': False}, 'deck2': {'state': 'IDLE', 'playing': False}},
+            info | {'running_slot': 'ota_0', 'running_image_state': 'pending_verify'},
+            info | {'running_slot': 'ota_0', 'running_image_state': 'valid'}]
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def read(self): return b'{"ok":true}'
+        with patch.object(migration, 'get_json', side_effect=values), \
+             patch.object(migration.urllib.request, 'urlopen', return_value=Response()) as upload, \
+             patch.object(migration.time, 'sleep'):
+            result = migration.finish('http://192.168.4.1', self.release, self.public, wired, self.root / 'ota-result.json')
+        self.assertEqual(result['stage'], 'ota_health_valid')
+        self.assertEqual(result['physical_acceptance'], 'NOT RUN')
+        request = upload.call_args.args[0]
+        self.assertEqual(request.get_header('X-ddj-control'), '1')
+        self.assertEqual(request.get_header('X-ddj-ota'), 'p4')
+        self.assertEqual(request.data, (self.release / 'main-deck-m3.ddjota').read_bytes())
+        with self.assertRaisesRegex(ValueError, 'selected candidate'):
+            migration.verify_running(info | {'source_dirty': True}, self.candidate, 'factory')
+
+    def test_cue_only_followup_preserves_factory_and_ota_selection(self):
+        raw = bytearray(self.raw)
+        raw[0x20000:0x20000 + len(self.new)] = self.new
+        raw[0x420000:0x420000 + len(self.new)] = self.new
+        directory = self.root / 'shared-backup'
+        migration.backup(Device(raw), directory)
+        cues = self.root / 'followup-cues'
+        cues.mkdir()
+        nvs = b'\xaa' * 0x6000
+        (cues / 'merged-nvs.bin').write_bytes(nvs)
+        migration.save_json(cues / 'report.json', {'schema': 1, 'board_id': 'm3',
+            'source_sha': self.candidate['source_sha'], 'backup_sha256': migration.sha(raw[0x9000:0xf000]),
+            'merged_sha256': migration.sha(nvs)})
+        planned, saved, new, merged = self.plan(directory=directory, old_sha=migration.sha(self.new),
+                                              cue_directory=cues, current_shared=True)
+        device = Device(saved)
+        result = migration.apply(device, planned, saved, new, merged, self.root / 'cue-only.json')
+        self.assertEqual([a[1] for a in device.actions if a[0] == 'write'], [0x9000])
+        self.assertEqual(result['stage'], 'cue_boot_requested')
+        self.assertEqual(device.raw[:0x9000], raw[:0x9000])
+        self.assertEqual(device.raw[0xf000:], raw[0xf000:])
+
+
+if __name__ == '__main__':
+    unittest.main()

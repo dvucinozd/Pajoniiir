@@ -14,6 +14,13 @@ common startup; the M3 entrypoint is `firmware/main-deck-m3`.
 See the [integration ledger](docs/SHARED_P4_CORE_INTEGRATION.md). This work does
 not change the published M2.5 release or its accepted hardware scope.
 
+The M3 shared-core candidate uses `main-deck-m3`, a separate M3 version line and
+`/m3` OTA channel. Its initial wired migration preserves the existing partition
+layout and settings. Build verification does not qualify the new image on
+hardware. See [board policies](docs/SHARED_P4_BOARDS.md),
+[M3 migration](docs/M3_SHARED_CORE_MIGRATION.md) and the
+[reliability campaign](docs/RELIABILITY_MONITORING_PLAN.md).
+
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
 

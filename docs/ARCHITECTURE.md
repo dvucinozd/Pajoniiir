@@ -1,11 +1,37 @@
 # Architecture
 
+The shared-core migration extends this architecture to three board providers:
+JC4880, JC1060 and M3. Portable production components live only under
+`firmware/p4-core/components`; shared protocol modules remain in `firmware/common`.
+Thin `main-deck-*` entrypoints link exactly one BSP under `firmware/boards`.
+The earlier release records below retain their original image-specific scope.
+Current integration evidence is in [the ledger](SHARED_P4_CORE_INTEGRATION.md).
+
+Immutable board capabilities select display geometry/scanout, root roles,
+audio outputs, Wi-Fi policy and DSP memory. The shared engine/parser/controller
+contains no M3 identity branches. MAIN uses fixed 48 kHz on M3; FIR cache storage
+is compiled only for the capability that uses it. Both decoder-owned canonical
+PCM and consumer read/playhead publication retain one implementation.
+
+Pro DJ Link discovery, browse, cache/download and sync are portable components.
+The board supplies an explicit `esp_netif_t` provider; missing interfaces never
+fall back to the SoftAP or default route. JC1060 supplies Ethernet. A deliberate
+M3 Link experiment supplies STA; the normal M3 image neither starts the service
+nor exposes active Link controls. Network transport writes share LOAD ownership.
+Recorder and alternative UI are shared experiments with separate build gates.
+
+`/api/firmware` distinguishes source SHA, source cleanliness, embedded ELF digest,
+running slot and IDF image state. The signed manifest binds the complete image
+and bundle hashes; the ELF digest is not the `.bin` hash. The read-only reliability
+monitor fences all telemetry to this exact identity and detects counter resets.
+
 Status: **current shared P4 architecture, reconciled 2026-10-06**. The P4 is
 both the authoritative playback/UI engine and the direct dual-root USB host.
-JC4880 and JC1060 have separate board entrypoints sharing one core; no S3
-firmware or inter-board transport belongs to either configuration. The published
-JC4880/FLX4 image is frozen v91; JC1060/DDJ-400/Link remains software verified.
-See the [release scope](validation/JC4880_V91_RELEASE_20261005.md).
+JC4880, JC1060 and M3 have separate board entrypoints sharing one core; no S3
+firmware or inter-board transport belongs to these configurations. The published
+JC4880/FLX4 release remains the original M2.5 artifact; integrated candidates and
+JC1060/DDJ-400/Link retain separate physical gates.
+See the [release scope](validation/M2_5_RELEASE_20261006.md).
 
 The A-L integration, now merged into `master`, binds
 loaded-track snapshots to the audio session returned by the accepted LOAD.
@@ -25,8 +51,8 @@ descriptor must have bounded project/version text matching the running project
 and signed version before selection. Ordinary candidate tooling additionally
 checks clean/pushed source, exact green CI, fixed image budget and absence of
 experiments. Candidate evidence is separate from the signed OTA schema and
-records both dependency locks, configuration, binary hashes and NOT RUN physical
-gates. JC1060 has a separate channel root; app-only OTA cannot migrate partitions.
+records all three dependency locks, configuration, binary hashes and NOT RUN physical
+gates. JC1060 and M3 have separate channel roots; app-only OTA cannot migrate partitions.
 
 Package H constructs one selected Overview/Library/Hot Cues tree;
 Settings and chrome are shared. Library ownership/actions do not depend on table
@@ -63,20 +89,22 @@ See [G bounds and physical gates](validation/FORK_IMPROVEMENTS_PACKAGE_G_SOFTWAR
 
 Package E adds `main-deck-jc1060` with an explicit shared-component
 list and a thin wrapper around common P4 startup. `board_adapter` owns immutable
-capabilities and shared touch/codec/SD peripherals; display BSP and Ethernet
-startup remain board-specific. The JC4880 BSP is absent from the JC1060 build.
+capabilities and SD/DMA policy; touch/codec/SD/display peripherals and Ethernet
+startup live under board providers. The JC4880 BSP is absent from the JC1060 build.
 The core is not copied. Both signed-manifest and application descriptor checks
 use the running project identity. See [E software evidence](validation/FORK_IMPROVEMENTS_PACKAGE_E_SOFTWARE_20261004.md);
 new-board physical acceptance remains NOT RUN.
 
-Package I isolates Link to the JC1060 Ethernet worker. A sans-I/O DBServer model
+The original Package I isolates Link to the JC1060 Ethernet worker. Its service
+is now shared behind an explicit board provider; normal M3 remains disabled.
+A sans-I/O DBServer model
 and strictly interface/local-IP-bound nonblocking adapter share one session and
 one request. Its PSRAM cache owns at most 2,000 metadata rows; only bounded page
 copies cross into LVGL. Source/claim/connection epochs and command IDs reject
 stale publication. The Library owner handles navigation and incoming load
 admission without network or filesystem work. Metadata-only LOAD cannot alter a
 deck; verified local audio is required before acceptance/ACK. Local library
-advertising and Wi-Fi Link are absent. See the
+advertising remains absent; STA Link exists only as an unqualified experiment. See the
 [I software closure](validation/FORK_IMPROVEMENTS_PACKAGE_I_SOFTWARE_20261005.md).
 
 Package J runs NFS/PDB/analysis/JPEG work in the existing single-flight load
@@ -379,18 +407,18 @@ history.
 
 ## Main Code Surfaces
 
-- `firmware/main-deck-p4/components/usb_host_manager/` — shared Host Library
+- `firmware/p4-core/components/usb_host_manager/` — shared Host Library
   and per-root recovery arbitration.
-- `firmware/main-deck-p4/components/usb_storage/` — USB0 MSC/media lifecycle.
-- `firmware/main-deck-p4/components/controller_usb_host/` — USB1 composite
+- `firmware/p4-core/components/usb_storage/` — USB0 MSC/media lifecycle.
+- `firmware/p4-core/components/controller_usb_host/` — USB1 composite
   MIDI/UAC ownership.
-- `firmware/main-deck-p4/components/p4_local_controller/` — connection,
+- `firmware/p4-core/components/p4_local_controller/` — connection,
   profile, semantic dispatch and LED integration.
-- `firmware/main-deck-p4/components/control_link/control_link_local.c` — narrow
+- `firmware/p4-core/components/control_link/control_link_local.c` — narrow
   compatibility adapter into the existing semantic event queue.
-- `firmware/main-deck-p4/components/controller_runtime/` and
+- `firmware/p4-core/components/controller_runtime/` and
   `controller_led_runtime/` — MIDI mapping and direct feedback.
-- `firmware/main-deck-p4/components/audio_engine/`, `deck_core/` and `ui/` —
+- `firmware/p4-core/components/audio_engine/`, `deck_core/` and `ui/` —
   authoritative behavior and presentation.
 
 Current P4 mixer/audio surfaces live in `audio_engine` helpers such as
@@ -408,7 +436,7 @@ does not define the playback model.
 ## Wi-Fi Remote
 
 The embedded Wi-Fi Remote lives in
-`firmware/main-deck-p4/components/web_server/web/` and is served directly from
+`firmware/p4-core/components/web_server/web/` and is served directly from
 the P4 firmware image. It is an operator client, not an alternate state owner:
 
 - `/api/status` publishes authoritative deck, SYNC and mixer snapshots;
@@ -508,7 +536,7 @@ Verified on hardware 2026-07-09: the SD profile loads into the P4 registry and
 Active P4 components and retained profile tooling:
 
 ```text
-firmware/main-deck-p4/components/
+firmware/p4-core/components/
   controller_profile/          S3CP parser + table-driven MIDI/LED matcher (pure C)
   controller_profile_runtime/  active-profile holder + dynamic P4 mapper
   controller_profile_manager/  SD scan, registry, VID/PID match, local activation

@@ -15,7 +15,7 @@ This document is the authoritative specification for both formats:
 
 The compiler between the two is `tools/controller_profile/compile_profile.py`.
 The parser/matcher is
-`firmware/main-deck-p4/components/controller_profile/`.
+`firmware/p4-core/components/controller_profile/`.
 
 Design constraints:
 
