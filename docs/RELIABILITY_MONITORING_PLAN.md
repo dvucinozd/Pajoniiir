@@ -151,7 +151,7 @@ largest rolling one-minute cluster of six. The clustering crossed the
 investigation trigger, but no event crossed 15,000 us and none had an audible,
 visual, PCM, or UAC consequence. Keep the measured pattern as an R3 monitoring
 baseline; it does not independently justify a firmware change. See the
-[dated validation record](validation/2026-09-21-reliability-timing-soak.md).
+[dated historical M3 validation record](https://github.com/dvucinozd/Pajoniiir-M3/blob/e95417c4e2fea007d2c1dcb693790914692c62ba/docs/validation/2026-09-21-reliability-timing-soak.md).
 
 ## Evidence and completion
 
