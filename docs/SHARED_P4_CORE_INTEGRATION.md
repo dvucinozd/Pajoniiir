@@ -245,7 +245,7 @@ settings were confirmed before OTA. See the
 digests, the operator-authorized existing-image recovery mode, manual RESET and
 remaining physical gates. Migration tooling now has 19 passing regressions.
 
-The current ordinary candidate is clean source 11574f4e, signed and installed
+The preceding ordinary candidate is clean source 11574f4e, signed and installed
 VALID in M3 ota_1. Its status exposes MT/loop state and its read-only monitor
 supports the common catalog contract with seven passing regressions. All three
 ordinary builds and exact-source CI passed. The replacement medium contains 324
@@ -254,3 +254,14 @@ tracks; 44.1/48-kHz loads and stopped loop/pitch preflight passed. See the
 Active-playback/operator, Campaign A/B and startup-timeout/rollback gates remain
 open. These updates supersede the earlier installed-state and test counts above;
 they do not extend earlier physical acceptance to the new image.
+
+The 11574f4e timing attempt failed on operator-confirmed watery dual waveforms.
+Solo D1 was sharp; dual playback also failed without API polling. The current
+clean candidate c698fa67 reserves the early frame for both waveform phases
+before either deck's status/artwork/chrome, preserving the board policies and
+one interpolation per deck. It passed host qualification, existing simulator
+baselines, all three ordinary builds and exact-source CI, and is installed VALID
+in M3 ota_0. Its operator retest failed: watery waveforms persisted and visual
+stutter appeared while audio remained clean. Bounded RAM scanout timing counters
+are the next diagnostic step. Physical acceptance remains failed in the
+[regression/retest record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).

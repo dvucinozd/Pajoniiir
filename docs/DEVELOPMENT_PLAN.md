@@ -14,14 +14,16 @@ worst-case Campaign B timing. Legacy-image acceptance does not transfer.
 Unavailable hardware is NOT RUN. Public board-channel publication requires
 separate authorization after that board's acceptance.
 
-`M3-dev-g11574f4eff16` is installed in M3 ota_1 with VALID health state.
-[The current candidate record](validation/M3_SHARED_CORE_11574_20261006.md) separates
+`M3-dev-gc698fa672bc1` is installed in M3 ota_0 with VALID health state.
+[The current candidate record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md) separates
 the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
 operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
 touch/settings confirmations remain in the image-specific
 [95e installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
-The 11574f4e timing attempt subsequently failed on operator-confirmed dual
-waveform deformation; see [the regression and repair candidate](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
+Both 11574f4e and the installed c698fa67 ordering repair failed on
+operator-confirmed dual waveform deformation. The latter also showed visual
+stutter while audio remained clean. The next step measures refresh/render/PPA
+timing through bounded RAM counters; see [the regression record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
 The full timing gate must restart after exact-image physical retest.
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**

@@ -3116,6 +3116,17 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_scanout_timing"
+        Dir = "tests/ui_scanout_timing"
+        Target = "test_ui_scanout_timing.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-Istubs", "-I../../firmware/p4-core/components/ui/include",
+            "-o", "test_ui_scanout_timing.exe", "test_ui_scanout_timing.c",
+            "../../firmware/p4-core/components/ui/ui_scanout_timing.c"
+        )
+    },
+    @{
         Name = "ui_overview_grid"
         Dir = "tests/ui_overview_grid"
         Target = "test_ui_overview_grid.exe"

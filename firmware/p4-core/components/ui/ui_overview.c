@@ -46,6 +46,7 @@
 #include "audio_engine.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "ui_scanout_timing.h"
 #endif
 
 #ifndef UI_HOR_RES
@@ -1781,7 +1782,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
          * to the playhead) so the cache tints it; a change flips it invalid. */
         ui_overview_wave_cache_set_loop(&s_overview_wave_cache[idx], loop_active,
                                         loop_start_ms, loop_end_ms);
-        int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
+        int64_t render_start_us = esp_timer_get_time();
         bool cache_updated = ui_overview_wave_cache_update(&s_overview_wave_cache[idx],
                                                            source,
                                                            duration_ms,
@@ -1789,13 +1790,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                                            center_ms,
                                                            window_ms,
                                                            &cache_report);
-        uint32_t cache_us = 0;
-        if (ui_diagnostics_enabled()) {
-            int64_t elapsed_us = esp_timer_get_time() - render_start_us;
-            if (elapsed_us > 0) {
-                cache_us = (uint32_t)elapsed_us;
-            }
-        }
+        uint32_t cache_us = (uint32_t)(esp_timer_get_time() - render_start_us);
         if (!cache_updated || !cache_report.blit_required) {
             return;
         }
@@ -1806,6 +1801,8 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
             return;
         }
         main_wave_rendered = true;
+        ui_scanout_timing_wave_complete(idx, cache_us, blit_perf.total_us,
+                                       esp_timer_get_time());
         if (idx < DECK_CORE_DECK_COUNT && s_overview_wave_load_reblit_remaining[idx] > 0) {
             s_overview_wave_load_reblit_remaining[idx]--;
         }
@@ -2636,6 +2633,11 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     if (!ctx) {
         return;
     }
+#ifndef WIN32
+    ui_scanout_timing_overview_begin(
+        ui_overview_zoom_visible_beats_for_step(s_overview_zoom_step),
+        esp_timer_get_time());
+#endif
 
     s_overview_active_tab = ctx->active_tab;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {

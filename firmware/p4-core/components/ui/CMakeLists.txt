@@ -27,6 +27,7 @@ idf_component_register(
          "ui_overview_window.c"
          "ui_overlay_map.c"
          "ui_overview_perf.c"
+         "ui_scanout_timing.c"
          "ui_overview_scheduler.c"
          "ui_overview_renderer.c"
          "ui_overview_wave_cache.c"

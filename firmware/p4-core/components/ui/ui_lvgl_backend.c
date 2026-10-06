@@ -11,6 +11,7 @@
 #include "ui_overview_perf.h"
 #ifndef WIN32
 #include "firmware_resources.h"
+#include "ui_scanout_timing.h"
 #endif
 
 static const char *TAG = "ui";
@@ -219,6 +220,7 @@ static bool IRAM_ATTR ui_lvgl_dpi_refresh_done_cb(esp_lcd_panel_handle_t panel,
     }
 
     BaseType_t higher_priority_task_woken = pdFALSE;
+    ui_scanout_timing_refresh_isr(esp_timer_get_time());
     xTaskNotifyFromISR(task,
                        UI_LVGL_NOTIFY_REFRESH,
                        eSetBits,
@@ -563,7 +565,11 @@ static void ui_lvgl_task(void *arg)
 
         _lock_acquire_recursive(&s_lvgl_lock);
         if (refresh_pending && s_frame_callback != NULL) {
+            int64_t callback_start_us = esp_timer_get_time();
+            ui_scanout_timing_frame_begin(callback_start_us);
             s_frame_callback(s_frame_callback_ctx);
+            ui_scanout_timing_record(UI_TIMING_CALLBACK,
+                (uint32_t)(esp_timer_get_time() - callback_start_us));
         }
         uint32_t next_ms = lv_timer_handler();
         _lock_release_recursive(&s_lvgl_lock);
@@ -572,6 +578,8 @@ static void ui_lvgl_task(void *arg)
         firmware_resources_sample_task(FW_RESOURCE_LVGL);
 
         uint64_t handler_end_us = (uint64_t)esp_timer_get_time();
+        ui_scanout_timing_record(UI_TIMING_HANDLER,
+                                (uint32_t)(handler_end_us - handler_start_us));
         if (ui_diagnostics_enabled()) {
             ui_overview_perf_report_t duration_report;
             if (ui_overview_perf_record(&s_lvgl_handler_duration_perf,

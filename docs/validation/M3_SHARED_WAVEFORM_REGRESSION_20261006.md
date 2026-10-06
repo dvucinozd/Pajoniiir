@@ -68,3 +68,52 @@ presentations retained their existing screenshot hashes, including M3's five
 zoom views. A local ESP-IDF 6.0.2 M3 compile and documentation integrity passed.
 Clean committed builds, exact-source CI, signed packaging, installation and
 operator retest are separate subsequent gates; no repair PASS is inferred here.
+
+## Installed repair candidate
+
+The new signed candidate is now installed and VALID in M3 `ota_0`:
+
+- Version `M3-dev-gc698fa672bc1`.
+- Clean source `c698fa672bc1122224b130e35721f8fdb350768b`.
+- ELF SHA-256 `73f34062b4d791de891fa80191fa6cd2ca38915aa62ddb3f7957d056602e3029`.
+- Image 2,566,160 B, SHA-256 `ae36858df995823d4c1046abd0a513e3ce4f219ae5518838961cc3453adc407d`.
+- Bundle 2,566,348 B, SHA-256 `6e717a89e1859cd2a34e171c667d21a6aca4acce70cdb0cb9219259e2aeac2ad`.
+
+All three clean-source ESP-IDF 6.0.2 ordinary builds and unchanged dependency
+locks passed. All three signed packages passed candidate verification. The
+exact-source [12-job matrix](https://github.com/dvucinozd/Pajoniiir/actions/runs/37516104001),
+[USB gate](https://github.com/dvucinozd/Pajoniiir/actions/runs/37516104138) and
+[documentation gate](https://github.com/dvucinozd/Pajoniiir/actions/runs/37516104057)
+passed. A separate GitHub Advanced Security run on the preceding documentation
+commit failed with HTTP 402/monthly quota; it did not complete a security review.
+
+Signed OTA returned HTTP 200 and runtime confirmed the exact board/project/source/
+ELF, VALID health and idle service. The 324-track catalog remounted and both
+selected tracks again reached READY at 44.1/48 kHz. Opposing pitches and loops
+were restored while stopped. MT reset on reboot and must be enabled by the
+operator before the comparable retest. Wi-Fi remains enabled.
+
+The operator enabled MT on both decks and selected eight visible beats. Both
+decks were started with the same opposing pitches and 44.1/48-kHz loops, without
+continuous API polling. The operator reported the watery deformation was still
+present and that the image now also stuttered. Audio did not stutter according
+to the operator. This candidate therefore also fails the physical visual gate.
+Status/resources/firmware and diagnostic logs were captured before deliberately
+stopping both decks. The new full 60-minute soak was NOT RUN.
+
+At the failure snapshot, PCM underruns, output-late, UAC dropped/overflow frames
+were zero and active UAC data-loss was false. The idle UAC underflow count was
+447,174; it is not an absolute-zero claim. Allocation and critical allocation
+failures were zero. These measurements do not overrule the visual failure.
+
+The ordering correction alone is insufficient. The next candidate adds bounded
+RAM-only scanout timing measurements exposed by read-only `/api/ui-timing`:
+refresh wake latency, coalesced refreshes, frame intervals, Overview entry,
+callback/handler duration and per-deck cache/blit/finish timing. No panel timing,
+cadence or rendering policy is changed for this measurement step. Histograms
+use upper bounds 1/2/4/8/12/20 ms and a final >20-ms bucket; deltas between
+snapshots isolate each playback window from startup/load outliers.
+
+Installation and software verification are not a physical repair PASS.
+Raw installation and preflight evidence is private under
+`.cache/m3-migration/20261006-c698fa67`. No public release/channel was modified.

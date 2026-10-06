@@ -15,6 +15,7 @@
 #include "ui_library.h"
 #include "firmware_resources.h"
 #include "ui_heap_usage.h"
+#include "ui_scanout_timing.h"
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
@@ -1395,6 +1396,47 @@ static esp_err_t api_resources_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, n);
 }
 
+static esp_err_t api_ui_timing_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    ui_scanout_timing_snapshot_t timing;
+    ui_scanout_timing_snapshot(&timing);
+    static const char *names[UI_TIMING_COUNT] = {
+        "wake", "frame_interval", "overview_begin", "callback", "handler",
+        "d1_cache", "d1_blit", "d1_finish", "d2_cache", "d2_blit", "d2_finish"
+    };
+    /* Keep the snapshot and small chunk on the HTTP task stack. A single large
+     * JSON stack buffer would compromise its existing stack headroom. */
+    char chunk[384];
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    int n = snprintf(chunk, sizeof chunk,
+        "{\"unit\":\"us\",\"scope\":\"since_boot\",\"refresh_count\":%u,"
+        "\"coalesced_refreshes\":%u,\"zoom_beats\":%u,\"metrics\":{",
+        (unsigned)timing.refresh_count, (unsigned)timing.coalesced_refreshes,
+        (unsigned)timing.zoom_beats);
+    if (n < 0 || (size_t)n >= sizeof chunk) return ESP_FAIL;
+    esp_err_t rc = httpd_resp_send_chunk(req, chunk, n);
+    if (rc != ESP_OK) return rc;
+    for (unsigned i = 0; i < UI_TIMING_COUNT; ++i) {
+        const ui_scanout_timing_stat_t *s = &timing.metric[i];
+        n = snprintf(chunk, sizeof chunk,
+            "%s\"%s\":{\"count\":%u,\"last_us\":%u,\"max_us\":%u,"
+            "\"total_us\":%llu,\"histogram\":[%u,%u,%u,%u,%u,%u,%u]}",
+            i ? "," : "", names[i], (unsigned)s->count, (unsigned)s->last_us,
+            (unsigned)s->max_us, (unsigned long long)s->total_us,
+            (unsigned)s->histogram[0], (unsigned)s->histogram[1],
+            (unsigned)s->histogram[2], (unsigned)s->histogram[3],
+            (unsigned)s->histogram[4], (unsigned)s->histogram[5],
+            (unsigned)s->histogram[6]);
+        if (n < 0 || (size_t)n >= sizeof chunk) return ESP_FAIL;
+        rc = httpd_resp_send_chunk(req, chunk, n);
+        if (rc != ESP_OK) return rc;
+    }
+    rc = httpd_resp_send_chunk(req, "}}", 2);
+    return rc == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : rc;
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
@@ -2521,6 +2563,11 @@ esp_err_t web_server_start(void)
     httpd_uri_t resources_uri = {.uri="/api/resources", .method=HTTP_GET,
                                  .handler=api_resources_handler};
     rc = register_uri_or_stop(s_web_server, &resources_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t timing_uri = {.uri="/api/ui-timing", .method=HTTP_GET,
+                              .handler=api_ui_timing_handler};
+    rc = register_uri_or_stop(s_web_server, &timing_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t cue_migration_uri = {.uri="/api/cue-migration/catalog*", .method=HTTP_GET,
