@@ -21,7 +21,7 @@ remain image-specific; successful builds do not qualify the new M3 target.
 
 These checks do not authorize publication or qualify JC4880/JC1060 hardware.
 
-For the installed `M3-dev-g180b008c4f19` candidate in ota_0, see the
+For the installed `M3-dev-ge4536de2ec6f` candidate in ota_1, see the
 [exact-image acceptance record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md).
 Both 11574f4e and c698fa67 failed on dual waveform deformation; c698fa67 also
 showed visual stutter without audible stutter.
@@ -33,9 +33,14 @@ verified on 2026-10-07 after the upload helper's earlier polling deadline
 expired; this later observation is not a startup-time measurement.
 Its short retest also failed: solo sharp, dual deformed, audio clean, with 55
 coalesced refreshes. Both decks are stopped. The full soak remains NOT RUN.
-The next zero-wait display-observation candidate must pass production contention
-tests, unchanged simulator baselines, clean builds and the same measured/operator
-retest before Campaign B can begin.
+The zero-wait display-observation e4536de2 candidate passed production contention
+tests, unchanged simulator baselines, all three clean builds, CI and packaging.
+Its installed source/ELF and VALID state were observed within the helper deadline,
+but the operator again confirmed solo sharp, dual deformed and clean sound.
+The dual window coalesced 65 refreshes. Both decks are stopped; Campaign B
+cannot begin before a successful measured/operator retest. See the
+[diagnostic audit](validation/M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md) for
+remaining loop-query waits and heap/UART overhead.
 
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the

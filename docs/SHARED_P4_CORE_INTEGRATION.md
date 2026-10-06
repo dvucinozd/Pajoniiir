@@ -283,3 +283,13 @@ deadline. The same 324-track mixed-rate preflight is prepared for physical
 solo/dual retest. The operator confirmed solo sharp, dual deformed and clean
 sound; 55 refreshes coalesced during the short dual window. This is another
 visual FAIL. Both decks were stopped and the new full soak was NOT RUN.
+
+Clean e4536de2 passed full host qualification, unchanged product simulator
+baselines, all three full-clean builds/locks, exact-source matrix/USB/docs CI
+and signed packages. It is now installed VALID in M3 ota_1 with the matching
+source/ELF, observed before the helper polling deadline. The operator retest
+still failed: solo sharp, dual deformed, audio clean. The short dual window
+coalesced 65 refreshes; no service records were written in the measured windows.
+Both decks are stopped and the full soak remains NOT RUN. See the
+[diagnostic-overhead review](validation/M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md)
+and the waveform record for remaining loop-query waits and diagnostic risks.

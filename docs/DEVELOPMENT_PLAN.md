@@ -14,10 +14,10 @@ worst-case Campaign B timing. Legacy-image acceptance does not transfer.
 Unavailable hardware is NOT RUN. Public board-channel publication requires
 separate authorization after that board's acceptance.
 
-`M3-dev-g180b008c4f19` is installed in M3 ota_0 with VALID health state,
-verified against its exact clean source and ELF on 2026-10-07. The install
-script's earlier 100-second polling deadline expired; the later runtime
-observation does not establish startup timing within that deadline.
+`M3-dev-ge4536de2ec6f` is installed in M3 ota_1 with VALID health state,
+verified against its exact clean source and ELF on 2026-10-07 within the
+installation helper's polling deadline. The preceding 180b008c helper's expired
+deadline remains a separate historical finding.
 [The current candidate record](validation/M3_SHARED_WAVEFORM_REGRESSION_20261006.md) separates
 the signed OTA, 324-track catalog and mixed-rate load evidence from remaining
 operator audio/UI and USB campaigns. Initial wired migration and earlier GUI/
@@ -34,11 +34,16 @@ The installed repair also failed the physical retest: solo sharp, dual deformed,
 audio clean, 55 coalesced refreshes in the short dual window. Investigate the
 remaining blocking UI status reads before another candidate; the full timing
 gate must restart after a successful exact-image physical retest.
-The next candidate shares one zero-wait, UI-owned audio-status observation per
+The installed e4536de2 candidate shares one zero-wait, UI-owned audio-status observation per
 deck between position, session-checked duration and status/progress rendering.
 Busy decode retains the last observation; transport decisions keep their
 authoritative APIs. Production mutex-contention and simulator recovery tests
-precede clean builds and physical acceptance.
+and all three clean builds passed, but its physical retest still failed: solo
+sharp, dual deformed, audio clean, with 65 coalesced refreshes. Both decks are
+stopped. Remove the remaining waveform-phase loop-query waits next. The
+[diagnostic-overhead audit](validation/M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md)
+separates quiet service-file logging from recurring heap inspection and UART
+producer reports; the full soak remains NOT RUN.
 
 Status: **M2.5 published; A-L merged into master; hardware extensions open**
 (2026-10-06).

@@ -252,3 +252,32 @@ display-observation path and check retained duration while busy plus refresh
 after release. Full host qualification, clean target builds, exact-source CI,
 signed packaging and measured/operator retest are required before acceptance.
 Panel timing, geometry, PPA order, redraw cadence and audio DSP remain unchanged.
+
+## Installed nonblocking status candidate, 2026-10-07
+
+Clean source `e4536de2ec6fc9fb25a6e8bbdb17e4a4b4143d9a` passed full host
+qualification, unchanged M3/compact/wide product simulator baselines, all three
+full-clean IDF 6.0.2 builds with unchanged dependency locks, and signed packaging.
+Exact-source CI passed: [12-job matrix](https://github.com/dvucinozd/Pajoniiir/actions/runs/37544368074),
+[USB](https://github.com/dvucinozd/Pajoniiir/actions/runs/37544368082), and
+[documentation](https://github.com/dvucinozd/Pajoniiir/actions/runs/37544368122).
+The separate Advanced Security review failed on monthly quota, not a completed
+security assessment.
+
+The signed upload returned HTTP 200 and the helper observed exact clean
+source/ELF, VALID `ota_1` and idle within its polling deadline. Exact package
+hashes and the diagnostic-overhead audit are in the
+[e4536de2 review](M3_DIAGNOSTIC_OVERHEAD_REVIEW_20261007.md).
+The comparable MT/eight-beat mixed-rate retest measured 65 coalesced refreshes
+and a 16,247.8-us mean D2 finish, with 121 finishes beyond 20 ms in 542 callbacks.
+The operator again confirmed solo sharp, dual deformed and clean sound.
+PCM/UAC active-window loss, output-late and service-log drop deltas were zero;
+the service writer added no records in any measured window. This remains a
+physical visual FAIL, not a timing repair. Both decks were stopped; the full
+new soak was NOT RUN.
+
+The remaining waveform-phase loop-display queries still acquire the decoder
+mutex, including a second query in the armed-loop overlay. The next focused
+repair must observe loop state without waiting and reuse it throughout the
+frame, preserving authoritative transport APIs and loaded-session fencing.
+Diagnostic sampling/UART risks are tracked separately in the audit.
