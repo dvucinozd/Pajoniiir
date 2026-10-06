@@ -27,7 +27,7 @@ FIRMWARE = dict(IDENTITY, running_version='M3-dev-gaaaaaaaaaaaa', running_slot='
 
 
 class MonitorTest(unittest.TestCase):
-    def run_monitor(self, change=None, initial=None, mode='TimingSoak'):
+    def run_monitor(self, change=None, initial=None, mode='TimingSoak', library_count=191):
         self.assertIsNotNone(POWERSHELL, 'PowerShell is required for the monitor gate')
         requests=[]
         class Handler(BaseHTTPRequestHandler):
@@ -41,7 +41,7 @@ class MonitorTest(unittest.TestCase):
                     if initial: initial(body)
                     if change and Handler.status_count>1: change(body)
                 elif self.path=='/api/firmware': body=FIRMWARE
-                elif self.path=='/api/library': body={'loaded':191}
+                elif self.path=='/api/library': body={'generation':1, 'tracks':[{'track_key':i+1} for i in range(library_count)]}
                 elif self.path=='/api/diagnostic-log': body={'records':[]}
                 elif self.path=='/api/resources': body=dict(allocation_failures=0,critical_allocation_failures=0,
                     stack_min_bytes=[2048]*9,stack_sample_ms=[1000]*9)
@@ -89,6 +89,25 @@ class MonitorTest(unittest.TestCase):
     def test_workload_requires_master_tempo(self):
         record=self.run_monitor(lambda s:s['deck1'].update(master_tempo=False))
         self.assertEqual(record['result'],'fail',record)
+
+    def test_observe_accepts_installed_compact_status_but_soak_requires_workload_telemetry(self):
+        def compact(s):
+            for deck in ('deck1','deck2'):
+                s[deck].pop('master_tempo')
+                s[deck].pop('loop_active')
+        observed = self.run_monitor(initial=compact, mode='Observe')
+        self.assertEqual(observed['result'],'pass',observed)
+        self.assertEqual(observed['library_tracks'],191)
+        qualified = self.run_monitor(initial=compact)
+        self.assertEqual(qualified['result'],'fail',qualified)
+        self.assertIn('Required telemetry is missing: deck1.loop_active',qualified['hard_failures'])
+
+    def test_empty_and_single_row_catalogs_keep_their_actual_counts(self):
+        for count in (0,1):
+            with self.subTest(count=count):
+                record=self.run_monitor(mode='Observe',library_count=count)
+                self.assertEqual(record['result'],'pass',record)
+                self.assertEqual(record['library_tracks'],count)
 
     def test_wrong_missing_or_changed_identity_cannot_pass(self):
         for change,initial in [

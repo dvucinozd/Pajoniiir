@@ -1,7 +1,7 @@
 """Preserving M3 wired identity migration; never erase the full chip.
 
 backup leaves the device in its ROM/stub bootloader. plan is entirely offline.
-apply rechecks the complete snapshot before changing factory/NVS/OTA selection.
+apply rechecks the captured regions before changing factory/NVS/OTA selection.
 finish verifies the factory identity, uploads the signed bundle, then requires
 the OTA image to reach VALID on the same exact source/ELF identity.
 """
@@ -114,10 +114,60 @@ def device_identity(device):
     return value
 
 
-def backup(device, directory):
+def image_matches(device, offset, image):
+    """Use esptool's device-side digest when available, with a header readback."""
+    verifier = getattr(device, 'verify', None)
+    if verifier:
+        return verifier(offset, image)
+    return device.read(offset, len(image)) == image
+
+
+def recovery_backup(device, directory, identity, recovery_path):
+    """Preserve settings/layout while reusing an explicitly supplied old image.
+
+    This is deliberately not a full flash snapshot: unused slots, coredump and
+    free flash are not captured. The recovery image must match a real slot.
+    """
+    image, info = app_image(recovery_path.read_bytes())
+    if len(image) != recovery_path.stat().st_size or info['project'] != 'main-deck-p4' or not info['version'].startswith('M3'):
+        raise ValueError('requires an exact historical M3 recovery image')
+    raw = device.read(0, 0x12000)
+    if len(raw) != 0x12000:
+        raise ValueError('incomplete protected flash capture')
+    partition_table(raw[0x8000:0x9000])
+    matches = [name for name in ('factory', 'ota_0', 'ota_1')
+               if image_matches(device, PARTITIONS[name][2], image)]
+    if not matches:
+        raise ValueError('recovery image does not match any installed slot')
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.m3-backup-', dir=directory.parent) as workspace:
+        deliver = Path(workspace) / 'deliver'
+        deliver.mkdir()
+        files = {}
+        ranges = {'protected-flash': (0, 0x12000), 'bootloader': (0x2000, 0x6000),
+                  'partition-table': (0x8000, 0x1000), 'nvs': (0x9000, 0x6000),
+                  'phy_init': (0xf000, 0x1000), 'otadata': (0x10000, 0x2000)}
+        for name, (offset, size) in ranges.items():
+            path = deliver / f'{name}.bin'
+            path.write_bytes(raw[offset:offset + size])
+            files[name] = record(path) | {'offset': offset}
+        path = deliver / 'recovery-image.bin'
+        path.write_bytes(image)
+        files['recovery-image'] = record(path)
+        manifest = {'schema': 'pajoniiir.m3-wired-recovery.v1', 'device': identity,
+                    'files': files, 'apps': {name: info for name in matches},
+                    'full_flash_captured': False, 'device_written': False}
+        save_json(deliver / 'backup.json', manifest)
+        deliver.rename(directory)
+    return manifest
+
+
+def backup(device, directory, recovery_image=None):
     identity = device_identity(device)
     if directory.exists():
         raise ValueError('backup directory must be new')
+    if recovery_image is not None:
+        return recovery_backup(device, directory, identity, recovery_image)
     raw = device.read(0, FLASH_SIZE)
     if len(raw) != FLASH_SIZE:
         raise ValueError('incomplete full-flash backup')
@@ -152,18 +202,35 @@ def backup(device, directory):
 
 def load_backup(directory):
     manifest = json.loads((directory / 'backup.json').read_text())
-    if manifest['schema'] != 'pajoniiir.m3-wired-backup.v1':
+    recovery = manifest['schema'] == 'pajoniiir.m3-wired-recovery.v1'
+    if not recovery and manifest['schema'] != 'pajoniiir.m3-wired-backup.v1':
         raise ValueError('wrong backup schema')
+    if recovery:
+        expected = {'protected-flash': (0, 0x12000), 'bootloader': (0x2000, 0x6000),
+                    'partition-table': (0x8000, 0x1000), 'nvs': (0x9000, 0x6000),
+                    'phy_init': (0xf000, 0x1000), 'otadata': (0x10000, 0x2000)}
+        if set(manifest['files']) != set(expected) | {'recovery-image'} or manifest.get('full_flash_captured') is not False:
+            raise ValueError('incomplete recovery capture evidence')
+        if any((manifest['files'][name]['offset'], manifest['files'][name]['size']) != region
+               for name, region in expected.items()):
+            raise ValueError('invalid protected region bounds')
     for name, entry in manifest['files'].items():
         if entry['file'] != f'{name}.bin' or '/' in name or '\\' in name:
             raise ValueError('invalid backup filename')
         if record(directory / entry['file']) != {k: entry[k] for k in ('file', 'size', 'sha256')}:
             raise ValueError('backup file hash mismatch')
-    raw = (directory / 'full-flash.bin').read_bytes()
-    if len(raw) != FLASH_SIZE:
+    raw = (directory / ('protected-flash.bin' if recovery else 'full-flash.bin')).read_bytes()
+    if len(raw) != (0x12000 if recovery else FLASH_SIZE):
         raise ValueError('incomplete backup')
     partition_table(raw[0x8000:0x9000])
     for name, entry in manifest['files'].items():
+        if recovery and name == 'recovery-image':
+            image, info = app_image((directory / entry['file']).read_bytes())
+            if len(image) != entry['size'] or not manifest['apps'] or any(value != info for value in manifest['apps'].values()):
+                raise ValueError('recovery image evidence mismatch')
+            if any(name not in ('factory', 'ota_0', 'ota_1') for name in manifest['apps']):
+                raise ValueError('invalid recovery slot')
+            continue
         if (directory / entry['file']).read_bytes() != raw[entry['offset']:entry['offset'] + entry['size']]:
             raise ValueError('backup region differs from full flash')
     return manifest, raw
@@ -175,7 +242,13 @@ def plan(directory, release, public_key, expected_mac, old_slot, old_sha, cue_di
     if backup_info['device']['mac'] != expected_mac.lower():
         raise ValueError('backup belongs to another MAC')
     offset, size = PARTITIONS[old_slot][2:]
-    _, old = app_image(raw[offset:offset + size])
+    recovery = backup_info['schema'] == 'pajoniiir.m3-wired-recovery.v1'
+    if recovery:
+        if current_shared or old_slot not in backup_info['apps']:
+            raise ValueError('selected slot is not verified by recovery capture')
+        _, old = app_image((directory / 'recovery-image.bin').read_bytes())
+    else:
+        _, old = app_image(raw[offset:offset + size])
     expected_project = 'main-deck-m3' if current_shared else 'main-deck-p4'
     if old['sha256'] != old_sha.lower() or old['project'] != expected_project or not old['version'].startswith('M3'):
         raise ValueError('selected historical M3 image SHA/project/version mismatch')
@@ -213,6 +286,10 @@ def plan(directory, release, public_key, expected_mac, old_slot, old_sha, cue_di
               'partition_table_changed': False, 'full_chip_erase': False,
               'device_written': False, 'physical_acceptance': 'NOT RUN'}
     result['cue_only'] = current_shared
+    result['backup_kind'] = 'protected-regions-and-recovery-image' if recovery else 'full-flash'
+    result['full_flash_captured'] = not recovery
+    if recovery:
+        result['recovery_image_md5'] = hashlib.md5((directory / 'recovery-image.bin').read_bytes()).hexdigest()
     return result, raw, new_image, nvs
 
 
@@ -223,13 +300,19 @@ def apply(device, planned, raw, image, nvs, result_path):
     try:
         if device_identity(device) != planned['device']:
             raise ValueError('connected device identity differs from backup')
-        if device.read(0, FLASH_SIZE) != raw:
+        if device.read(0, len(raw)) != raw:
             raise ValueError('device changed since backup; take a fresh backup')
+        if planned.get('backup_kind') == 'protected-regions-and-recovery-image':
+            old = planned['old_image']
+            offset = PARTITIONS[planned['old_slot']][2]
+            digest = getattr(device, 'digest', None)
+            if digest is None or digest(offset, old['size']) != planned['recovery_image_md5']:
+                raise ValueError('installed recovery image changed since capture')
         result.update(stage='nvs_write_started' if planned['cue_only'] else 'factory_write_started', device_written=True)
         save_json(result_path, result)
         if not planned['cue_only']:
             device.write(0x20000, image)
-        if device.read(0x20000, len(image)) != image:
+        if not image_matches(device, 0x20000, image):
             raise ValueError('factory readback failed; OTA selection not changed')
         result['stage'] = 'factory_verified'
         save_json(result_path, result)
@@ -269,8 +352,13 @@ class EspDevice:
         self.esp = esptool.detect_chip(port=port)
         if self.esp.CHIP_NAME != 'ESP32-P4':
             raise ValueError('connected chip is not ESP32-P4')
+        native_usb = self.esp.uses_usb_jtag_serial() or self.esp.uses_usb_otg()
         self.esp = self.esp.run_stub()
-        self.esp.change_baud(460800)
+        if not native_usb:
+            self.esp.change_baud(460800)
+        # The esptool CLI attaches SPI flash before read/write commands. Its
+        # Python command functions expect the caller to do the same setup.
+        self.tool.attach_flash(self.esp)
 
     def identity(self):
         return {'chip': self.esp.CHIP_NAME, 'revision': self.esp.get_chip_revision(),
@@ -280,7 +368,25 @@ class EspDevice:
                 'flash_encrypted': bool(self.esp.get_flash_encryption_enabled())}
 
     def read(self, offset, size):
-        return self.tool.read_flash(self.esp, offset, size, no_progress=True)
+        # Keep native USB responses bounded rather than streaming the whole
+        # 16 MiB snapshot in one command. No partial result is accepted.
+        result = bytearray()
+        for address in range(offset, offset + size, 0x10000):
+            count = min(0x10000, offset + size - address)
+            part = self.tool.read_flash(self.esp, address, count, no_progress=True)
+            if part is None or len(part) != count:
+                raise ValueError('incomplete bounded flash read')
+            result.extend(part)
+        return bytes(result)
+
+    def digest(self, offset, size):
+        return self.esp.flash_md5sum(offset, size).lower()
+
+    def verify(self, offset, image):
+        # esptool also verifies writes with a device-side MD5. The local image
+        # has independently passed its appended SHA and signed SHA-256 checks.
+        return (self.digest(offset, len(image)) == hashlib.md5(image).hexdigest() and
+                self.read(offset, min(len(image), 0x1000)) == image[:0x1000])
 
     def write(self, offset, data):
         if offset not in (0x20000, 0x9000, 0x10000):
@@ -326,7 +432,7 @@ def finish(base_url, release, public_key, wired_result, result_path):
     if info.get('state') != 'idle' or info.get('running_image_state') != 'factory':
         raise ValueError('factory OTA service is not ready')
     status = get_json(base_url, '/api/status')
-    if any(status.get(f'deck{deck}', {}).get('state') not in ('IDLE', 'READY') or
+    if any(status.get(f'deck{deck}', {}).get('state_text') not in ('IDLE', 'READY') or
            status.get(f'deck{deck}', {}).get('playing') is not False for deck in (1, 2)):
         raise ValueError('stop playback before OTA migration qualification')
     output = {'schema': 'pajoniiir.m3-migration-ota.v1', 'candidate': candidate,
@@ -370,6 +476,8 @@ def main():
     capture = commands.add_parser('backup')
     capture.add_argument('--port', required=True)
     capture.add_argument('--output-dir', type=Path, required=True)
+    capture.add_argument('--recovery-image', type=Path,
+                         help='Reuse an installed historical M3 image; capture settings/layout only')
     for name in ('plan', 'apply', 'apply-cues'):
         command = commands.add_parser(name)
         for argument in ('backup-dir', 'release-dir', 'public-key', 'result'):
@@ -390,7 +498,7 @@ def main():
     elif args.command == 'backup':
         device = EspDevice(args.port)
         try:
-            report = backup(device, args.output_dir)
+            report = backup(device, args.output_dir, args.recovery_image)
             print(json.dumps({'device': report['device'], 'apps': report['apps']}, indent=2))
         finally:
             device.close()

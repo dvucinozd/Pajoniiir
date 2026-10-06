@@ -13,6 +13,59 @@ import ota_signing
 from create_integration_candidate import record
 
 
+class EspTransportTests(unittest.TestCase):
+    def test_python_adapter_attaches_flash_before_reading(self):
+        # Unlike the CLI, Python read_flash assumes SPI flash was attached.
+        # The real USB-JTAG bench failed at its first read without this step.
+        from types import SimpleNamespace
+        calls = []
+        class Esp:
+            CHIP_NAME = 'ESP32-P4'
+            attached = False
+            def uses_usb_jtag_serial(self): return False
+            def uses_usb_otg(self): return False
+            def run_stub(self):
+                calls.append('stub')
+                return self
+            def change_baud(self, baud):
+                calls.append(('baud', baud))
+        esp = Esp()
+        def attach(device):
+            self.assertIs(device, esp)
+            calls.append('attach')
+            device.attached = True
+        def read(device, address, size, **kwargs):
+            if not device.attached:
+                raise OSError('flash is not attached')
+            calls.append(('read', address, size))
+            return bytes(size)
+        tool = SimpleNamespace(__version__='5.3.1', detect_chip=lambda **_: esp,
+                               attach_flash=attach, read_flash=read)
+        with patch.dict(sys.modules, {'esptool': tool}):
+            device = migration.EspDevice('COM20')
+            self.assertEqual(device.read(0x8000, 0x1000), bytes(0x1000))
+        self.assertEqual(calls, ['stub', ('baud', 460800), 'attach', ('read', 0x8000, 0x1000)])
+
+    def test_native_usb_bounded_reads_and_incomplete_refusal(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        esp = SimpleNamespace(CHIP_NAME='ESP32-P4', uses_usb_jtag_serial=lambda: True,
+                              uses_usb_otg=lambda: False, change_baud=Mock())
+        esp.run_stub = lambda: esp
+        reader = Mock(side_effect=lambda device, address, count, **kw: bytes(count))
+        tool = SimpleNamespace(__version__='5.3.1', detect_chip=lambda **_: esp,
+                               attach_flash=Mock(), read_flash=reader)
+        with patch.dict(sys.modules, {'esptool': tool}):
+            device = migration.EspDevice('COM20')
+            self.assertEqual(len(device.read(0x8000, 0x20001)), 0x20001)
+        esp.change_baud.assert_not_called()
+        self.assertEqual([(a.args[1], a.args[2]) for a in reader.call_args_list],
+                         [(0x8000, 0x10000), (0x18000, 0x10000), (0x28000, 1)])
+        reader.side_effect = lambda *_args, **_kwargs: b''
+        with self.assertRaisesRegex(ValueError, 'incomplete bounded'):
+            device.read(0x8000, 0x1000)
+
+
 def image(project, version):
     data = bytearray(32 + 256)
     data[0:2] = bytes((0xe9, 1))
@@ -54,6 +107,12 @@ class Device:
     def read(self, offset, size):
         self.actions.append(('read', offset, size))
         return bytes(self.raw[offset:offset + size])
+
+    def digest(self, offset, size):
+        return hashlib.md5(self.raw[offset:offset + size]).hexdigest()
+
+    def verify(self, offset, image):
+        return self.read(offset, len(image)) == image
 
     def write(self, offset, data):
         self.actions.append(('write', offset, len(data)))
@@ -172,6 +231,68 @@ class MigrationTests(unittest.TestCase):
                 migration.apply(device, planned, raw, new, nvs, self.root / 'stale.json')
             self.assertFalse(any(a[0] in ('write', 'reset') for a in device.actions))
 
+    def recovery_capture(self, name):
+        path = self.root / (name + '-old.bin')
+        path.write_bytes(self.old)
+        directory = self.root / name
+        device = Device(self.raw)
+        report = migration.backup(device, directory, path)
+        return directory, device, report
+
+    def test_existing_recovery_image_mode_preserves_settings_without_full_snapshot(self):
+        directory, device, report = self.recovery_capture('recovery-valid')
+        self.assertFalse(report['full_flash_captured'])
+        self.assertFalse((directory / 'full-flash.bin').exists())
+        self.assertEqual(report['apps']['ota_0']['sha256'], migration.sha(self.old))
+        planned, raw, new, nvs = self.plan(directory=directory)
+        self.assertEqual(len(raw), 0x12000)
+        self.assertEqual(planned['backup_kind'], 'protected-regions-and-recovery-image')
+        device.actions.clear()
+        migration.apply(device, planned, raw, new, nvs, self.root / 'recovery-result.json')
+        self.assertEqual(device.actions[0], ('read', 0, 0x12000))
+        self.assertEqual([a[1] for a in device.actions if a[0] == 'write'], [0x20000, 0x10000])
+        self.assertEqual(device.raw[0x9000:0xf000], self.raw[0x9000:0xf000])
+        self.assertEqual(device.raw[0x420000:], self.raw[0x420000:])
+
+    def test_recovery_capture_refuses_unmatched_image_or_wrong_selected_slot(self):
+        path = self.root / 'unmatched.bin'
+        path.write_bytes(image('main-deck-p4', 'M3-other'))
+        device = Device(self.raw)
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            migration.backup(device, self.root / 'unmatched', path)
+        self.assertFalse(any(a[0] == 'write' for a in device.actions))
+        directory, _, _ = self.recovery_capture('recovery-slot')
+        with self.assertRaisesRegex(ValueError, 'selected slot'):
+            self.plan(directory=directory, old_slot='factory')
+
+    def test_recovery_preflight_rejects_changed_nvs_or_installed_recovery_image(self):
+        directory, _, _ = self.recovery_capture('recovery-stale')
+        planned, raw, new, nvs = self.plan(directory=directory)
+        for offset in (0x9000, 0x420030):
+            device = Device(self.raw)
+            device.raw[offset] ^= 1
+            with self.assertRaisesRegex(ValueError, 'changed since'):
+                migration.apply(device, planned, raw, new, nvs, self.root / 'recovery-stale-result.json')
+            self.assertFalse(any(a[0] in ('write', 'reset') for a in device.actions))
+
+    def test_recovery_file_tampering_is_rejected(self):
+        directory, _, _ = self.recovery_capture('recovery-tamper')
+        path = directory / 'recovery-image.bin'
+        path.write_bytes(path.read_bytes()[:-1] + b'\0')
+        with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+            self.plan(directory=directory)
+
+    def test_recovery_missing_or_displaced_protected_region_is_rejected(self):
+        directory, _, report = self.recovery_capture('recovery-bounds')
+        report['files']['nvs']['offset'] += 0x1000
+        migration.save_json(directory / 'backup.json', report)
+        with self.assertRaisesRegex(ValueError, 'protected region bounds'):
+            self.plan(directory=directory)
+        del report['files']['nvs']
+        migration.save_json(directory / 'backup.json', report)
+        with self.assertRaisesRegex(ValueError, 'incomplete recovery capture'):
+            self.plan(directory=directory)
+
     def test_offline_wrong_mac_and_legacy_sha_are_rejected(self):
         for options in ({'expected_mac': '01:02:03:04:05:06'}, {'old_sha': '0' * 64}, {'old_slot': 'factory'}):
             with self.assertRaises(ValueError):
@@ -228,7 +349,8 @@ class MigrationTests(unittest.TestCase):
         info = {'board_id': 'm3', 'project': 'main-deck-m3', 'source_sha': self.candidate['source_sha'],
             'source_dirty': False, 'image_elf_sha256': self.candidate['image_elf_sha256'],
             'running_version': self.version, 'running_slot': 'factory', 'running_image_state': 'factory', 'state': 'idle'}
-        values = [info, {'deck1': {'state': 'READY', 'playing': False}, 'deck2': {'state': 'IDLE', 'playing': False}},
+        idle = {'deck1': {'state_text': 'READY', 'playing': False}, 'deck2': {'state_text': 'IDLE', 'playing': False}}
+        values = [info, idle,
             info | {'running_slot': 'ota_0', 'running_image_state': 'pending_verify'},
             info | {'running_slot': 'ota_0', 'running_image_state': 'valid'}]
         class Response:
@@ -248,6 +370,14 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(request.data, (self.release / 'main-deck-m3.ddjota').read_bytes())
         with self.assertRaisesRegex(ValueError, 'selected candidate'):
             migration.verify_running(info | {'source_dirty': True}, self.candidate, 'factory')
+        for changed in ({'state_text': 'LOADING', 'playing': False},
+                        {'state_text': 'PLAYING', 'playing': True},
+                        {'state': 'IDLE', 'playing': False}):
+            with patch.object(migration, 'get_json', side_effect=[info, idle | {'deck2': changed}]), \
+                 patch.object(migration.urllib.request, 'urlopen') as blocked_upload:
+                with self.assertRaisesRegex(ValueError, 'stop playback'):
+                    migration.finish('http://192.168.4.1', self.release, self.public, wired, self.root / 'blocked-ota.json')
+                blocked_upload.assert_not_called()
 
     def test_cue_only_followup_preserves_factory_and_ota_selection(self):
         raw = bytearray(self.raw)

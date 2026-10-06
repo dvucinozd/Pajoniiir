@@ -96,7 +96,7 @@ Run for 60 minutes initially. Extend to 120 minutes only if the first hour is
 clean and a longer confidence run is useful.
 
 ```powershell
-.\tools\monitor_m3_reliability.ps1 -Mode TimingSoak -DurationMinutes 60
+.\tools\monitor_p4_reliability.ps1 -Mode TimingSoak -DurationMinutes 60
 ```
 
 Required workload:
@@ -196,3 +196,16 @@ Monitor PASS reports counter/workload evidence only. The result deliberately
 keeps `physical_operator_acceptance: NOT RUN`; listening, panel/touch inspection
 and operator confirmation belong in the separate exact-image acceptance record.
 An isolated output-late event remains monitoring evidence, not a zero-late claim.
+
+The 2026-10-06 bench uses a different, operator-confirmed 100-track export.
+Select `-ExpectedLibraryTracks 100` for that medium; the historical 191-track
+campaign does not define the count of every export. The shared library API
+publishes a `generation` and `tracks` array, whose actual length the monitor
+counts, including zero/single-row catalogs. It does not read the historical
+M3-only `loaded` field.
+
+`TimingSoak` requires both decks' authoritative `master_tempo` and
+`loop_active` fields. Missing telemetry fails qualification. `Observe` can
+capture an earlier compact shared status without those fields, but its result
+does not qualify the Campaign B workload. The common status publisher now adds
+MT and active loop boundaries from deck_core snapshots without changing playback.

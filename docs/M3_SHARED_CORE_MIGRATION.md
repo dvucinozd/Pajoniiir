@@ -52,6 +52,22 @@ project/version/ELF/complete-image digests. Invalid or empty unused slots are
 reported and still saved. Backup leaves the board in its ROM/stub bootloader;
 it does not boot the old application between backup and apply.
 
+When the operator already has an exact historical recovery image, explicitly
+select the smaller capture instead of requiring another full-flash backup:
+
+```powershell
+python tools/migrate_m3_factory.py backup --port COM_NUMBER --output-dir .cache/m3-migration/recovery-capture --recovery-image EXISTING_M3_RECOVERY_IMAGE.bin
+```
+
+This preserves the first 0x12000 bytes (bootloader, table, NVS, PHY and OTA
+selection), and copies the supplied recovery image after validating its checksum,
+appended SHA and historical M3 identity. Device-side MD5 plus header readback must
+match at least one installed slot. Select that verified slot in `plan`/`apply`;
+it may be the factory recovery slot rather than the currently selected OTA slot.
+The manifest explicitly records `full_flash_captured=false`: other application
+versions, coredump and unused flash are not backed up by this mode. NVS remains
+private and separately hashed. It is not a cue-only migration capture.
+
 ```powershell
 python tools/migrate_m3_factory.py plan --backup-dir .cache/m3-migration/backup --release-dir RELEASE_DIRECTORY --public-key firmware/common/ota_manifest/keys/ddj_ota_release_public.der --expected-mac DEVICE_MAC --old-slot ota_0 --old-image-sha256 OLD_IMAGE_SHA256 --result .cache/m3-migration/plan.json
 ```
@@ -67,9 +83,12 @@ table. Review artifact identities, backup hashes and unchanged settings/layout.
 python tools/migrate_m3_factory.py apply --port COM_NUMBER --backup-dir .cache/m3-migration/backup --release-dir RELEASE_DIRECTORY --public-key firmware/common/ota_manifest/keys/ddj_ota_release_public.der --expected-mac DEVICE_MAC --old-slot ota_0 --old-image-sha256 OLD_IMAGE_SHA256 --result .cache/m3-migration/wired-result.json
 ```
 
-Apply checks the connected device and rereads the entire flash against the
-backup. A stale snapshot refuses all writes. It writes only the new factory
-application, reads it back byte-for-byte, verifies NVS/bootloader/partition data,
+Apply checks the connected device and rereads the captured flash against the
+backup. Full mode compares all 16 MiB; recovery-image mode compares the protected
+regions and repeats the installed recovery image digest. A stale capture refuses
+all writes. It writes only the new factory
+application, verifies its device-side MD5 and header readback (the local file
+has separately passed appended SHA-256 and signed artifact checks), and verifies NVS/bootloader/partition data,
 then clears the existing two OTA-selection sectors and verifies that operation.
 Only then does it request the first factory boot. It never erases the full chip,
 rewrites the bootloader/table or clears NVS. Old OTA-slot bytes are retained until

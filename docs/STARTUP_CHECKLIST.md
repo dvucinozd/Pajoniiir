@@ -10,7 +10,8 @@ remain image-specific; successful builds do not qualify the new M3 target.
   candidate evidence; keep the signed artifacts immutable.
 - [ ] Identify the M3 MAC, pre-v3 silicon, COM port, old slot and old image SHA.
 - [ ] Stop playback and use the [preserving migration tool](M3_SHARED_CORE_MIGRATION.md);
-  save full flash, NVS, OTA selection and old images before any device write.
+  save full flash, or explicitly reuse a verified installed recovery image and
+  capture protected regions/NVS/OTA selection before any device write.
 - [ ] Verify factory write before resetting OTA selection. Preserve bootloader,
   partitions and settings. Keep wired recovery access.
 - [ ] Verify board/project/source/ELF and operator settings, then install the
@@ -19,6 +20,9 @@ remain image-specific; successful builds do not qualify the new M3 target.
   panel/touch/controls acceptance on this exact image. Record unrun gates explicitly.
 
 These checks do not authorize publication or qualify JC4880/JC1060 hardware.
+
+For the installed `M3-dev-g95e6573c3422` candidate, see the
+[exact-image acceptance record](validation/M3_SHARED_CORE_INSTALL_20261006.md).
 
 Status: **current M2.5 JC4880 checklist and development qualification gates**
 (2026-10-06). Acceptance already recorded in the

@@ -1445,6 +1445,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
+    const deck_core_loop_display_t loop1 = deck_core_get_loop_display(0);
+    const deck_core_loop_display_t loop2 = deck_core_get_loop_display(1);
     deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
     service_log_status_t service_status = {0};
     (void)service_log_get_status(&service_status);
@@ -1733,6 +1735,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"position_ms\":%u,"
         "\"duration_ms\":%u,"
         "\"playing\":%s,"
+        "\"master_tempo\":%s,\"loop_active\":%s,\"loop_start_ms\":%u,\"loop_end_ms\":%u,"
         "\"sync_enabled\":%s,"
         "\"sync_master\":%s,"
         "\"network_sync\":%u,\"network_player\":%u,\"network_phase_error\":%.4f,\"sink_latency_calibrated\":%s,"
@@ -1747,6 +1750,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"position_ms\":%u,"
         "\"duration_ms\":%u,"
         "\"playing\":%s,"
+        "\"master_tempo\":%s,\"loop_active\":%s,\"loop_start_ms\":%u,\"loop_end_ms\":%u,"
         "\"sync_enabled\":%s,"
         "\"sync_master\":%s,"
         "\"network_sync\":%u,\"network_player\":%u,\"network_phase_error\":%.4f,\"sink_latency_calibrated\":%s,"
@@ -1874,8 +1878,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)uac_format.sample_rate, (unsigned)uac_format.bits_per_sample,
         uac_format.consumer_paced ? "true" : "false",
         uac_format.sample_rate ? (unsigned)((uint64_t)uac_format.ring_queued_frames * 1000000u / uac_format.sample_rate) : 0u,
-        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state1.sync_enabled ? "true" : "false", state1.sync_master ? "true" : "false", (unsigned)state1.network_sync,(unsigned)state1.network_player,(double)state1.network_phase_error,state1.sink_latency_calibrated?"true":"false",state_text1,
-        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state2.sync_enabled ? "true" : "false", state2.sync_master ? "true" : "false", (unsigned)state2.network_sync,(unsigned)state2.network_player,(double)state2.network_phase_error,state2.sink_latency_calibrated?"true":"false",state_text2,
+        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false",
+        state1.master_tempo ? "true" : "false", loop1.active ? "true" : "false", (unsigned)loop1.start_ms, (unsigned)loop1.end_ms,
+        state1.sync_enabled ? "true" : "false", state1.sync_master ? "true" : "false", (unsigned)state1.network_sync,(unsigned)state1.network_player,(double)state1.network_phase_error,state1.sink_latency_calibrated?"true":"false",state_text1,
+        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false",
+        state2.master_tempo ? "true" : "false", loop2.active ? "true" : "false", (unsigned)loop2.start_ms, (unsigned)loop2.end_ms,
+        state2.sync_enabled ? "true" : "false", state2.sync_master ? "true" : "false", (unsigned)state2.network_sync,(unsigned)state2.network_player,(double)state2.network_phase_error,state2.sink_latency_calibrated?"true":"false",state_text2,
         mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
         mixer.master_volume,
         mixer.headphone_mix,

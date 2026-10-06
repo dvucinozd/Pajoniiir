@@ -237,3 +237,10 @@ confirmation remain NOT RUN. Isolated output-late stays monitoring, not zero-lat
 The initial comparison is retained in `reviews/2026-10-06-ddj-ffl4-port-comparison.md`.
 Its successful tests describe the two source trees, not the integrated image.
 Integrated builds/tests and physical gates will be recorded separately here.
+
+The initial M3 candidate from clean source 95e6573c has now been installed and
+confirmed VALID in ota_0 after signed local OTA. GUI/touch/backlight and preserved
+settings were confirmed before OTA. See the
+[installation record](validation/M3_SHARED_CORE_INSTALL_20261006.md) for exact
+digests, the operator-authorized existing-image recovery mode, manual RESET and
+remaining physical gates. Migration tooling now has 19 passing regressions.

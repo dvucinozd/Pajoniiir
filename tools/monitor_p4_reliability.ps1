@@ -100,8 +100,7 @@ function Assert-Status($Record, $Expected) {
     Assert-Identity $Record $Expected $false
     foreach ($field in @(
         'uptime_ms','controller.present','controller.midi_in','controller.midi_out','controller.usb_audio',
-        'deck1.playing','deck2.playing','deck1.loop_active','deck2.loop_active',
-        'deck1.master_tempo','deck2.master_tempo',
+        'deck1.playing','deck2.playing',
         'deck1.pitch_percent','deck2.pitch_percent','deck1.position_ms','deck2.position_ms',
         'diagnostics.deck_sample_rate1','diagnostics.deck_sample_rate2','diagnostics.output_sample_rate',
         'diagnostics.output_late_count','diagnostics.output_late_max_us',
@@ -112,6 +111,20 @@ function Assert-Status($Record, $Expected) {
         'diagnostics.internal_free','diagnostics.psram_free')) {
         [void](Require-Value $Record $field)
     }
+    if ($Mode -eq 'TimingSoak') {
+        foreach ($field in @('deck1.loop_active','deck2.loop_active','deck1.master_tempo','deck2.master_tempo')) {
+            [void](Require-Value $Record $field)
+        }
+    }
+}
+
+function Get-LibraryCount($Record) {
+    [void](Require-Value $Record 'generation')
+    $property = $Record.PSObject.Properties['tracks']
+    if ($null -eq $property -or $property.Value -isnot [System.Array]) {
+        throw 'Library tracks must be an array'
+    }
+    return $property.Value.Count
 }
 
 function ConvertTo-CsvField {
@@ -269,7 +282,7 @@ try {
         throw "Initial library request failed: $($libraryResponse.Error)"
     }
     $library = $libraryResponse.Body | ConvertFrom-Json
-    $lastLibraryCount = [int]$library.loaded
+    $lastLibraryCount = Get-LibraryCount $library
     $lastLibraryLatency = $libraryResponse.LatencyMs
     $maxLibraryLatencyMs = $lastLibraryLatency
     if ($lastLibraryCount -eq $ExpectedLibraryTracks) { $firstLibraryReadyS = 0.0 }
@@ -466,7 +479,7 @@ try {
                         $maxLibraryLatencyMs = $lastLibraryLatency
                     }
                     $library = $libraryResponse.Body | ConvertFrom-Json
-                    $lastLibraryCount = [int]$library.loaded
+                    $lastLibraryCount = Get-LibraryCount $library
                     if ($lastLibraryCount -eq $ExpectedLibraryTracks -and
                         $null -eq $firstLibraryReadyS) {
                         $firstLibraryReadyS = $runWatch.Elapsed.TotalSeconds
