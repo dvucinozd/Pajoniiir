@@ -36,6 +36,9 @@ deployment is required only if its public exporter is part of the release scope.
 The user-supplied Pajoniiir logo is now the development artwork fallback for
 loaded tracks and Library rows. It is stored as native 34x34/40x40 RGB565
 constants; the existing real-artwork worker/cache remains authoritative.
+Candidate `M2.4-111-ge09e9ca4` has passed signed OTA, operator-confirmed logo
+display and a 62.419-second dual-deck listening/resource check; see the
+[candidate record](validation/M2_5_DEFAULT_ARTWORK_20261006.md).
 Confirm real cover, missing cover, page/media change and unloaded state on the
 M2.5 device candidate; this does not change the frozen v91's acceptance.
 

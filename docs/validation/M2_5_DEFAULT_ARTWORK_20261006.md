@@ -1,6 +1,8 @@
 # M2.5 development artwork fallback — 2026-10-06
 
-Status: **software verified; candidate installation / physical render NOT RUN**.
+Status: **software verified; signed candidate installed; focused JC4880 logo
+display and dual-deck listening/resource checks PASS**. Remaining artwork
+transition variants and full exact-image qualification remain open.
 
 ## Change and source
 
@@ -107,9 +109,46 @@ stopped, matching the saved v91 loaded baseline. Internal free is
 internal/DMA blocks are unchanged at 31,744 bytes. The eight-byte decrease
 matches static BSS growth; PSRAM free increases by 15,224 bytes. This closes
 the single-loaded-deck comparison without a material memory regression.
-The empty-deck largest-block variation remains recorded, and dual-playback
-resource comparison is still required. No speculative allocator change was
-introduced.
+The empty-deck largest-block variation remains recorded. The subsequent
+dual-playback check below has the same largest block as v91 and similar free
+memory; it does not reproduce a material active memory regression. No
+speculative allocator change was introduced.
+
+## Focused installed-candidate audio check
+
+After operator readiness confirmation, D1 `HAPPY STATION` and D2
+`Red For Love {320}` played for **62.4187612 seconds** after active-baseline
+capture. Status and allocation/stack snapshots were collected about every
+five seconds. The end snapshot has both decks playing and 10,720 additional
+USB submitted blocks. The harness then stops both decks and records stopped
+state; final API identity remains `M2.4-111-ge09e9ca4` / `ota_0`.
+
+All checked deltas are zero: PCM underrun 1/2, output-late, locked backend
+reads 1/2, USB packet failures/lost frames, dropped blocks, overflow frames
+and active-baseline underflow frames. Host daemon/recovery/queue and runtime
+queue counters did not increase. No active UAC data-loss or current watchdog
+flag was observed. Allocation and critical-allocation failures remain zero.
+The operator confirms clean, audible MAIN and D1/D2 cue sound.
+
+Minimum sampled reserves: internal free 100,427 bytes, largest internal block
+31,744 bytes, DMA free 60,883 bytes; reported lifetime internal minimum
+97,791 bytes. The smallest reported task stack reserve is 2,392 bytes.
+For context, the retained v91 dual-playing end snapshot reports internal free
+100,403 bytes, largest block 31,744 bytes and DMA free 60,859 bytes. That older
+run uses different tracks/format and duration, so it is context rather than a
+controlled audio A/B. The same-track stopped comparison above is controlled.
+
+Evidence lives in the candidate root's `audio-60s/` subdirectory. SHA-256:
+
+| File | SHA-256 |
+| --- | --- |
+| `result.json` | `125fde57b48d79b107b4af19902326d42310258557d4051df97dfa60fb7da7d8` |
+| `summary.json` | `8279811b164e69fa723af96a923c28ae9e49001eb0ae6f397933dc8371060668` |
+| `end-playing.json` | `0578bd5f438832ebc4cfaa55e34ca6ea9fc9aecc0e0ba23cde585c6f8e00e66d` |
+| `stopped.json` | `34a58faa93a68847b49aa9ff28fd7fe54139f55cbb8f5c74404eded1754c2c3c` |
+
+This is focused logo/UI candidate audio acceptance, not a new 180-minute soak
+or repetition of the full transport/lifecycle matrix on this exact image.
 
 The first clean build session ended before final linking. Resuming the same
 clean build completed successfully with observed exit code zero. Original and
@@ -118,8 +157,8 @@ runtime snapshots are retained at
 `D:/Documents/.codex-reviews/Pajoniiir-M25-logo-candidate-20261006/`.
 
 The frozen v91 public OTA channel and tags remain unchanged. The new candidate
-still requires its active audio/resource check, and the startup largest-block
-variation remains recorded for that review. It does not close the remaining metadata matrix or
+has passed focused logo/UI and active audio/resource checks, with the startup
+largest-block variation retained in the record. It does not close the remaining metadata matrix or
 JC1060/DDJ-400/real-Link hardware gates.
 See [the release plan](../DEVELOPMENT_PLAN.md) and
 [candidate checklist](../STARTUP_CHECKLIST.md).
