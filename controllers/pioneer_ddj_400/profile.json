@@ -138,6 +138,30 @@
     },
     {
       "type": "button",
+      "event": "deck1.loop_halve",
+      "status": "0x90",
+      "data1": "0x51"
+    },
+    {
+      "type": "button",
+      "event": "deck1.loop_double",
+      "status": "0x90",
+      "data1": "0x53"
+    },
+    {
+      "type": "button",
+      "event": "deck2.loop_halve",
+      "status": "0x91",
+      "data1": "0x51"
+    },
+    {
+      "type": "button",
+      "event": "deck2.loop_double",
+      "status": "0x91",
+      "data1": "0x53"
+    },
+    {
+      "type": "button",
       "event": "deck1.pad_mode_hot_cue",
       "status": "0x90",
       "data1": "0x1B"
@@ -1146,38 +1170,6 @@
     "preferred_sample_rate": 48000
   },
   "omitted_inputs": [
-    {
-      "type": "ext_action",
-      "deck": 1,
-      "action": "memory_call_prev",
-      "status": "0x90",
-      "data1": "0x51",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 2,
-      "action": "memory_call_prev",
-      "status": "0x91",
-      "data1": "0x51",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 1,
-      "action": "memory_call_next",
-      "status": "0x90",
-      "data1": "0x53",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 2,
-      "action": "memory_call_next",
-      "status": "0x91",
-      "data1": "0x53",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
     {
       "type": "ext_action",
       "deck": 1,

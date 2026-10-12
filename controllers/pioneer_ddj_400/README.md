@@ -18,9 +18,11 @@ gate using a profile capability; no controller-name checks are used.
 Initial SysEx is emitted once per activation before LED feedback; VU scale
 150 is applied using saturated integer arithmetic.
 
-Eight donor memory-call/store/delete inputs lack current P4 semantic actions.
-They remain explicitly listed under `omitted_inputs` in the source JSON and
-are not assigned guessed actions. Memory cues themselves remain available
+CUE/LOOP CALL (notes 51 and 53) are bound to loop halve and loop double for
+both decks, as the donor did inside an active loop. Four donor memory-store and
+memory-delete inputs lack current P4 semantic actions. They remain explicitly
+listed under `omitted_inputs` in the source JSON and are not assigned guessed
+actions. Hardware acceptance of the halve/double binding: NOT RUN. Memory cues themselves remain available
 through the library/UI implementation.
 
 Regenerate with:
