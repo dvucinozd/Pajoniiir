@@ -233,3 +233,11 @@ The statement "API and UART showed no fault lines" is wrong for the counters. Af
 ### Underrun counter bisection (image 9, 2026-10-12)
 
 After a reset and loading one track on deck 1 (paused), `pcm_underrun1` already read 384 at 41 s of uptime and stayed 384 over the next 26 s at rest. One gesture at a time, read after each: platter scratch inside the window 384 -> 384; ring scrub in pause 384 -> 384; touch seeks while playing 384 -> 384. `pcm_underrun2` 0, `output_late_count` 0, no UART line in any step. So none of the jog/scratch/seek gestures raised the counter; the underruns occur before the first gesture (at boot or during the track load) and are not caused by scratch. The earlier reading of 108 is explained by the same mechanism (count taken after one boot and one load), not by a jog gesture. The cause of the underruns at load is not identified; earlier boots on images 6 and 7 read 0 at the equivalent point. Image 9 contains the reverted pacing and coalescing changes. Next: rebuild and flash the reverted tree, load one track, read the counter.
+
+## Image 10 (clean tree, jog changes reverted) - underrun check
+
+Image 10: HEAD `4e3aa2b41ebcebdedb7ab9e25715553a6bff9416`, source_dirty false, app SHA-256 `198541f03e1331b7a68ce8e67192b36f2b3ad436cef5c9ddece21b6f97616a45`, ELF `08e56f320fd473fc1046950ba54922ac8a0724e17ede15255372c884511c736e`, wired flash at 0x20000 (hash verified), identity confirmed by `/api/firmware`.
+
+- Reset, no track loaded: `pcm_underrun1` 0, `pcm_underrun2` 0, `output_late_count` 0 (uptime 17 s). After loading one track on deck 1 (paused, "Turn Down The Lights"): `pcm_underrun1` 0, `pcm_underrun2` 0 at 53 s and 61 s.
+- On image 9 (MIDI IN pacing + scrub seek coalescing), the same sequence gave `pcm_underrun1` 384 right after the load. So the 384 underruns were introduced by the pacing and/or coalescing changes (not separated: image 8 had pacing only, its counter was not read). This is a reason beyond "no benefit" for having reverted them.
+- Not repeated on image 10: the jog/scratch gestures (done on image 9 without effect on the counter).
