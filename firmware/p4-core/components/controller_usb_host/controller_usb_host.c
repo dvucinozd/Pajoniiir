@@ -50,8 +50,6 @@ typedef struct {
     bool claimed;
     bool in_active;
     bool in_retry_pending;
-    bool in_resubmit_due; /* completed; resubmit once the pace elapses */
-    TickType_t in_done_tick;
     bool out_active;
     bool closing;
     bool device_gone;
@@ -183,16 +181,6 @@ static void publish_connection(bool connected)
     }
 }
 
-/* The MIDI IN transfer is resubmitted from the task loop at most once per
- * CONTROLLER_MIDI_IN_PACE_MS after its completion, not from the completion
- * callback. During a jog or fader stream every completion carries one event;
- * resubmitting each time costs core time that LVGL and the UAC ring need (the
- * reference fork measured ~0.3 ms callback + ~0.27 ms submit, ~550 per second,
- * and fixed UI freezes this way). The device keeps events meanwhile and a
- * 64-byte transfer returns up to 16 of them: nothing is lost, MIDI latency
- * grows by at most this pace. */
-#define CONTROLLER_MIDI_IN_PACE_MS 3u
-
 static esp_err_t submit_in_if_idle(controller_state_t *state)
 {
     if (!state->opened || !state->claimed || state->closing ||
@@ -212,31 +200,6 @@ static esp_err_t submit_in_if_idle(controller_state_t *state)
                                          "MIDI IN submit", rc);
     }
     return rc;
-}
-
-/* Ticks until the paced MIDI IN resubmit is due (0 = now), or the normal wait
- * when none is pending. Task loop only. */
-static TickType_t midi_in_pace_wait(const controller_state_t *state, TickType_t idle)
-{
-    if (!state->in_resubmit_due || state->closing) {
-        return idle;
-    }
-    const TickType_t pace = pdMS_TO_TICKS(CONTROLLER_MIDI_IN_PACE_MS);
-    const TickType_t elapsed = xTaskGetTickCount() - state->in_done_tick;
-    return elapsed >= pace ? 0u : pace - elapsed;
-}
-
-/* A completed transfer waits for its pace; anything else idle (open, failed
- * submit) is submitted at once, as before. */
-static esp_err_t submit_in_paced(controller_state_t *state)
-{
-    if (state->in_resubmit_due) {
-        if (midi_in_pace_wait(state, 0u) != 0u) {
-            return ESP_OK;
-        }
-        state->in_resubmit_due = false;
-    }
-    return submit_in_if_idle(state);
 }
 
 static esp_err_t submit_out_if_idle(controller_state_t *state)
@@ -336,8 +299,10 @@ static void midi_in_callback(usb_transfer_t *transfer)
     }
 
     if (!state->closing && !terminal) {
-        state->in_done_tick = xTaskGetTickCount();
-        state->in_resubmit_due = true;
+        const esp_err_t rc = submit_in_if_idle(state);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "MIDI IN resubmit: %s", esp_err_to_name(rc));
+        }
     }
 }
 
@@ -470,7 +435,6 @@ static void close_step(controller_state_t *state)
     state->midi_flush_attempted = false;
     state->uac_recovery_requested = false;
     state->in_retry_pending = false;
-    state->in_resubmit_due = false;
     if (was_connected) {
         count_inc(&s_midi_disconnects);
         if (state->config.connection_cb) {
@@ -588,7 +552,6 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
     controller_usb_recovery_gate_cancel(&state->recovery_gate);
     controller_usb_recovery_gate_reset_in_retries(&state->recovery_gate);
     state->in_retry_pending = false;
-    state->in_resubmit_due = false;
     state->identity = (controller_usb_identity_t) {
         .vid = device_desc->idVendor,
         .pid = device_desc->idProduct,
@@ -747,7 +710,7 @@ static void controller_task(void *arg)
         firmware_resources_sample_task(FW_RESOURCE_CONTROLLER);
 #endif
         const esp_err_t rc = usb_host_client_handle_events(
-            s_state.client, midi_in_pace_wait(&s_state, pdMS_TO_TICKS(100)));
+            s_state.client, pdMS_TO_TICKS(100));
         if (rc != ESP_OK && rc != ESP_ERR_TIMEOUT) {
             ESP_LOGW(TAG, "client events: %s", esp_err_to_name(rc));
         }
@@ -805,7 +768,7 @@ static void controller_task(void *arg)
                     CONTROLLER_USB_FAULT_IN_PIPE_CLEAR, "MIDI IN pipe clear", clear_rc);
             }
         }
-        (void)submit_in_paced(&s_state);
+        (void)submit_in_if_idle(&s_state);
         (void)submit_out_if_idle(&s_state);
     }
 }
