@@ -1,0 +1,366 @@
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x510
+load:0x4ff28ed0,len:0xc34
+load:0x4ff2bbd0,len:0x3388
+entry 0x4ff28ed0
+W (1825) spi_flash: Detected boya flash chip but using generic driver. For optimal functionality, enable `SPI_FLASH_SUPPORT_BOYA_CHIP` in menuconfig
+W (1842) fw_health: running pajoniiir_deck 343 slot=ota_0 addr=0x20000 size=0x300000 state=valid
+W (1842) main: reset reason: 1
+E (2183) i2s_common: i2s_channel_disable(1254): the channel has not been enabled yet
+E (2329) sdmmc_sd: sdmmc_send_cmd_switch_func: sdmmc_send_cmd returned 0x107
+E (2329) vfs_fat_sdmmc: sdmmc_card_init failed (0x107).
+E (2329) SD_HOST: sd_host_del_sdmmc_controller(353): host controller with slot registered
+E (2337) bsp_sd: Failed to initialize the card (inserted? ESP_ERR_TIMEOUT)
+W (2344) bsp_sd: SD mount attempt 1/5 failed (ESP_ERR_TIMEOUT)
+Name: SD02G
+Type: SDSC
+Speed: 20.00 MHz (limit: 20.00 MHz)
+Size: 1910MB
+CSD: ver=1, sector_size=512, capacity=3911680 read_bl_len=10
+SSR: bus_width=4
+W (3115) bsp_sd: SD mounted on attempt 2/5
+W (3155) ctrl_profile: profile 'pioneer_ddj_400': 6176 bytes VID=0x2B73 PID=0x0026 inputs=288 outputs=127 OK
+W (3156) ctrl_profile: 1 controller profile(s) in /sd/controllers, 1 valid
+W (3160) eth_bringup: step 1: event loop + netif init
+W (3165) eth_bringup: step 2: (defaults - no manual power settle)
+W (3171) eth_bringup: step 3: creating MAC/PHY objects
+W (3176) eth_bringup: step 4: installing driver
+I (3710) esp_eth.netif.netif_glue: 80:f1:b2:d3:97:49
+I (3710) esp_eth.netif.netif_glue: ethernet attached to netif
+W (3710) eth_bringup: step 5: netif attached
+I (6113) eth_bringup: Ethernet driver started
+D (6113) esp_eth.netif.netif_glue: eth_action_start: 0x4ff3af70, 0x4821aba4, 0, 0x4ff797a4, 0x4ff3ae18
+D (6115) esp_eth.netif.netif_glue: Add filter MAC: 01:00:5e:00:00:01
+W (6116) eth_bringup: step 6: eth started, waiting for link/DHCP
+I (6121) eth_bringup: PHY link UP
+D (6130) esp_eth.netif.netif_glue: eth_action_connected: 0x4ff3af70, 0x4821aba4, 2, 0x4ff79558, 0x4ff3ae18
+I (6139) eth_bringup: Ethernet bring-up started (RMII, IP101 @ addr 1)
+E (6145) pdb: Cannot open: /usb/PIONEER/rekordbox/export.pdb
+W (6151) library: PDB not found at /usb/PIONEER/rekordbox/export.pdb (USB not mounted?)
+W (6158) main: library_init: ESP_ERR_NOT_FOUND (USB not mounted yet — OK)
+I (6218) audio: PCM timeline D0: PSRAM canonical, capacity=192000 frames
+I (6229) audio: PCM timeline D1: PSRAM canonical, capacity=192000 frames
+I (6229) audio: audio_engine_init: output ready (ES8311=off, PCM5102A=off)
+[HEAP] after audio_engine_init: internal free=211803 largest=131072
+W (6237) hot_cue_store: NVS (boot): 522 used, 234 free, 756 total entries, 5 namespaces
+W (6671) ui: Deck 1 ANLZ metadata unavailable
+W (6671) ui: Deck 2 ANLZ metadata unavailable
+W (6674) dj_link: started
+[HEAP] before p4_local_controller_start: internal free=54655 largest=31744
+[HEAP] after p4_local_controller_start: internal free=47215 largest=31744
+=== HEAP DIAG ===
+Heap summary for capabilities 0x00000800:
+  At 0x4ff67a80 len 32767 free 4879 allocated 27136 min_free 4879
+W (6676) HCD DWC: FIFO config lines port=0: RX=160, PTX=180, NPTX=160
+    largest_free_block 4608 alloc_blocks 4 free_blocks 2 total_blocks 6
+  At 0x301000b0 len 8016 free 7636 allocated 0 min_free 7636
+    largest_free_block 7168 alloc_blocks 0 free_blocks 1 total_blocks 1
+  At 0x4ff3afc0 len 19440 free 4 allocated 18244 min_free 4
+    largest_free_block 0 alloc_blocks 114 free_blocks 0 total_blocks 114
+  At 0x501080a4 len 32604 free 31868 allocated 0 min_free 31868
+W (6731) HCD DWC: FIFO config lines port=1: RX=30, PTX=150, NPTX=20
+    largest_free_block 31744 alloc_blocks 0 free_blocks 1 total_blocks 1
+W (6748) ui_library: dj_ui LOAD DECK 1 unlocked
+  At 0x4ff28bd0 len 74736 free 4 allocated 73276 min_free 4
+    largest_free_block 0 alloc_blocks 146 free_blocks 0 total_blocks 146
+W (6753) ui_library: dj_ui LOAD DECK 2 unlocked
+W (6769) ui_library: dj_ui LOAD buttons enabled
+  At 0x4ff676c0 len 231744 free 2760 allocated 215860 min_free 2192
+    largest_free_block 32 alloc_blocks 3046 free_blocks 171 total_blocks 3217
+I (6774) usb_storage: root port power cycle (initial bring-up)
+W (6778) controller_usb: USB DMA reserve off: USB-DWC buffers in PSRAM (internal DMA free=5679 largest=2816)
+W (6792) usb_host_mgr: recovering USB1 reason=1
+W (6773) ui_library: dj_ui D1 loaded row -1 (key 0x00000000, none)
+I (6792) usb_storage: USB host + MSC installed; waiting for a drive on the HS USB port
+W (6804) p4_controller: P4-only controller path ready on USB1
+W (6811) ui_library: dj_ui D2 loaded row -1 (key 0x00000000, none)
+  Totals:
+    free 22811 allocated 358712 min_free 16123 largest_free_block 9216
+[HEAP] before eth web_server_start: internal free=40619 largest=15872
+[HEAP] after eth web_server_start: internal free=25083 largest=9216
+D (7114) HUB: Root port reset
+D (7114) HUB: Device tree node (port 0, uid 1): new
+D (7115) USBH: Processing actions 0x4
+D (7115) USBH: Default pipe device 0
+D (7177) USBH: Processing actions 0x4
+D (7177) USBH: Default pipe device 0
+D (7188) USBH: Processing actions 0x4
+D (7188) USBH: Default pipe device 1
+D (7189) USBH: Processing actions 0x4
+D (7189) USBH: Default pipe device 1
+D (7191) USBH: Processing actions 0x4
+D (7194) USBH: Default pipe device 1
+D (7198) USBH: Processing actions 0x4
+D (7200) USBH: Default pipe device 1
+D (7205) USBH: Processing actions 0x4
+D (7207) USBH: Default pipe device 1
+D (7211) USBH: Processing actions 0x4
+D (7214) USBH: Default pipe device 1
+D (7218) USBH: Processing actions 0x4
+D (7220) USBH: Default pipe device 1
+D (7224) USBH: Processing actions 0x4
+D (7227) USBH: Default pipe device 1
+D (7231) USBH: Processing actions 0x4
+D (7234) USBH: Default pipe device 1
+D (7238) USBH: Processing actions 0x4
+D (7240) USBH: Default pipe device 1
+D (7244) USBH: Processing actions 0x4
+D (7247) USBH: Default pipe device 1
+D (7251) USBH: Processing actions 0x4
+D (7254) USBH: Default pipe device 1
+D (7257) USBH: Processing actions 0x80
+D (7260) USBH: New device 1
+W (7264) controller_usb: recovery: NEW_DEV addr=1 (opened=0 closing=0)
+W (7274) controller_usb: UAC gate PID=0x0026 parent_port=0 direct_root=1 -> start
+W (7277) controller_usb: UAC desc dump total=267:
+W (7281) controller_usb:   @9 len 9: 09 04 00 00 00 01 01 00 00
+W (7287) controller_usb:   @18 len 9: 09 24 01 00 01 1e 00 01 01
+W (7292) controller_usb:   @27 len 12: 0c 24 02 01 01 01 00 04 00 00 06 00
+W (7299) controller_usb:   @39 len 9: 09 24 03 02 03 06 00 01 00
+W (7305) controller_usb:   @48 len 9: 09 04 01 00 00 01 02 00 04
+W (7310) controller_usb:   @57 len 9: 09 04 01 01 01 01 02 00 04
+W (7316) controller_usb:   @66 len 7: 07 24 01 01 01 01 00
+W (7321) controller_usb:   @73 len 11: 0b 24 02 01 04 02 10 01 44 ac 00
+W (7328) controller_usb:   @84 len 9: 09 05 01 0d 40 02 04 00 00
+W (7333) controller_usb:   @93 len 7: 07 25 01 01 00 00 00
+W (7339) controller_usb:   @100 len 9: 09 04 01 02 01 01 02 00 04
+W (7344) controller_usb:   @109 len 7: 07 24 01 01 01 01 00
+W (7350) controller_usb:   @116 len 11: 0b 24 02 01 04 03 18 01 44 ac 00
+W (7356) controller_usb:   @127 len 9: 09 05 01 0d 40 02 04 00 00
+W (7362) controller_usb:   @136 len 7: 07 25 01 01 00 00 00
+W (7367) controller_usb:   @143 len 9: 09 04 02 00 00 01 01 00 02
+W (7373) controller_usb:   @152 len 9: 09 24 01 00 01 09 00 01 03
+W (7379) controller_usb:   @161 len 9: 09 04 03 00 02 01 03 00 02
+W (7385) controller_usb:   @170 len 7: 07 24 01 00 01 41 00
+W (7390) controller_usb:   @177 len 6: 06 24 02 01 01 00
+W (7395) controller_usb:   @183 len 6: 06 24 02 02 02 00
+W (7400) controller_usb:   @189 len 9: 09 24 03 02 03 01 01 01 00
+W (7406) controller_usb:   @198 len 9: 09 24 03 01 04 01 02 01 00
+W (7412) controller_usb:   @207 len 9: 09 05 03 02 00 02 00 00 00
+W (7418) controller_usb:   @216 len 5: 05 25 01 01 01
+W (7422) controller_usb:   @221 len 9: 09 05 84 02 00 02 00 00 00
+W (7428) controller_usb:   @230 len 5: 05 25 01 01 04
+W (7433) controller_usb:   @235 len 9: 09 04 04 00 02 03 00 00 02
+W (7439) controller_usb:   @253 len 7: 07 05 06 03 40 00 04
+W (7444) controller_usb:   @260 len 7: 07 05 88 03 40 00 04
+W (7449) controller_uac: UAC seq 1 +0 ms: start dev=0x488506d4 (first start of this boot, 0 streams primed so far)
+W (7460) controller_uac: UAC formats parsed: 2
+W (7464) controller_uac: cand 0: ifc 1 alt 1 ep 0x01 mps 576 ch 4 bits 16 bps 2 rates 1 [44100 0 0] pcm16 1 pcm24 0 pkt 384 rate_ok 0
+W (7475) controller_uac: cand 1: ifc 1 alt 2 ep 0x01 mps 576 ch 4 bits 24 bps 3 rates 1 [44100 0 0] pcm16 0 pcm24 1 pkt 576 rate_ok 0
+W (7487) controller_uac: UAC selected cand 1 (24-bit, 3 B/sample)
+W (7493) controller_uac: UAC FORCED RATE 48000 Hz (descriptor announces 44100 Hz)
+W (7500) controller_uac: UAC ep 0x01 bmAttributes 0x0d sync=sync bSynchAddress 0x00 in_ep 0x00
+W (7510) controller_uac: UAC seq 1 +61 ms: claim ifc 1 alt 2 ep 0x01 mps 576: ESP_OK
+W (7517) controller_uac: UAC seq 1 +68 ms: 3 isoc URBs (3456 B, PSRAM) + control URB alloc: ESP_OK
+W (7525) controller_uac: UAC seq 1 +76 ms: control step 1 (SET_INTERFACE alt N) submit: ESP_OK
+W (7533) p4_controller: direct controller detected VID=0x2B73 PID=0x0026 port=0; profile resolution queued 'DDJ-400'
+D (7543) USBH: Processing actions 0x4
+D (7546) USBH: Default pipe device 1
+W (7550) controller_uac: UAC seq 1 +101 ms: control step 1 complete (alt 2), priming isochronous queue
+W (7570) controller_uac: UAC ready intf=1 alt=2 ep=0x01 mps=576 48000 Hz 4ch/24-bit (3 B/sample, pkt 576) seq 1 +121 ms
+D (7591) USBH: Processing actions 0x4
+D (7591) USBH: Default pipe device 1
+W (7591) controller_uac: UAC SET_CUR 48000 Hz completed
+W (7598) ctrl_profile_rt: dynamic profile active: VID=0x2B73 PID=0x0026 inputs=288 outputs=127 init_sysex=12
+W (7602) main: channel filter always live
+I (7609) ui_perf: lvgl STALL ended 290 ms: entered in wait | lvgl ready 4 blocked 0 of 4 samples | phase wait 4
+W (7611) controller_usb: MIDI OUT ep 0x03 submit 4 pkt rc=ESP_OK drops=0
+W (7610) controller_led: profile init SysEx: 4 USB-MIDI packets queued (4 sent) rc=ESP_OK
+W (7621) controller_usb:   MIDI OUT [0] 04 F0 00 40
+W (7630) controller_led: LED path sees profile_active=1
+W (7634) controller_usb:   MIDI OUT [1] 04 05 00 00
+W (7639) controller_led: LED 0 deck 0 state 1 -> 09 90 0C 7F rc=ESP_OK
+W (7643) controller_usb:   MIDI OUT [2] 04 02 06 00
+W (7649) controller_led: LED 1 deck 0 state 0 -> 09 90 0B 00 rc=ESP_OK
+W (7660) controller_led: LED 4 deck 0 state 0 -> 09 90 54 00 rc=ESP_OK
+W (7654) controller_usb:   MIDI OUT [3] 07 03 01 F7
+W (7667) controller_led: LED 14 deck 0 state 0 -> 09 90 58 00 rc=ESP_OK
+W (7677) controller_usb: MIDI OUT done status=0 actual=16/16
+W (7677) controller_led: LED 6 deck 0 state 1 -> 09 90 1B 7F rc=ESP_OK
+W (7684) controller_usb: MIDI OUT ep 0x03 submit 5 pkt rc=ESP_OK drops=0
+W (7689) controller_led: LED 7 deck 0 state 0 -> 09 90 69 00 rc=ESP_OK
+W (7696) controller_usb:   MIDI OUT [0] 09 90 0C 7F
+W (7702) controller_led: LED 8 deck 0 state 0 -> 09 90 1E 00 rc=ESP_OK
+W (7707) controller_usb:   MIDI OUT [1] 09 90 0B 00
+W (7713) controller_led: LED 9 deck 0 state 0 -> 09 90 6B 00 rc=ESP_OK
+W (7717) controller_usb:   MIDI OUT [2] 09 90 54 00
+W (7723) controller_led: LED 10 deck 0 state 0 -> 09 90 20 00 rc=ESP_OK
+W (7728) controller_usb:   MIDI OUT [3] 09 90 58 00
+W (7734) controller_led: LED 11 deck 0 state 0 -> 09 90 6D 00 rc=ESP_OK
+W (7739) controller_usb:   MIDI OUT [4] 09 90 1B 7F
+W (7745) controller_led: LED 12 deck 0 state 0 -> 09 90 22 00 rc=ESP_OK
+W (7750) controller_usb: MIDI OUT done status=0 actual=20/20
+W (7756) controller_led: LED 13 deck 0 state 0 -> 09 90 6F 00 rc=ESP_OK
+W (7763) controller_usb: MIDI OUT ep 0x03 submit 7 pkt rc=ESP_OK drops=0
+W (7768) controller_led: LED 15 deck 0 state 0 -> 09 90 10 00 rc=ESP_OK
+W (7775) controller_usb:   MIDI OUT [0] 09 90 69 00
+W (7781) controller_led: LED 16 deck 0 state 0 -> 09 90 11 00 rc=ESP_OK
+W (7785) controller_usb:   MIDI OUT [1] 09 90 1E 00
+W (7792) controller_led: LED 41 deck 0 state 0 -> no mapping (profile_active=1 builtin=0, logged once)
+W (7796) controller_usb:   MIDI OUT [2] 09 90 6B 00
+W (7805) controller_led: LED 42 deck 0 state 0 -> no mapping (profile_active=1 builtin=0, logged once)
+W (7810) controller_usb:   MIDI OUT [3] 09 90 20 00
+W (7819) controller_led: LED 43 deck 0 state 0 -> 09 94 47 00 rc=ESP_OK
+W (7824) controller_usb:   MIDI OUT [4] 09 90 6D 00
+W (7830) controller_led: LED 52 deck 0 state 1 -> 09 96 63 7F rc=ESP_OK
+W (7835) controller_usb:   MIDI OUT [5] 09 90 22 00
+W (7841) controller_led: LED 53 deck 0 state 0 -> 09 90 0E 00 rc=ESP_OK
+W (7846) controller_usb:   MIDI OUT [6] 09 90 6F 00
+W (7852) controller_led: LED 0 deck 1 state 1 -> 09 91 0C 7F rc=ESP_OK
+W (7857) controller_usb: MIDI OUT done status=0 actual=28/28
+W (7863) controller_led: LED 1 deck 1 state 0 -> 09 91 0B 00 rc=ESP_OK
+W (7869) controller_usb: MIDI OUT ep 0x03 submit 7 pkt rc=ESP_OK drops=0
+W (7874) controller_led: LED 4 deck 1 state 0 -> 09 91 54 00 rc=ESP_OK
+W (7881) controller_usb:   MIDI OUT [0] 09 90 10 00
+W (7887) controller_led: LED 14 deck 1 state 0 -> 09 91 58 00 rc=ESP_OK
+W (7892) controller_usb:   MIDI OUT [1] 09 90 11 00
+W (7898) controller_led: LED 6 deck 1 state 1 -> 09 91 1B 7F rc=ESP_OK
+W (7903) controller_usb:   MIDI OUT [2] 09 94 47 00
+W (7909) controller_led: LED 7 deck 1 state 0 -> 09 91 69 00 rc=ESP_OK
+W (7913) controller_usb:   MIDI OUT [3] 09 96 63 7F
+W (7919) controller_led: LED 8 deck 1 state 0 -> 09 91 1E 00 rc=ESP_OK
+W (7924) controller_usb:   MIDI OUT [4] 09 90 0E 00
+W (7930) controller_led: LED 9 deck 1 state 0 -> 09 91 6B 00 rc=ESP_OK
+W (7935) controller_usb:   MIDI OUT [5] 09 91 0C 7F
+W (7941) controller_led: LED 10 deck 1 state 0 -> 09 91 20 00 rc=ESP_OK
+W (7952) controller_led: LED 11 deck 1 state 0 -> 09 91 6D 00 rc=ESP_OK
+W (7946) controller_usb:   MIDI OUT [6] 09 91 0B 00
+W (7959) controller_led: LED 12 deck 1 state 0 -> 09 91 22 00 rc=ESP_OK
+W (7963) controller_usb: MIDI OUT done status=0 actual=28/28
+W (7969) controller_led: LED 13 deck 1 state 0 -> 09 91 6F 00 rc=ESP_OK
+W (7976) controller_usb: MIDI OUT ep 0x03 submit 10 pkt rc=ESP_OK drops=0
+W (7981) controller_led: LED 15 deck 1 state 0 -> 09 91 10 00 rc=ESP_OK
+W (7988) controller_usb:   MIDI OUT [0] 09 91 54 00
+W (7994) controller_led: LED 16 deck 1 state 0 -> 09 91 11 00 rc=ESP_OK
+W (7999) controller_usb:   MIDI OUT [1] 09 91 58 00
+W (8005) controller_led: LED 53 deck 1 state 0 -> 09 91 0E 00 rc=ESP_OK
+W (8010) controller_usb:   MIDI OUT [2] 09 91 1B 7F
+W (8016) controller_led: LED 57 deck 0 state 0 -> 09 9F 00 00 rc=ESP_OK
+W (8021) controller_usb:   MIDI OUT [3] 09 91 69 00
+W (8027) controller_led: LED 58 deck 1 state 0 -> 09 9F 01 00 rc=ESP_OK
+W (8032) controller_usb:   MIDI OUT [4] 09 91 1E 00
+W (8038) controller_led: LED 55 deck 0 state 0 -> 09 90 4C 00 rc=ESP_OK
+W (8042) controller_usb:   MIDI OUT [5] 09 91 6B 00
+W (8049) controller_led: LED 56 deck 0 state 0 -> 09 90 4E 00 rc=ESP_OK
+W (8053) controller_usb:   MIDI OUT [6] 09 91 20 00
+W (8060) controller_led: LED 55 deck 1 state 0 -> 09 91 4C 00 rc=ESP_OK
+W (8064) controller_usb:   MIDI OUT [7] 09 91 6D 00
+W (8071) controller_led: LED 56 deck 1 state 0 -> 09 91 4E 00 rc=ESP_OK
+W (8075) controller_usb:   MIDI OUT [8] 09 91 22 00
+I (7819) usb_storage: root port power cycle (no active storage session)
+W (8086) controller_usb:   MIDI OUT [9] 09 91 6F 00
+W (8092) usb_host_mgr: recovering USB1 reason=1
+W (8097) controller_usb: MIDI OUT done status=0 actual=40/40
+W (7632) p4_controller: direct controller resolved VID=0x2B73 PID=0x0026 profile=local 'DDJ-400'
+W (8109) controller_usb: MIDI OUT ep 0x03 submit 9 pkt rc=ESP_OK drops=0
+W (8122) controller_usb:   MIDI OUT [0] 09 91 10 00
+W (8126) controller_usb:   MIDI OUT [1] 09 91 11 00
+W (8131) controller_usb:   MIDI OUT [2] 09 91 0E 00
+W (8135) controller_usb:   MIDI OUT [3] 09 9F 00 00
+W (8140) controller_usb:   MIDI OUT [4] 09 9F 01 00
+W (8145) controller_usb:   MIDI OUT [5] 09 90 4C 00
+W (8149) controller_usb:   MIDI OUT [6] 09 90 4E 00
+W (8154) controller_usb:   MIDI OUT [7] 09 91 4C 00
+W (8158) controller_usb:   MIDI OUT [8] 09 91 4E 00
+W (8163) controller_usb: MIDI OUT done status=0 actual=36/36
+W (8170) p4_controller: MIDI B0 04 3C -> unmapped
+W (8174) p4_controller: MIDI B0 24 50 -> mapped
+W (8183) p4_controller: MIDI B1 04 7F -> unmapped
+W (8185) p4_controller: MIDI B1 24 7F -> mapped
+W (8189) p4_controller: MIDI B0 07 40 -> unmapped
+W (8192) p4_controller: MIDI B0 27 00 -> mapped
+I (7622) ui_perf: lvgl STALL core0 runs: esp_timer 4
+W (8195) p4_controller: MIDI B1 07 40 -> unmapped
+W (8205) p4_controller: MIDI B1 27 00 -> mapped
+W (8209) p4_controller: MIDI B0 0B 40 -> unmapped
+I (8212) ui_perf: lvgl STALL core1 runs: controller_usb 4
+W (8213) p4_controller: MIDI B0 2B 00 -> mapped
+W (8222) p4_controller: MIDI B1 0B 40 -> unmapped
+W (8227) p4_controller: MIDI B1 2B 00 -> mapped
+W (8231) p4_controller: MIDI B0 0F 40 -> unmapped
+W (8236) p4_controller: MIDI B0 2F 00 -> mapped
+W (8240) p4_controller: MIDI B1 0F 40 -> unmapped
+W (8244) p4_controller: MIDI B1 2F 00 -> mapped
+W (8248) p4_controller: MIDI B0 13 00 -> unmapped
+W (8253) p4_controller: MIDI B0 33 00 -> mapped
+W (8257) p4_controller: MIDI B1 13 7F -> unmapped
+I (8224) ui_perf: lvgl STALL usb: loops 0 tail 273827 us | midi_in cb 0 0 us max 0 us pkt 0 | out submit 0 wake 0 | midi submit 0 us | isoc cb 0 0 us (submit 0 us, prep 0 us) max 0 us
+W (8261) p4_controller: MIDI B1 33 7F -> mapped
+W (8282) p4_controller: MIDI B6 1F 00 -> unmapped
+W (8286) p4_controller: MIDI B6 3F 38 -> mapped
+W (8290) p4_controller: MIDI B6 17 40 -> unmapped
+W (8295) p4_controller: MIDI B6 37 00 -> mapped
+W (8299) p4_controller: MIDI B6 18 40 -> unmapped
+W (8303) p4_controller: MIDI B6 38 00 -> mapped
+W (8308) p4_controller: MIDI B4 02 7F -> mapped
+W (8312) p4_controller: MIDI B4 22 7F -> unmapped
+W (8316) p4_controller: MIDI 94 10 00 -> unmapped
+W (8321) p4_controller: MIDI 94 11 00 -> unmapped
+W (8326) p4_controller: MIDI 94 14 7F -> mapped
+W (8330) p4_controller: MIDI B0 00 40 -> unmapped
+W (8334) p4_controller: MIDI B0 20 00 -> mapped
+W (8338) p4_controller: MIDI B1 00 40 -> unmapped
+W (8343) p4_controller: MIDI B1 20 00 -> mapped
+W (8347) p4_controller: MIDI 9F 47 7F -> unmapped
+W (8351) p4_controller: MIDI 9F 49 7F -> unmapped
+W (8356) p4_controller: MIDI 94 10 00 -> unmapped
+W (8360) p4_controller: MIDI 94 11 00 -> unmapped
+W (8365) p4_controller: MIDI 94 14 7F -> mapped
+W (8594) controller_uac: UAC control step 4 pending > 1 s (device NAK?); set STREAM_RATE_CONTROL 0 if this is a rate step
+I (9092) usb_storage: root port power cycle (no active storage session)
+W (9092) usb_host_mgr: recovering USB1 reason=1
+I (10092) usb_storage: root port power cycle (no active storage session)
+W (10092) usb_host_mgr: recovering USB1 reason=1
+I (11092) usb_storage: root port power cycle (no active storage session)
+W (11092) usb_host_mgr: recovering USB1 reason=1
+I (11752) ui_perf: lvgl refr n=72 interval avg/max 45150/313022 us | refr avg/max 16353/179930 us = draw 10190/146042 + flush 6163/33888 us | render max 161977 us
+I (11756) ui_perf: lvgl handler n=460 interval max 282001 us, duration avg/max 3278/180388 us | frame cb avg/max 828/100537 us | PPA avg/max 4049/9729 us, msync max 3254 us, per refr max 5 flushes 614400 px
+I (11774) ui_perf: lvgl worst refr 179930 us: flush 32606 us (5 flushes, 614400 px) gate 1282 us; inval 2 areas 614490 px, max (0,0 1024x600)
+I (11787) ui_perf: lvgl scan-gate per refr avg/max 1273/13454 us, gave up (tore) 6
+I (11793) ui_perf: ui_update step max: cmds 10 us ctx 5375 us library 83333 us decks 2663 us bridge 5447 us panels 11477 us (ae busy x0)
+I (11805) ui_perf: dj_ui zoom 696x119: updates=261 redraws=0 deferred=0 strip_px max=0 inv_px last=614400 max=614400
+I (11816) ui_perf: dj_ui bridge us max: decks 5402 (mini x2 1891) strips 14 (full x0 0, deferred x0, fill x0 0)
+I (11825) ui_perf: dj_ui direct strips: blits x0 us max 0, lvgl repaints x0, fails x0
+I (11835) ui_perf: dj_ui artwork: queued=0 full=0 decoded=0 none=0 skipped=0 read_us max=0 decode_us max=0 poll_us max=0
+I (12092) usb_storage: root port power cycle (no active storage session)
+W (12092) usb_host_mgr: recovering USB1 reason=1
+I (13092) usb_storage: root port power cycle (no active storage session)
+W (13092) usb_host_mgr: recovering USB1 reason=1
+I (13571) eth_bringup: ETH Got IP: 192.168.100.83
+D (13571) esp_eth.netif.netif_glue: eth_action_got_ip: 0x4ff3af70, 0x4822c780, 4, 0x4ff3ca20, 0x482ce970
+D (13574) esp_eth.netif.netif_glue: Add filter MAC: 01:00:5e:00:00:fb
+W (13674) dj_nfsd: serving /usb read-only as /C/ on 192.168.100.83 (UDP 111 portmap, 2049 mount+nfs)
+W (13677) dj_link: UDP 50000/50001/50002 open (Ethernet only) - joining as a player
+W (14092) usb_storage: USB enumeration recovery exhausted 8 fast cycles; continuing every 30000 ms
+I (14092) usb_storage: root port power cycle (no active storage session)
+W (14096) usb_host_mgr: recovering USB1 reason=1
+I (16756) ui_perf: lvgl refr n=2 interval avg/max 2415596/3808493 us | refr avg/max 2135/3551 us = draw 2135/3551 + flush 0/0 us | render max 0 us
+I (16757) ui_perf: lvgl handler n=448 interval max 18065 us, duration avg/max 397/4047 us | frame cb avg/max 377/2844 us | PPA avg/max 0/0 us, msync max 0 us, per refr max 0 flushes 0 px
+I (16774) ui_perf: lvgl worst refr 3551 us: flush 0 us (0 flushes, 0 px) gate 0 us; inval 0 areas 0 px, max (0,0 1x1)
+I (16784) ui_perf: lvgl scan-gate per refr avg/max 0/0 us, gave up (tore) 0
+I (16791) ui_perf: ui_update step max: cmds 5 us ctx 2664 us library 2573 us decks 2572 us bridge 55 us panels 2589 us (ae busy x0)
+I (16802) ui_perf: dj_ui zoom 696x119: updates=302 redraws=0 deferred=0 strip_px max=0 inv_px last=0 max=0
+I (16812) ui_perf: dj_ui bridge us max: decks 22 (mini x0 0) strips 6 (full x0 0, deferred x0, fill x0 0)
+I (16821) ui_perf: dj_ui direct strips: blits x0 us max 0, lvgl repaints x0, fails x0
+I (16828) ui_perf: dj_ui artwork: queued=0 full=0 decoded=0 none=0 skipped=0 read_us max=0 decode_us max=0 poll_us max=0
+W (17277) dj_link: deck 1 joined as player #3
+W (20859) dj_link: deck 2 joined as player #4
+I (21771) ui_perf: lvgl refr n=2 interval avg/max 3076500/3077897 us | refr avg/max 655/686 us = draw 655/686 + flush 0/0 us | render max 0 us
+I (21773) ui_perf: lvgl handler n=446 interval max 18079 us, duration avg/max 371/3703 us | frame cb avg/max 361/2997 us | PPA avg/max 0/0 us, msync max 0 us, per refr max 0 flushes 0 px
+I (21789) ui_perf: lvgl worst refr 686 us: flush 0 us (0 flushes, 0 px) gate 0 us; inval 0 areas 0 px, max (0,0 1x1)
+I (21800) ui_perf: lvgl scan-gate per refr avg/max 0/0 us, gave up (tore) 0
+I (21807) ui_perf: ui_update step max: cmds 8 us ctx 2662 us library 27 us decks 2618 us bridge 43 us panels 154 us (ae busy x0)
+I (21819) ui_perf: dj_ui zoom 696x119: updates=304 redraws=0 deferred=0 strip_px max=0 inv_px last=0 max=0
+I (21827) ui_perf: dj_ui bridge us max: decks 19 (mini x0 0) strips 7 (full x0 0, deferred x0, fill x0 0)
+I (21836) ui_perf: dj_ui direct strips: blits x0 us max 0, lvgl repaints x0, fails x0
+I (21844) ui_perf: dj_ui artwork: queued=0 full=0 decoded=0 none=0 skipped=0 read_us max=0 decode_us max=0 poll_us max=0
+I (26778) ui_perf: lvgl refr n=0 interval avg/max 0/0 us | refr avg/max 0/0 us = draw 0/0 + flush 0/0 us | render max 0 us
+I (26778) ui_perf: lvgl handler n=445 interval max 18022 us, duration avg/max 360/3150 us | frame cb avg/max 341/2844 us | PPA avg/max 0/0 us, msync max 0 us, per refr max 0 flushes 0 px
+I (26794) ui_perf: lvgl worst refr 0 us: flush 0 us (0 flushes, 0 px) gate 0 us; inval 0 areas 0 px, max (0,0 1x1)
+I (26804) ui_perf: lvgl scan-gate per refr avg/max 0/0 us, gave up (tore) 0
+I (26810) ui_perf: ui_update step max: cmds 5 us ctx 2661 us library 30 us decks 68 us bridge 35 us panels 57 us (ae busy x0)
+I (26822) ui_perf: dj_ui zoom 696x119: updates=302 redraws=0 deferred=0 strip_px max=0 inv_px last=0 max=0
+I (26831) ui_perf: dj_ui bridge us max: decks 13 (mini x0 0) strips 4 (full x0 0, deferred x0, fill x0 0)
+I (26840) ui_perf: dj_ui direct strips: blits x0 us max 0, lvgl repaints x0, fails x0
+I (26848) ui_perf: dj_ui artwork: queued=0 full=0 decoded=0 none=0 skipped=0 read_us max=0 decode_us max=0 poll_us max=0

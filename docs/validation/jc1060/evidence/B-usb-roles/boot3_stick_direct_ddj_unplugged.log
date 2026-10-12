@@ -1,0 +1,51 @@
+rst:0x1 (POWERON),boot:0xf (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff33ce0,len:0x15e0
+load:0x4ff28ed0,len:0xe54
+load:0x4ff2bbd0,len:0x365c
+entry 0x4ff28eda
+I (25) boot: ESP-IDF v6.0.2 2nd stage bootloader
+I (25) boot: compile time Oct 12 2026 02:34:36
+I (26) boot: Multicore bootloader
+I (27) boot: chip revision: v1.3
+I (28) boot: efuse block revision: v0.3
+I (32) boot.esp32p4: SPI Speed      : 80MHz
+I (36) boot.esp32p4: SPI Mode       : DIO
+I (40) boot.esp32p4: SPI Flash Size : 16MB
+I (43) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (70) boot:  2 otadata          OTA data         01 00 00010000 00002000
+I (76) boot:  3 factory          factory app      00 00 00020000 00400000
+I (83) boot:  4 ota_0            OTA app          00 10 00420000 00400000
+I (89) boot:  5 ota_1            OTA app          00 11 00820000 00400000
+I (96) boot:  6 coredump         Unknown data     01 03 00c20000 00010000
+I (104) boot: End of partition table
+I (107) boot: Defaulting to factory image
+I (110) esp_image: segment 0: paddr=00020020 vaddr=481a0020 size=d2a6ch (862828) map
+I (261) esp_image: segment 1: paddr=000f2a94 vaddr=30100000 size=00088h (   136) load
+I (263) esp_image: segment 2: paddr=000f2b24 vaddr=4ff00000 size=0d4f4h ( 54516) load
+I (277) esp_image: segment 3: paddr=00100020 vaddr=48000020 size=19f2e0h (1700576) map
+I (560) esp_image: segment 4: paddr=0029f308 vaddr=4ff0d4f4 size=06780h ( 26496) load
+I (567) esp_image: segment 5: paddr=002a5a90 vaddr=4ff13c80 size=04760h ( 18272) load
+I (572) esp_image: segment 6: paddr=002aa1f8 vaddr=50108180 size=00024h (    36) load
+I (578) boot: Loaded app from partition at offset 0x20000
+I (578) boot: Disabling RNG early entropy source...
+W (1826) spi_flash: Detected boya flash chip but using generic driver. For optimal functionality, enable `SPI_FLASH_SUPPORT_BOYA_CHIP` in menuconfig
+W (4861) fw_health: running main-deck-jc1060 M2.5-221-ge8cea37e-dirty slot=factory addr=0x20000 size=0x400000 state=undefined
+W (4862) main: reset reason: 1
+Name: SD02G
+Type: SDSC
+Speed: 20.00 MHz (limit: 20.00 MHz)
+Size: 1910MB
+CSD: ver=1, sector_size=512, capacity=3911680 read_bl_len=10
+SSR: bus_width=4
+W (5784) library: Cannot hash export.pdb: ESP_ERR_NOT_FOUND
+W (5784) main: library_init: ESP_ERR_NOT_FOUND (USB not mounted yet — OK)
+W (6261) ui: Deck 1 ANLZ metadata unavailable
+W (6262) ui: Deck 2 ANLZ metadata unavailable
+W (6328) usb_host_mgr: recovering USB1 reason=1
+W (6368) p4_controller: P4-only controller path ready on USB1
+W (7809) main: USB media library loaded: 22 tracks

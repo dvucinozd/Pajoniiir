@@ -1,0 +1,8 @@
+E (249410) audio: output sink fault: main=ESP_ERR_INVALID_STATE hp=ESP_ERR_NOT_SUPPORTED
+E (251985) audio: no audio frame found
+W (261869) audio: scratch begin D1 rejected: loaded=0 loading=0 rate=0
+W (261869) deck: deck 2 scratch unavailable -> platter hold
+W (304799) deck: deck 2 loop out ignored: invalid in/out 0/0 ms
+W (305531) deck: deck 2 loop out ignored: invalid in/out 0/0 ms
+W (306539) deck: deck 1 loop out ignored: invalid in/out 0/0 ms
+W (307191) deck: deck 1 loop out ignored: invalid in/out 0/0 ms

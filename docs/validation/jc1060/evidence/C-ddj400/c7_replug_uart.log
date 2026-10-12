@@ -1,0 +1,5 @@
+E (885146) audio: output sink fault: main=ESP_ERR_INVALID_STATE hp=ESP_ERR_NOT_SUPPORTED
+W (885245) ctrl_profile: controller disconnected VID=0x2B73 PID=0x0026 'DDJ-400'
+W (885245) p4_controller: direct controller disconnected
+W (892714) p4_controller: direct controller detected VID=0x2B73 PID=0x0026 port=0; profile resolution queued 'DDJ-400'
+W (892722) p4_controller: direct controller resolved VID=0x2B73 PID=0x0026 profile=local 'DDJ-400'
