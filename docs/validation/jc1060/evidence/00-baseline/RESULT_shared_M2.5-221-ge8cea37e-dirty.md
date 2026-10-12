@@ -128,3 +128,7 @@ Image 6: built from clean HEAD `4ca426d8f0d68db317446281c6d9b6a1b34ad219`, app S
 - O5: PASS for the Observe tool run. `monitor_p4_reliability.ps1 -ExpectedBoard jc1060 -Mode Observe -DurationSeconds 120 -ExpectedLibraryTracks 22` with expected source and ELF SHA: result pass, 480 status samples, 0 HTTP errors, max latency 44 ms (library), 22 library tracks, 0 hard failures, `physical_operator_acceptance` NOT RUN (script default). Evidence: `O-observability/o5_observe_120s_result.json`, `..._metadata.json` (raw `status.jsonl` 3.7 MB kept out of git, SHA-256 `31687fbecf4643bf9cfb713524fa7bd6cee72f975aa0ccd310257872765573a2`, in `tmp/o5-observe2/`).
 - Counter to interpret: `uac_underflow` rose by 5,289,178 over 120 s with no deck playing (output_late 0, pcm underruns 0, uac_dropped 0). Probably the idle UAC ring padding silence, not a fault; must be re-read during playback (D1/D8) before drawing any conclusion.
 - Still open for O5: `run_p4_uac_transition_stress.ps1` not run yet; TimingSoak and UsbRecovery modes not run.
+
+## C7 status (2026-10-12)
+
+C7: FAIL, no fix written. Behaviour options to decide with the other developer: (A) pause the decks cleanly on controller loss and resume on PLAY after reconnect; (B) resume automatically. Current code fails closed in `audio_output_mark_sink_fault()` (`audio_engine.c:3856`, call site 4311) and only a track LOAD restarts the output task. Any fix touches shared real-time audio code: JC4880 and M3 must be rebuilt and the C7 gestures repeated (unplug in playback, replug, PLAY).
