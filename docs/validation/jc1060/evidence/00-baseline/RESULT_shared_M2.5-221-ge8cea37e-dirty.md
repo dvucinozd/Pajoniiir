@@ -273,3 +273,9 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - PASS for this part. Monitor Observe 1800 s (12:04-12:34), 7183 status samples, 0 HTTP errors, `output_late`/`pcm1`/`pcm2`/`uac_dropped`/`uac_overflow`/`uac_underflow`/`service_log_dropped` deltas all 0, allocation_failures 0, no hard failure. Two decks playing at the end. SD after 2347 s uptime: reads 1702, writes 95, transfer_errors 0, gate_timeouts 0. No `sd_host`/`sdmmc` or Hosted line in the UART after boot 35. Evidence: `E-storage/e9_observe_1800s_result.json`. Listening not reported for this window.
 - E9 overall: FAIL on the "SD mounts across 10 reboots" part (warm RST, see above); PASS on 30 min playback after a cold boot. This also counts as a 30 min soak toward H1 for the counters (no operator listening yet).
 - E9 30 min listening: operator reports no crackle and no dropout during the window.
+
+### E7 (2026-10-12)
+- FAT32: PASS (the operator's base stick, used for every earlier scenario, 22 tracks).
+- exFAT: PASS. UART: `exFAT candidate detected at LBA 0`, `USB media library loaded: 22 tracks`; operator reports everything works (load and play not itemised). First attempts showed no media: the stick had no rekordbox export, then `export.pdb` read as 0 bytes (`pdb: File too short (0 bytes)`) because the host-side copy was incomplete; after a re-copy (225.3 kB) and a clean eject it loaded. The firmware only opens `/usb/.../export.pdb` read-only; no write to the stick found in the code. Not a firmware defect.
+- GPT: NOT RUN. The operator could not create a GPT table on Linux Mint (no GParted); skipped by the operator.
+- Observation: each stick removal logs `USB enumeration recovery exhausted 8 fast cycles; continuing every 30000 ms` followed by `recovering USB1 reason=1` every 30 s while no stick is present. Not a failure, but noisy at WARN level.
