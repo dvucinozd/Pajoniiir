@@ -155,3 +155,7 @@ Image 7: clean HEAD `9f362cf3781ae19bc735ea2b32cdb6b599f2457b`, app SHA-256 `b6b
 - D7: PASS. `run_p4_uac_transition_stress.ps1 -Deck1TrackKey 2 -Deck2TrackKey 18 -Cycles 12` (default hold 300 ms): 12 of 12 cycles, 182 samples, 76.3 s, both decks playing in every sample, `underflow_frames`/`overflow_frames`/`dropped_blocks`/`pcm1`/`pcm2` unchanged between baseline and final, `uac_data_loss` false, `uac_flags` 0, 0 recovery failures. Evidence: `D-audio/d7_uac_transition_run4_cue_fix_pass.json`, `D-audio/d7_run4_uart.log`.
 - The earlier D7 FAIL (runs 1-3) is explained by the web `cue` action sending no release; fixed in commit `9f362cf3`. Not yet verified: operator listening during the run (no crackle), D8 over a longer window.
 - JC4880 and M3 were compiled with the earlier shared changes but not with this CUE commit; rebuild them before merge.
+
+## D2 (image 7)
+
+D2: PARTIAL. Operator, two decks playing, headphones on the DDJ-400: PFL on deck 1 puts deck 1 in the headphones, the headphone level control is followed, no drift between master and cue. UART `D-audio/d2_cue_uart.log`: 0 lines (no fault). Not itemised: PFL on deck 2 alone and on both decks; exact channel pair (ch 3/4) is inferred from the UAC 4-channel stream, not measured.
