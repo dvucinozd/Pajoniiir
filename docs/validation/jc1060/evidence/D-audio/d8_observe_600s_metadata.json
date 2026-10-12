@@ -1,0 +1,30 @@
+{
+  "started_at": "2026-10-12T11:03:56.0129857+00:00",
+  "base_url": "http://192.168.100.83",
+  "mode": "Observe",
+  "duration_seconds": 600,
+  "poll_interval_ms": 250,
+  "library_every": 40,
+  "firmware_every": 120,
+  "expected_library_tracks": 22,
+  "initial_version": "M2.5-221-ge8cea37e-dirty",
+  "identity": {
+    "board_id": "jc1060",
+    "project": "main-deck-jc1060",
+    "source_sha": "4e3aa2b41ebcebdedb7ab9e25715553a6bff9416",
+    "source_dirty": false,
+    "image_elf_sha256": "08e56f320fd473fc1046950ba54922ac8a0724e17ede15255372c884511c736e"
+  },
+  "initial_slot": "factory",
+  "initial_ota_state": "idle",
+  "initial_library_tracks": 22,
+  "baseline": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 1838264,
+    "service_log_dropped": 0
+  }
+}

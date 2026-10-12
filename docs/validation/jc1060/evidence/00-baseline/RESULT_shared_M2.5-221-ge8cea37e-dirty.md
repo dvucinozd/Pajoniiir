@@ -241,3 +241,10 @@ Image 10: HEAD `4e3aa2b41ebcebdedb7ab9e25715553a6bff9416`, source_dirty false, a
 - Reset, no track loaded: `pcm_underrun1` 0, `pcm_underrun2` 0, `output_late_count` 0 (uptime 17 s). After loading one track on deck 1 (paused, "Turn Down The Lights"): `pcm_underrun1` 0, `pcm_underrun2` 0 at 53 s and 61 s.
 - On image 9 (MIDI IN pacing + scrub seek coalescing), the same sequence gave `pcm_underrun1` 384 right after the load. So the 384 underruns were introduced by the pacing and/or coalescing changes (not separated: image 8 had pacing only, its counter was not read). This is a reason beyond "no benefit" for having reverted them.
 - Not repeated on image 10: the jog/scratch gestures (done on image 9 without effect on the counter).
+
+## D8 underrun counters over 10 minutes, two decks playing (image 10)
+
+Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Turn Down The Lights", "Sado Miso"), crossfader centre. `monitor_p4_reliability.ps1 -ExpectedBoard jc1060 -Mode Observe -DurationSeconds 600 -ExpectedLibraryTracks 22` with expected source and ELF SHA: result pass, 600.0 s, 2397 status samples, 0 HTTP errors, max latency 115 ms (status), 22 tracks, 0 hard failures, 0 investigation triggers. Counter deltas over the run: output_late 0, pcm1 0, pcm2 0, uac_dropped 0, uac_overflow 0, uac_underflow 0 (constant 1838264), service_log_dropped 0; `output_late_max_us` 0; allocation_failures 0, critical_allocation_failures 0. After the run `pcm_underrun1/2` and `output_late_count` still 0, both decks still PLAYING (uptime 829 s). Evidence: `D-audio/d8_observe_600s_result.json`, `..._metadata.json` (raw status.jsonl kept out of git, SHA-256 6c4fe03eb87f8b52eedf785eb9757fa888c98181ba60645351c8aab573fcbac8).
+
+- D8: PASS (API counters over 10 min with two decks).
+- D1: the 10-minute two-deck window is now covered by counters; the listening part (no crackle) is still the operator's report for this window: pending.
