@@ -259,3 +259,4 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - E2: PARTIAL. `idle_waits/polls/timeouts/errors` all 0, so the idle workaround never triggered on this image; no hang seen.
 - E3: PARTIAL. SD reads and USB audio ran together for 10 min in D8 with `allocation_failures` 0 and no underrun; the internal DMA heap floor is not exposed by `/api/resources`, so the "stays above recorded minimum" part is NOT RUN.
 - E4, E5, E6, E7, E9: not run yet (need operator: reboot, file replacement, other sticks).
+- E5: PARTIAL. Hot cues set on both decks, RST, same track reloaded: hot cues came back at the same positions (operator). Memory cues: cannot be written on this image; DDJ-400 SHIFT+CALL (`memory_store`/`memory_delete`, notes 0x3D/0x3E) is in `omitted_inputs` with "No current P4 semantic action". Reading memory cues already present in track metadata not checked. "Keyed by media identity" not exercised (see E6).
