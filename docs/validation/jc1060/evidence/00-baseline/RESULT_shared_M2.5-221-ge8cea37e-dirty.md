@@ -173,3 +173,13 @@ Anomaly in the UART window (`D-audio/d4_master_tempo_uart.log`, 11 lines, uptime
 - Reading of `audio_engine.c:5792-5798` (not traced on hardware): a scratch begin waits up to 60 x 1 ms for `timeline_preroll_pending`, then rejects. Jog events retried during a pending cue pre-roll could back up the 32-slot queue and drop events. Hypothesis only.
 - Relation to the tempo fader is unknown (type 1 events are jog). Needs: which deck/gesture produced it (jog touched during CUE?), and whether the drops lose real controller input.
 - D4 anomaly follow-up (operator): the jog was possibly bumped during the session, which matches type-1 (jog) events. Treated as an accidental jog touch, not a lost command. Still worth keeping: 47 dropped jog events in under 4 s with scratch rejects shows the 32-slot queue can saturate under a sustained jog; no input loss was reported.
+
+## D5 seek / loop / cue / beat jump (image 7, profile v4)
+
+Evidence: `D-audio/d5_seek_loop_uart.log` (0 lines: nothing traced at WARN). Results are operator observations.
+
+- D5: FAIL (two gestures), rest PARTIAL.
+  - Loop in/out: OK. CUE preview: OK. Beat jump forward/back: OK. Seek by touch on screen: OK.
+  - Loop 2x and 1/2 (resize): do NOT work.
+  - Seek with the jog: does not work, "stops after a few seconds" (operator wording; to clarify whether the position moves then freezes, or the jog is ignored).
+- Loop resize cause (profile data, not hardware-checked): neither the repo profile nor the fork-ref profile binds `loop_halve`/`loop_double`. The fork-ref README (`controllers/pioneer_ddj_400/README.md` there) says CUE/LOOP CALL `90/91 51` and `90/91 53` do "memory_call_prev/next, and inside an active loop: halve/double"; the shared profile lists exactly those two notes under `omitted_inputs` ("no current P4 semantic action"), together with memory_store/delete. The firmware has the events (`compile_profile.py:93-94` defines `loop_halve`=13, `loop_double`=14). So the resize buttons are unbound in this profile. Candidate fix: bind `90/91 51` to `deck{1,2}.loop_halve` and `90/91 53` to `deck{1,2}.loop_double` in `profile.json`, recompile `profile.s3bin`, copy to the SD. No firmware build needed. Not written.
