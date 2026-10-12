@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "board_ethernet.h"
 #include "dj_link_service.h"
+#include "web_server.h"
 #include "sdkconfig.h"
 void app_main(void)
 {
@@ -12,6 +13,10 @@ void app_main(void)
     esp_err_t rc = board_ethernet_start();
     if (rc != ESP_OK) ESP_LOGE("jc1060", "Ethernet unavailable: %s", esp_err_to_name(rc));
     pajoniiir_common_app_main();
+    /* No Wi-Fi AP on this board, so wifi_link never starts HTTP. Start it on the
+     * Ethernet netif only after USB, storage and audio init (USB DMA budget). */
+    rc = web_server_start();
+    if (rc != ESP_OK) ESP_LOGE("jc1060", "HTTP server unavailable: %s", esp_err_to_name(rc));
 #if CONFIG_PAJONIIIR_DJ_LINK_SERVICE
     rc = dj_link_service_init(board_ethernet_netif);
     if (rc != ESP_OK) ESP_LOGE("jc1060", "DJ Link service unavailable: %s", esp_err_to_name(rc));

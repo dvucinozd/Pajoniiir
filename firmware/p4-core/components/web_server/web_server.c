@@ -328,8 +328,10 @@ static void current_ap_ipv4(char out[16])
 {
     snprintf(out, 16, "192.168.4.1");
     esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    /* Ethernet-only boards (JC1060) have no AP netif: accept the DHCP address. */
+    if (!ap) ap = esp_netif_get_handle_from_ifkey("ETH_DEF");
     esp_netif_ip_info_t info = {0};
-    if (ap && esp_netif_get_ip_info(ap, &info) == ESP_OK) {
+    if (ap && esp_netif_get_ip_info(ap, &info) == ESP_OK && info.ip.addr != 0u) {
         (void)esp_ip4addr_ntoa(&info.ip, out, 16);
     }
 }
