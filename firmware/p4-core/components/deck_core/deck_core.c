@@ -86,6 +86,14 @@ static bool              s_deck_shift_held[DECK_CORE_DECK_COUNT];
 static bool              s_jog_touched[DECK_CORE_DECK_COUNT];
 static bool              s_jog_hold_active[DECK_CORE_DECK_COUNT];
 static bool              s_jog_scratch_active[DECK_CORE_DECK_COUNT];
+/* Scrub seeks are coalesced: every jog event used to issue a full engine seek
+ * (index lookup plus cue pre-roll), faster than the decoder completes one, so
+ * the audio and waveform stalled until release. The latest target is kept and
+ * one seek is issued per JOG_SCRUB_SEEK_INTERVAL_MS, plus a flush on release. */
+#define JOG_SCRUB_SEEK_INTERVAL_MS 40u
+static bool              s_scrub_pending[DECK_CORE_DECK_COUNT];
+static uint32_t          s_scrub_target_ms[DECK_CORE_DECK_COUNT];
+static uint32_t          s_scrub_last_seek_ms[DECK_CORE_DECK_COUNT];
 static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT][2];
 static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
@@ -2293,6 +2301,34 @@ static void vu_task(void *arg)
  * s_jog_hold_active[] flag marks "engaged while playing" in both builds so the
  * matching release action fires.
  */
+static uint32_t scrub_now_ms(void)
+{
+#if defined(DECK_CORE_PC_TEST)
+    return 0u;
+#else
+    return (uint32_t)(esp_timer_get_time() / 1000);
+#endif
+}
+
+/* Issue the pending scrub seek, if any. Deck task only. */
+static void scrub_flush(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !s_scrub_pending[deck]) return;
+    s_scrub_pending[deck] = false;
+    s_scrub_last_seek_ms[deck] = scrub_now_ms();
+    if (deck_uses_audio_engine(deck)) {
+        (void)audio_engine_deck_seek(deck, s_scrub_target_ms[deck]);
+    }
+}
+
+static bool scrub_any_pending(void)
+{
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+        if (s_scrub_pending[d]) return true;
+    }
+    return false;
+}
+
 static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
@@ -2350,6 +2386,7 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
         return; /* duplicate release: no second handoff/hold transition */
     }
     s_jog_touched[deck] = false;
+    scrub_flush(deck);
     if (s_jog_hold_active[deck]) {
         s_jog_hold_active[deck] = false;
 #if CONFIG_AUDIO_SCRATCH_ENABLED
@@ -2720,7 +2757,16 @@ static void on_jog(uint8_t deck, uint8_t control, int16_t delta)
     int32_t pos = (int32_t)state->position_ms + delta * 3;
     state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
     if (deck_uses_audio_engine(deck)) {
+#if defined(DECK_CORE_PC_TEST)
         audio_engine_deck_seek(deck, state->position_ms);
+#else
+        s_scrub_target_ms[deck] = state->position_ms;
+        s_scrub_pending[deck] = true;
+        if ((uint32_t)(scrub_now_ms() - s_scrub_last_seek_ms[deck]) >=
+            JOG_SCRUB_SEEK_INTERVAL_MS) {
+            scrub_flush(deck);
+        }
+#endif
     }
     ESP_LOGD(TAG, "deck %u jog scrub -> %lu ms", (unsigned)deck + 1,
              (unsigned long)state->position_ms);
@@ -3158,8 +3204,30 @@ static void deck_task(void *arg)
             network_last_ms=network_now;
         }
 #endif
-        if (xQueueReceive(s_queue, &ev, __atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE) ?
-            pdMS_TO_TICKS(DECK_NET_SYNC_POLL_MS) : portMAX_DELAY) != pdTRUE) continue;
+        TickType_t queue_wait = __atomic_load_n(&s_network_ops,__ATOMIC_ACQUIRE) ?
+            pdMS_TO_TICKS(DECK_NET_SYNC_POLL_MS) : portMAX_DELAY;
+        if (scrub_any_pending() &&
+            queue_wait > pdMS_TO_TICKS(JOG_SCRUB_SEEK_INTERVAL_MS)) {
+            queue_wait = pdMS_TO_TICKS(JOG_SCRUB_SEEK_INTERVAL_MS);
+        }
+        const int received = (int)xQueueReceive(s_queue, &ev, queue_wait);
+        /* Trailing scrub seek: the last target of a burst must not wait for the
+         * next event. Same transport admission as event handling, so a LOAD in
+         * progress is not raced. */
+        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+            if (!s_scrub_pending[d] ||
+                (uint32_t)(scrub_now_ms() - s_scrub_last_seek_ms[d]) <
+                    JOG_SCRUB_SEEK_INTERVAL_MS) {
+                continue;
+            }
+            uint32_t expected = 0;
+            if (__atomic_compare_exchange_n(&s_transport_owner[d], &expected, 1u,
+                                            false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                scrub_flush(d);
+                __atomic_store_n(&s_transport_owner[d], 0u, __ATOMIC_RELEASE);
+            }
+        }
+        if (received != (int)pdTRUE) continue;
 
         if (ev.type == CTRL_EV_STATE && ev.id == DECK_CORE_INTERNAL_RESET_ID) {
             const uint8_t idx = normalize_deck(ev.deck);
