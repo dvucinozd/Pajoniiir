@@ -199,3 +199,15 @@ Evidence: `D-audio/d5_seek_loop_uart.log` (0 lines: nothing traced at WARN). Res
 - Operator: SHIFT+jog while playing: OK. Plain jog while PAUSED: "moves a little, then freezes", same in both directions. Plain jog while playing is a nudge by design.
 - Precedent (fork-ref `docs/STARTUP_CHECKLIST.md` v326-v329): a jog/fader MIDI stream froze the UI because each MIDI IN completion resubmitted from the callback (~0.3 ms callback + ~0.27 ms submit, ~550/s on core 1). The fork fixed it in v329 by resubmitting from the task loop at most once per 3 ms.
 - Shared core had no pacing (`controller_usb_host.c` resubmitted in the completion callback). Port written (commit following `5056bcf5`), host tests pass. Hypothesis: same cause; the earlier `deck: queue full, drops=47` of type JOG fits an overloaded core, but the cause on this unit is not measured. Needs flash + retest (plain jog in pause); if unchanged, the seek storm (`audio_engine_deck_seek` per event, `deck_core.c:2720`) is next.
+
+## D5 jog scrub in pause, image 8 (MIDI IN pacing, HEAD b34a73b7, ELF 9adeffd0aac08de3420875006bbe4cdddc941dc48b103b172352539bf7d4a196)
+
+Image 8 verified by `/api/firmware` (source_dirty false, ELF equals the build). Operator after the pacing change: plain jog in pause, "same behaviour" (position moves then stops). So the MIDI IN pacing did not cure it; it is kept as a measured-by-the-fork improvement, not as the fix.
+
+Measured run (`D-audio/d5_jog_paused_poll.jsonl`, `/api/status` deck1 polled every ~100 ms for 45 s, operator turning the jog in pause from t = 0; `d5_jog_paused_uart.log`, 8 lines):
+- The engine position DOES follow the jog continuously: 5779 -> 15744 ms in about 4.5 s (about 400 ms per 100 ms sample), then decreasing back, 66 position changes, no HTTP error, deck stays `READY`, never playing. It does not freeze.
+- The position is repeatedly pulled back to about 9384-9444 ms (t = 9.5 s, 12.0 s, 12.8 s, 14.0 s), and holds plateaus of about 1 s.
+- UART: `audio: scratch begin D0 rejected: cue pre-roll pending`, 8 times, one per platter touch. The scratch path is therefore unavailable in pause and `on_jog()` falls into the scrub path: `position += delta*3` then `audio_engine_deck_seek()` for every jog event (`deck_core.c:2720-2724`).
+- Code reading: each user seek on an MP3 prepares an indexed seek and a cue pre-roll (`audio_engine.c:3236-3237`); `timeline_preroll_pending` stays set until the decoder publishes the history (`publish_cue_preroll`, `audio_engine.c:672-687`), which is what rejects the scratch begin. A seek per jog event likely outruns the decode task; later requests overwrite earlier ones (single `seek_requested` slot). Hypothesis, not demonstrated.
+- Where the pull-back target comes from (about 9384 ms, possibly the cue point) is unknown.
+- D5 jog scrub stays FAIL. Candidate fix, not written: coalesce scrub seeks in `deck_core` (accumulate delta, one seek every N ms with the latest target) instead of one per event.
