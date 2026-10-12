@@ -292,3 +292,9 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - Code facts: memory cues are only read from rekordbox metadata (`rekordbox_anlz.c`, `track_meta_cache.c`, UI `MEMORY: n`); `hot_cue_store` stores hot cues only; no code path writes a memory cue (controller, web, touch). The UI MEMORY button only toggles a panel.
 - Needed (firmware, not profile): persistent per-media storage like `hot_cue_store`; `deck_core` store/delete actions; declaration in `tools/controller_profile/compile_profile.py`; then map 0x3D/0x3E; show user memory cues beside rekordbox ones. Decision to take with the owner (shared P4 core, rekordbox export compatibility, ms position vs beat grid).
 - Status: left open by the operator's decision (option A), no code written.
+
+## Group F (started 2026-10-12, image 10)
+- F2: PASS. `/api/status`, `/api/resources`, `/api/library`, `/api/firmware`, `/api/ui-timing`, `/api/diagnostic-log` all 200 over Ethernet (0.003-0.015 s, diagnostic-log 0.83 s); `pajoniiir.local` resolves (200).
+- F1: PARTIAL (link up, DHCP lease 192.168.100.83, mDNS resolve; "startup with cable absent" NOT RUN).
+- F3: NOT RUN. Needs a packet capture at boot; this host cannot capture without sudo (`dumpcap` restricted to group `wireshark`), and the DJ LINK switch is a persisted setting (`app_settings_get().dj_link`, `dj_link_service.c:285`), currently ON on this unit, so the factory default is not what is running.
+- F4: PARTIAL. Operator ran Vynull (Rekordbox mode, device 17, 192.168.100.147) on the same LAN throughout the tests. Vynull log: `peer: Pajoniiir D1 (CDJ) device 3 at 192.168.100.83` and device 4 (D2), its claim sequence completed, and it follows both decks' play-state (NO TRACK, PAUSED, PLAYING) in step with the unit. Whether Link was ON during D7/D8/E9 windows is not recorded; to confirm with the operator.
