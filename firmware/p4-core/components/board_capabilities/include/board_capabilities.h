@@ -22,6 +22,8 @@ typedef struct {
     bool wifi_apsta;
     bool overview_artwork_in_title;
     uint8_t display_framebuffers;
+    /* Mass storage may sit behind a hub on storage_root (self-powered hub). */
+    bool storage_via_hub;
 } board_capabilities_t;
 
 /* Pure immutable descriptions; root roles never depend on enumeration order. */

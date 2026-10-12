@@ -20,8 +20,15 @@
 static bool shared_storage_device_route_allowed(uint8_t address)
 {
     bool matches = false;
+    /* The USB stack reports parent.dev_hdl == NULL even behind a hub, so the
+     * root of a hub child cannot be resolved. With a hub on the storage
+     * connector the root is not checked; the device must still be observed. */
+    const bool hub = board_capabilities_get()->storage_via_hub;
     const esp_err_t rc = usb_host_manager_device_matches_root(
-        address, SHARED_STORAGE_ROOT_INDEX, true, &matches);
+        address, SHARED_STORAGE_ROOT_INDEX, !hub, &matches);
+    if (hub && rc == ESP_OK) {
+        return true;
+    }
     if (rc == ESP_ERR_NOT_FOUND) {
         /* The topology client and MSC client receive the same enumeration
          * edge independently. The storage owner retries mounting, so defer

@@ -11,11 +11,11 @@
 
 static const board_capabilities_t boards[] = {
     {BOARD_JC4880, "JC4880P443C_I_W", "main-deck-p4", 800, 480, 480, 800,
-     270, 0, 1, 0, false, true, true, false, 2, false, false, false, 0, "Pajoniiir", false, false, true, false, false, 1},
+     270, 0, 1, 0, false, true, true, false, 2, false, false, false, 0, "Pajoniiir", false, false, true, false, false, 1, false},
     {BOARD_JC1060, "JC1060P470C_I_W_Y", "main-deck-jc1060", 1024, 600, 1024, 600,
-     0, 1, 0, 0, true, false, false, true, 2, false, false, false, 0, "Pajoniiir", false, false, true, false, false, 1},
+     0, 1, 0, 0, true, false, false, true, 2, false, false, false, 0, "Pajoniiir", false, false, true, false, false, 1, true},
     {BOARD_M3, "JC-ESP32P4-M3-DEV", "main-deck-m3", 800, 480, 800, 480,
-     0, M3_USB_ROLES, 0, false, true, true, false, 3, true, true, true, 48000, "Pajoniiir-M3", true, true, false, true, true, 2},
+     0, M3_USB_ROLES, 0, false, true, true, false, 3, true, true, true, 48000, "Pajoniiir-M3", true, true, false, true, true, 2, false},
 };
 const board_capabilities_t *board_capabilities_for(board_id_t id)
 {
