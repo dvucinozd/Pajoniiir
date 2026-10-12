@@ -132,3 +132,11 @@ Image 6: built from clean HEAD `4ca426d8f0d68db317446281c6d9b6a1b34ad219`, app S
 ## C7 status (2026-10-12)
 
 C7: FAIL, no fix written. Behaviour options to decide with the other developer: (A) pause the decks cleanly on controller loss and resume on PLAY after reconnect; (B) resume automatically. Current code fails closed in `audio_output_mark_sink_fault()` (`audio_engine.c:3856`, call site 4311) and only a track LOAD restarts the output task. Any fix touches shared real-time audio code: JC4880 and M3 must be rebuilt and the C7 gestures repeated (unplug in playback, replug, PLAY).
+
+## D7 UAC transition stress (image 6, clean HEAD 4ca426d8)
+
+Command: `tools/run_p4_uac_transition_stress.ps1 -BaseUri http://192.168.100.83 -ExpectedVersion M2.5-221-ge8cea37e-dirty -Deck1TrackKey 2 -Deck2TrackKey 18 -Cycles 12` (default keys 115/18 do not exist in this 22-track library). Self-test passes. Evidence: `D-audio/d7_uac_transition_run1.json`, `..._run2.json`.
+
+- D7: FAIL, reproducible. Both runs: cycle 1 clean (15 samples, both decks playing), then deck 1 not playing at `cycle_2_sample_1`; script stops: `both decks are not playing after the transition`. Run 1 at 21.9 s / 25.7 s of operations, 27.4 s total.
+- Counters over both runs unchanged: `underflow_frames` 25245486 (constant while playing, so the +5.29 M seen by the Observe monitor with idle decks was idle padding), `overflow_frames` 0, `dropped_blocks` 0, `pcm1`/`pcm2` 0, `uac_data_loss` false, `uac_flags` 0, recovery failures 0. No `output sink fault`, deck or audio warning in the UART for that boot (WARN level).
+- Cause not established. The failure is deterministic (same cycle, both runs) and not an audio-path fault by these counters; candidates not yet checked: CUE semantics of this engine/profile versus the script's assumed sequence (cycle 2 is the first with an existing cue point), loop_4 right after restart, the 300 ms hold. Needs INFO-level log or a manual replay of the same gestures.
