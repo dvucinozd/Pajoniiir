@@ -248,3 +248,7 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 
 - D8: PASS (API counters over 10 min with two decks).
 - D1: the 10-minute two-deck window is now covered by counters; the listening part (no crackle) is still the operator's report for this window: pending.
+
+## Update 2026-10-12 (D1 closed)
+- D1: PASS. Operator reports no crackle, stutter or dropout during the 10-minute two-deck D8 window (counters also flat). Not distinguished: MAIN ch1/2 vs cue ch3/4 wiring by ear beyond D2 PFL checks.
+- D10: operator did not find LOAD LOCK in the UI. Code places it on the SYSTEM page, box "DECK LOAD & SYNC" (`dj_ui.c:1440`, field `LOAD LOCK: OFF`, tappable). To re-check on the unit.
