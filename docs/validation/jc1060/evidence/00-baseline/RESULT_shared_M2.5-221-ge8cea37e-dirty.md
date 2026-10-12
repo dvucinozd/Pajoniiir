@@ -219,3 +219,9 @@ Measured run (`D-audio/d5_jog_paused_poll.jsonl`, `/api/status` deck1 polled eve
 - Operator finding: on the platter top the scratch plays but stops; on the side ring the position seeks but is silent.
 - Reading of the code (not reproduced with a test): the scratch reads the capture buffer of `AE_TIMELINE_CAPACITY_FRAMES` = 192000 frames per deck (boot log: `PCM timeline D0/D1 ... capacity=192000 frames`, about 4.35 s at 44.1 kHz); outside that window there is nothing to render. In pause, `audio_engine_deck_scratch_end()` restores the origin position (`return_paused`, `audio_engine.c:5914-5923`), which matches the return on release. A paused ring rotation takes the scrub path in `on_jog()` (seek, no audio render). Hypothesis: by design, not a defect.
 - D5 jog scrub / D6: PARTIAL/open. Test to run: scratch on the platter staying within about 4 s of track. If the sound holds, record the 4.35 s limit as a design limit for the other developer.
+
+## D6 scratch window test (operator, image 9)
+
+- Platter scratch staying within about 4 s of track: OK, the sound holds until release (operator). Consistent with the reading of the 192000-frame (about 4.35 s) capture window; the limit itself is not measured, only that scratch inside a short window works.
+- D6: PARTIAL. Scratch works within the capture window; it stops outside it (design limit, to discuss with the other developer). Not tested: both decks, scratch while playing, UI/underrun counters during scratch (API and UART showed no fault lines).
+- D5 jog scrub in pause: closed as "by design" (platter = bounded scratch, ring = silent seek in pause), not a defect, pending the other developer's view on the window size.
