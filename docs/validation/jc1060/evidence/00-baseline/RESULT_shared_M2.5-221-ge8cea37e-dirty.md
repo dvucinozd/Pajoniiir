@@ -252,3 +252,4 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 ## Update 2026-10-12 (D1 closed)
 - D1: PASS. Operator reports no crackle, stutter or dropout during the 10-minute two-deck D8 window (counters also flat). Not distinguished: MAIN ch1/2 vs cue ch3/4 wiring by ear beyond D2 PFL checks.
 - D10: operator did not find LOAD LOCK in the UI. Code places it on the SYSTEM page, box "DECK LOAD & SYNC" (`dj_ui.c:1440`, field `LOAD LOCK: OFF`, tappable). To re-check on the unit.
+- D10: BLOCKED. Operator confirms the LOAD LOCK button is absent from the UI of this image; it exists only on fork-ref. The shared-core source has the widget (`dj_ui.c:1440`) but it is not shown on the JC1060 UI, so the toggle cannot be reached by touch. Work item: LOAD LOCK missing from the JC1060 UI (or a different UI is built for this board; to check). Web/controller/peer refusal paths not exercised.
