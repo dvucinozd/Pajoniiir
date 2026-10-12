@@ -2572,6 +2572,12 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .seq   = 0
         };
         queue_rc = deck_core_queue_remote_event(&ev);
+        /* A remote CUE is a tap: deck_core ignores further presses while
+         * cue_held is set, so without the release only the first CUE works. */
+        if (queue_rc == ESP_OK) {
+            ev.value = 0;
+            queue_rc = deck_core_queue_remote_event(&ev);
+        }
     } else if (strcmp(action, "pfl") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
