@@ -1,0 +1,11 @@
+W (661506) deck: queue full, drops=1 last_type=1
+W (661534) audio: scratch begin D0 rejected: cue pre-roll pending
+W (661906) audio: scratch begin D0 rejected: cue pre-roll pending
+W (662609) deck: queue full, drops=16 last_type=1
+W (662637) audio: scratch begin D0 rejected: cue pre-roll pending
+W (663071) audio: scratch begin D0 rejected: cue pre-roll pending
+W (663951) deck: queue full, drops=47 last_type=1
+W (663980) audio: scratch begin D0 rejected: cue pre-roll pending
+W (664413) audio: scratch begin D0 rejected: cue pre-roll pending
+W (664855) audio: scratch begin D0 rejected: cue pre-roll pending
+W (665303) audio: scratch begin D0 rejected: cue pre-roll pending

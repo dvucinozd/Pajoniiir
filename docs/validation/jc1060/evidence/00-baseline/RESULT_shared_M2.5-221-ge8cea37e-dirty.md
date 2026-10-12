@@ -163,3 +163,12 @@ D2: PARTIAL. Operator, two decks playing, headphones on the DDJ-400: PFL on deck
 ## D3 (waived scope)
 
 D3: NOT RUN for WAV 16/24/32/float, FLAC, AIFF and sample rates other than 44.1 kHz: the operator's library holds only MP3 at 44.1 kHz (22 tracks), so those formats cannot be exercised on this unit. MP3 44.1 kHz plays (D1, D2, D7). MP3 CBR versus VBR and duration/pitch accuracy are not separately verified. Waived by the operator for this session, not converted to PASS.
+
+## D4 Master Tempo (image 7)
+
+D4: PARTIAL. Operator: Master Tempo on one deck, then both decks together; pitch stays stable and no artefacts at +/-10 % and +/-16 %. No `pcm_underrun1/2` (0), `output_late_count` 0 at the end of the session (API). Not measured: pitch accuracy, only listening.
+
+Anomaly in the UART window (`D-audio/d4_master_tempo_uart.log`, 11 lines, uptime 661.5-665.3 s), not attributed to a specific gesture:
+- `deck: queue full, drops=1` -> `drops=16` -> `drops=47` (type 1 = `CTRL_EV_JOG`; `CTRL_QUEUE_LEN` is 32, `deck_core.c:26`), interleaved with `audio: scratch begin D0 rejected: cue pre-roll pending` about every 0.4-1 s.
+- Reading of `audio_engine.c:5792-5798` (not traced on hardware): a scratch begin waits up to 60 x 1 ms for `timeline_preroll_pending`, then rejects. Jog events retried during a pending cue pre-roll could back up the 32-slot queue and drop events. Hypothesis only.
+- Relation to the tempo fader is unknown (type 1 events are jog). Needs: which deck/gesture produced it (jog touched during CUE?), and whether the drops lose real controller input.
