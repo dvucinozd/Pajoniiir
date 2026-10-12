@@ -158,4 +158,8 @@ Image 7: clean HEAD `9f362cf3781ae19bc735ea2b32cdb6b599f2457b`, app SHA-256 `b6b
 
 ## D2 (image 7)
 
-D2: PARTIAL. Operator, two decks playing, headphones on the DDJ-400: PFL on deck 1 puts deck 1 in the headphones, the headphone level control is followed, no drift between master and cue. UART `D-audio/d2_cue_uart.log`: 0 lines (no fault). Not itemised: PFL on deck 2 alone and on both decks; exact channel pair (ch 3/4) is inferred from the UAC 4-channel stream, not measured.
+D2: PARTIAL. Operator, two decks playing, headphones on the DDJ-400: PFL on deck 1 puts deck 1 in the headphones, the headphone level control is followed, no drift between master and cue. UART `D-audio/d2_cue_uart.log`: 0 lines (no fault). Follow-up (operator): PFL on deck 2 alone OK, PFL on both decks OK. Exact channel pair (ch 3/4) is inferred from the UAC 4-channel stream, not measured.
+
+## D3 (waived scope)
+
+D3: NOT RUN for WAV 16/24/32/float, FLAC, AIFF and sample rates other than 44.1 kHz: the operator's library holds only MP3 at 44.1 kHz (22 tracks), so those formats cannot be exercised on this unit. MP3 44.1 kHz plays (D1, D2, D7). MP3 CBR versus VBR and duration/pitch accuracy are not separately verified. Waived by the operator for this session, not converted to PASS.
