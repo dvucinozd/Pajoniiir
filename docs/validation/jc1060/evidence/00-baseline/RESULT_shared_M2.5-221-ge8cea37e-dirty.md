@@ -147,3 +147,11 @@ Command: `tools/run_p4_uac_transition_stress.ps1 -BaseUri http://192.168.100.83 
 - Cause: the web control action `cue` (`web_server.c:2566`) queues a single `CTRL_EV_BUTTON` press (`value = 1`) and never a release. `handle_cue_button()` (`deck_core.c:2033`) sets `cue_held = true` on press and ignores any further press (`if (state->cue_held) return;`) until a release (`value = 0`) arrives. Cycle 1: the press pauses and seeks to the cue point, PLAY restarts. Cycle 2: the press is ignored, so `play_pause` pauses the still-playing deck, which is the observed "deck 1 not playing". No hardware or audio-path fault (UAC/PCM counters constant).
 - So D7 as scripted is a FAIL caused by a web API defect (CUE has no release, remote CUE works once per deck until a physical or UI release) in shared code, not by the JC1060 audio path. The UAC-transition criterion itself (no data loss over the transitions) is not yet exercised beyond cycle 1. The page `app.js`/`index.html` contains no CUE action (grep), so only API clients are affected.
 - Candidate fix (not written): make the web `cue` action a tap, i.e. queue press then release. Affects all boards; needs JC4880/M3 builds and a rerun of D7.
+
+## Image 7 (CUE fix) and D7 rerun
+
+Image 7: clean HEAD `9f362cf3781ae19bc735ea2b32cdb6b599f2457b`, app SHA-256 `b6bddf9625b2b46a340c5cbed30614dd4529ed6a64a1ddc7a5b4ce40239136e8`, ELF `adc4961d721d95c90992cd8093f4af2b76c11457404dc936912998dddefcfba8`, wired flash at 0x20000 (hash verified). `/api/firmware`: source_dirty false, ELF SHA equals the build.
+
+- D7: PASS. `run_p4_uac_transition_stress.ps1 -Deck1TrackKey 2 -Deck2TrackKey 18 -Cycles 12` (default hold 300 ms): 12 of 12 cycles, 182 samples, 76.3 s, both decks playing in every sample, `underflow_frames`/`overflow_frames`/`dropped_blocks`/`pcm1`/`pcm2` unchanged between baseline and final, `uac_data_loss` false, `uac_flags` 0, 0 recovery failures. Evidence: `D-audio/d7_uac_transition_run4_cue_fix_pass.json`, `D-audio/d7_run4_uart.log`.
+- The earlier D7 FAIL (runs 1-3) is explained by the web `cue` action sending no release; fixed in commit `9f362cf3`. Not yet verified: operator listening during the run (no crackle), D8 over a longer window.
+- JC4880 and M3 were compiled with the earlier shared changes but not with this CUE commit; rebuild them before merge.
