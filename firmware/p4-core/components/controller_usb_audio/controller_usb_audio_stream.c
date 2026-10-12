@@ -212,16 +212,27 @@ static bool select_stream_format(const uint8_t *descriptor,
                                  flx4_uac_playback_format_t *out)
 {
     if (s_high_speed) {
-        if (s_qualified_flx4 || !controller_uac2_parse(descriptor, descriptor_length, out))
+        if (s_qualified_flx4)
             return false;
-        __atomic_store_n(&s_target_rate, 48000u, __ATOMIC_RELEASE);
-        __atomic_store_n(&s_sample_bits, out->bits_per_sample, __ATOMIC_RELEASE);
-        return true;
+        if (controller_uac2_parse(descriptor, descriptor_length, out)) {
+            __atomic_store_n(&s_target_rate, 48000u, __ATOMIC_RELEASE);
+            __atomic_store_n(&s_sample_bits, out->bits_per_sample, __ATOMIC_RELEASE);
+            return true;
+        }
+        /* Not UAC2: a high-speed UAC1 device (DDJ-400: 4ch, 44.1 kHz,
+         * synchronous OUT, bInterval 4 = 1 ms) takes the 1 ms packet path. */
     }
     flx4_uac_descriptor_result_t parsed;
     if (!flx4_uac_parse_playback_formats(descriptor, descriptor_length,
                                          &parsed)) {
         return false;
+    }
+    if (s_high_speed) {
+        /* High-speed bInterval 4 = 2^(4-1) microframes = 1 ms, the same
+         * cadence as full-speed bInterval 1 that the format checks require. */
+        for (uint8_t i = 0; i < parsed.format_count; ++i) {
+            if (parsed.formats[i].interval == 4u) parsed.formats[i].interval = 1u;
+        }
     }
     const uint32_t rates[] = {44100u, 48000u};
     for (unsigned rate = 0; rate < (s_qualified_flx4 ? 1u : 2u); ++rate) {
