@@ -1,0 +1,103 @@
+{
+  "result": "pass",
+  "exit_code": 0,
+  "started_at": "2026-10-12T09:25:58.1545872+00:00",
+  "finished_at": "2026-10-12T09:27:59.7255405+00:00",
+  "requested_duration_seconds": 120,
+  "elapsed_seconds": 120.111,
+  "mode": "Observe",
+  "status_samples": 480,
+  "http_errors": {
+    "status": 0,
+    "library": 0,
+    "firmware": 0
+  },
+  "latency_max_ms": {
+    "status": 8.08,
+    "library": 44.293,
+    "firmware": 43.526
+  },
+  "firmware": {
+    "version": "M2.5-221-ge8cea37e-dirty",
+    "slot": "factory",
+    "ota_state": "idle"
+  },
+  "identity": {
+    "board_id": "jc1060",
+    "project": "main-deck-jc1060",
+    "source_sha": "4ca426d8f0d68db317446281c6d9b6a1b34ad219",
+    "source_dirty": false,
+    "image_elf_sha256": "b73c4e95b9c8c7e27bd6cdec31c1ab298a7b8746972ab68afe0aed63970a3f53"
+  },
+  "physical_operator_acceptance": "NOT RUN",
+  "resources": {
+    "lvgl_heap_bytes": 65124,
+    "allocation_failures": 0,
+    "critical_allocation_failures": 0,
+    "last_failed_bytes": 0,
+    "last_failed_caps": 0,
+    "startup_phase": "ready",
+    "last_failed_phase": "none",
+    "stack_min_bytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      19032,
+      6432,
+      13660,
+      1852
+    ],
+    "stack_sample_ms": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      156507,
+      156451,
+      156846,
+      156901
+    ]
+  },
+  "library_tracks": 22,
+  "recovery_seconds": {
+    "controller_ready": 0.0406404,
+    "library_ready": 0.0
+  },
+  "timing_workload": {
+    "samples": 0,
+    "violations": 0
+  },
+  "baseline": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 1378918,
+    "service_log_dropped": 0
+  },
+  "final": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 6668096,
+    "service_log_dropped": 0
+  },
+  "delta": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 5289178,
+    "service_log_dropped": 0
+  },
+  "output_late_max_us": 0,
+  "hard_failures": [],
+  "investigation_triggers": []
+}
