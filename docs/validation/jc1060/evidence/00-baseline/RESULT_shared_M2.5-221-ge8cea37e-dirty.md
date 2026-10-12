@@ -211,3 +211,11 @@ Measured run (`D-audio/d5_jog_paused_poll.jsonl`, `/api/status` deck1 polled eve
 - Code reading: each user seek on an MP3 prepares an indexed seek and a cue pre-roll (`audio_engine.c:3236-3237`); `timeline_preroll_pending` stays set until the decoder publishes the history (`publish_cue_preroll`, `audio_engine.c:672-687`), which is what rejects the scratch begin. A seek per jog event likely outruns the decode task; later requests overwrite earlier ones (single `seek_requested` slot). Hypothesis, not demonstrated.
 - Where the pull-back target comes from (about 9384 ms, possibly the cue point) is unknown.
 - D5 jog scrub stays FAIL. Candidate fix, not written: coalesce scrub seeks in `deck_core` (accumulate delta, one seek every N ms with the latest target) instead of one per event.
+
+## D5/D6 jog: reverted attempts and reading of the scratch limit (image 9)
+
+- The MIDI IN pacing (`126c275e`) and the scrub seek coalescing (`6be2adca`) had no effect on the symptom on the unit (operator, image 8 and image 9, same behaviour). Both reverted (`3e33a70f`, `d74262c4`, `git revert`, history kept). `firmware/` equals the tree of `9f362cf3` again; the DDJ-400 profile fix (loop halve/double) is kept.
+- The board still runs image 9 (coalescing build, ELF `4977cf88cf424956679e409d2f374d066869cc443032934753aae380630a6424`) until it is rebuilt and reflashed from the reverted tree.
+- Operator finding: on the platter top the scratch plays but stops; on the side ring the position seeks but is silent.
+- Reading of the code (not reproduced with a test): the scratch reads the capture buffer of `AE_TIMELINE_CAPACITY_FRAMES` = 192000 frames per deck (boot log: `PCM timeline D0/D1 ... capacity=192000 frames`, about 4.35 s at 44.1 kHz); outside that window there is nothing to render. In pause, `audio_engine_deck_scratch_end()` restores the origin position (`return_paused`, `audio_engine.c:5914-5923`), which matches the return on release. A paused ring rotation takes the scrub path in `on_jog()` (seek, no audio render). Hypothesis: by design, not a defect.
+- D5 jog scrub / D6: PARTIAL/open. Test to run: scratch on the platter staying within about 4 s of track. If the sound holds, record the 4.35 s limit as a design limit for the other developer.
