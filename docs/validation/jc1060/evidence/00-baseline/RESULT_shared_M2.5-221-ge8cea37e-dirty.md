@@ -193,3 +193,9 @@ Evidence: `D-audio/d5_seek_loop_uart.log` (0 lines: nothing traced at WARN). Res
 
 - Loop 2x and 1/2: OK (operator). Loop resize no longer a FAIL; D5 loop part PARTIAL (operator only, no trace).
 - Jog seek with the track PLAYING: by design `on_jog()` treats a plain jog during playback as a tempo nudge (`audio_engine_deck_jog_nudge`, `deck_core.c:2704-2715`), not a seek; the position only moves a little, then returns to normal. That matches "moves a little, then freezes" (operator). Seeking while playing is SHIFT+jog (`on_jog_search`, 1 s per step) or touching the platter (scratch). Not a confirmed defect. To run: SHIFT+jog while playing, and plain jog while paused (scrub, `position + delta*3`).
+
+## D5 jog: plain jog in pause freezes (image 7), fork-ref precedent
+
+- Operator: SHIFT+jog while playing: OK. Plain jog while PAUSED: "moves a little, then freezes", same in both directions. Plain jog while playing is a nudge by design.
+- Precedent (fork-ref `docs/STARTUP_CHECKLIST.md` v326-v329): a jog/fader MIDI stream froze the UI because each MIDI IN completion resubmitted from the callback (~0.3 ms callback + ~0.27 ms submit, ~550/s on core 1). The fork fixed it in v329 by resubmitting from the task loop at most once per 3 ms.
+- Shared core had no pacing (`controller_usb_host.c` resubmitted in the completion callback). Port written (commit following `5056bcf5`), host tests pass. Hypothesis: same cause; the earlier `deck: queue full, drops=47` of type JOG fits an overloaded core, but the cause on this unit is not measured. Needs flash + retest (plain jog in pause); if unchanged, the seek storm (`audio_engine_deck_seek` per event, `deck_core.c:2720`) is next.
