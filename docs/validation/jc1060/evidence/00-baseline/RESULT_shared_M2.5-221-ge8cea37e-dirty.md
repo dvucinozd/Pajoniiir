@@ -272,3 +272,4 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 ### E9 30 min playback (cold boot 35, SD mounted)
 - PASS for this part. Monitor Observe 1800 s (12:04-12:34), 7183 status samples, 0 HTTP errors, `output_late`/`pcm1`/`pcm2`/`uac_dropped`/`uac_overflow`/`uac_underflow`/`service_log_dropped` deltas all 0, allocation_failures 0, no hard failure. Two decks playing at the end. SD after 2347 s uptime: reads 1702, writes 95, transfer_errors 0, gate_timeouts 0. No `sd_host`/`sdmmc` or Hosted line in the UART after boot 35. Evidence: `E-storage/e9_observe_1800s_result.json`. Listening not reported for this window.
 - E9 overall: FAIL on the "SD mounts across 10 reboots" part (warm RST, see above); PASS on 30 min playback after a cold boot. This also counts as a 30 min soak toward H1 for the counters (no operator listening yet).
+- E9 30 min listening: operator reports no crackle and no dropout during the window.
