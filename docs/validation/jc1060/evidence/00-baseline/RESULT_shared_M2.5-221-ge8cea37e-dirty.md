@@ -268,3 +268,7 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - Observed pattern: strict alternation on 11 consecutive quick RSTs (boots 24-34 of the UART journal); isolated failures earlier (boots 1, 11, 19, 22). Failed boots keep running on the USB media path.
 - Open questions: (1) does the card keep power across a warm RST (SD VDD/IO supply rail, UHS-I 1.8 V signalling state not reset)? (2) does ESP-Hosted/C6 init run concurrently on the SDMMC controller (slot 1) or shared GPIOs? (3) why does `sd_host_del_sdmmc_controller` report the slot still registered, so the retry never starts clean?
 - Not tested: waiting longer between RST and mount, slower SD clock, a power-cycled SD VDD in the BSP before mount. Wi-Fi was never started.
+
+### E9 30 min playback (cold boot 35, SD mounted)
+- PASS for this part. Monitor Observe 1800 s (12:04-12:34), 7183 status samples, 0 HTTP errors, `output_late`/`pcm1`/`pcm2`/`uac_dropped`/`uac_overflow`/`uac_underflow`/`service_log_dropped` deltas all 0, allocation_failures 0, no hard failure. Two decks playing at the end. SD after 2347 s uptime: reads 1702, writes 95, transfer_errors 0, gate_timeouts 0. No `sd_host`/`sdmmc` or Hosted line in the UART after boot 35. Evidence: `E-storage/e9_observe_1800s_result.json`. Listening not reported for this window.
+- E9 overall: FAIL on the "SD mounts across 10 reboots" part (warm RST, see above); PASS on 30 min playback after a cold boot. This also counts as a 30 min soak toward H1 for the counters (no operator listening yet).
