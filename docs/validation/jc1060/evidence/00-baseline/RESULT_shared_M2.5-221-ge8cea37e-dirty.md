@@ -253,3 +253,9 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - D1: PASS. Operator reports no crackle, stutter or dropout during the 10-minute two-deck D8 window (counters also flat). Not distinguished: MAIN ch1/2 vs cue ch3/4 wiring by ear beyond D2 PFL checks.
 - D10: operator did not find LOAD LOCK in the UI. Code places it on the SYSTEM page, box "DECK LOAD & SYNC" (`dj_ui.c:1440`, field `LOAD LOCK: OFF`, tappable). To re-check on the unit.
 - D10: BLOCKED. Operator confirms the LOAD LOCK button is absent from the UI of this image; it exists only on fork-ref. The shared-core source has the widget (`dj_ui.c:1440`) but it is not shown on the JC1060 UI, so the toggle cannot be reached by touch. Work item: LOAD LOCK missing from the JC1060 UI (or a different UI is built for this board; to check). Web/controller/peer refusal paths not exercised.
+
+## Group E (started 2026-10-12, image 10, uptime ~4.7 h)
+- E1: PARTIAL. SD mounted, 22-track library served from it and played in D1/D8. `sd_metrics` after ~4.7 h: reads 1689, writes 54, transfer_errors 0, read_max 46.5 ms, write_max 211.7 ms, gate_timeouts 0. Read throughput not measured separately.
+- E2: PARTIAL. `idle_waits/polls/timeouts/errors` all 0, so the idle workaround never triggered on this image; no hang seen.
+- E3: PARTIAL. SD reads and USB audio ran together for 10 min in D8 with `allocation_failures` 0 and no underrun; the internal DMA heap floor is not exposed by `/api/resources`, so the "stays above recorded minimum" part is NOT RUN.
+- E4, E5, E6, E7, E9: not run yet (need operator: reboot, file replacement, other sticks).
