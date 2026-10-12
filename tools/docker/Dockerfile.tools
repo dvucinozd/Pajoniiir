@@ -1,0 +1,20 @@
+# Host-test and tooling image: the ESP-IDF 6.0.2 image used by CI plus PowerShell 7.
+# Build:  tools/docker/run-in-tools.sh --build
+FROM espressif/idf:v6.0.2
+
+# Node is required by tests/run_p4_host_tests.ps1 (web UI script checks).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG PWSH_VERSION=7.6.6
+ARG PWSH_SHA256=ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc
+
+RUN curl -fsSL -o /tmp/pwsh.tar.gz \
+      "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VERSION}/powershell-${PWSH_VERSION}-linux-x64.tar.gz" \
+ && echo "${PWSH_SHA256}  /tmp/pwsh.tar.gz" | sha256sum -c - \
+ && mkdir -p /opt/microsoft/powershell/7 \
+ && tar -xzf /tmp/pwsh.tar.gz -C /opt/microsoft/powershell/7 \
+ && chmod +x /opt/microsoft/powershell/7/pwsh \
+ && ln -s /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh \
+ && rm /tmp/pwsh.tar.gz

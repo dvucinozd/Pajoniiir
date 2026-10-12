@@ -8,7 +8,10 @@ if ($Variant -eq 'psram' -and $Project -ne 'main-deck-jc1060') {
     throw 'JC4880 USB DMA stays internal; PSRAM experiment is JC1060 only'
 }
 # Build only. Never inspect serial devices, flash, or send OTA.
-. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
+if ($env:OS -eq 'Windows_NT') {
+    . C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
+}
+# On Linux, source ESP-IDF v6.0.2 export.sh before starting pwsh (idf.py on PATH).
 $version = & idf.py --version
 if ($LASTEXITCODE -ne 0 -or "$version" -notmatch 'ESP-IDF v6\.0\.2') { throw 'ESP-IDF 6.0.2 required' }
 $projectPath = Join-Path $repo "firmware/$Project"
