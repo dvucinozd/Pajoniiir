@@ -114,3 +114,8 @@ Image 5: app SHA-256 `266923fc8417a623fb812acea930aec15e8cc8c2821562fb38c1d41202
 - `/api/status` `uac_format`: 44100 Hz, 16 bit, high_speed true, streaming true, faulted false (DDJ-400 UAC1 path); `main_sink` usb; `sd_metrics` transfer_errors 0.
 - Not covered: heap minima over time, O5 tool runs, O6/O7.
 - 0.3: PARTIAL. `/api/status` reports `board_id` jc1060, `project` main-deck-jc1060, `source_sha` e8cea37e (= HEAD) with `source_dirty: true`. It does NOT report the running ELF SHA-256 (`app_elf_sha256_prefix` belongs to `crash_dump` and is empty). The ELF SHA-256 `0784ba17...` equals the one in the flashed .bin app descriptor (checked on the file, not read back from the unit). Work item: expose the running image's ELF SHA in `/api/status`.
+
+## Correction (0.3) and O5 first run
+
+- Correction: the running image's ELF SHA-256 IS exposed, by `GET /api/firmware` (`image_elf_sha256`), not by `/api/status`. Value `0784ba17c769507842f2fd5743dd9961c39e6262242e23fb71848e5308c95f99` equals the ELF of the build flashed as image 5 (`O-observability/` capture below). 0.3 identity (board, project, source SHA, ELF SHA-256) therefore matches the build; `source_dirty` was true for that image.
+- O5: container-to-board routing works on the default Docker bridge (no `--network host`), `monitor_p4_reliability.ps1 -ExpectedBoard jc1060 -BaseUrl http://192.168.100.83` reaches the board. First run FAILED by design on identity: `Wrong board, dirty or invalid image identity` because image 5 was built from a dirty tree (the script requires `source_dirty = false`). Needs a rebuild from a clean tree. The build flags dirty via `git status --porcelain`, which also counts untracked files.
