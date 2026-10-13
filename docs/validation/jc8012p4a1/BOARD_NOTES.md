@@ -32,12 +32,35 @@ https://github.com/sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ESP32-C6 (last push 202
 - `usb_extend_screen`, `esp_video` and camera components exist in the package, so USB device and MIPI camera are probably wired; USB host layout is still unknown.
 - The package contains a `8-Burn operation` flash tool, useful for a vendor-image backup before the first flash.
 
-## What EspControl does NOT tell us (needed for this project)
+## Schematic findings (vendor schematic PNGs, `5-Schematic/` of the same mirror, read 2026-10-13)
 
-- USB host layout: which connector is root 0 / root 1, whether the board has two USB-A host ports, a hub or a single port. The DDJ-400 needs the controller, a stick, and USB audio output.
-- Ethernet: presence, PHY and RMII pins (JC1060 has Ethernet on GPIO50-52 area).
-- Audio: any codec or DAC (PCM5102A / ES8311) and its pins.
-- microSD slot wiring (SDMMC slot, pins), and whether it shares the SDMMC host with the C6 as on JC1060 (see E9 in the JC1060 result file).
+Sheets read: `1_PWR`, `3_ESP32-P4`, `4_CONN`, `6_USB`, `7_CODEC`. This supersedes the "unverified" remarks above for SD and audio. The schematic is of the first revision (JC8012P4A1C-I-W-Y1); check that V2 did not change it.
+
+**USB: three Type-C connectors.**
+- `USB2` "Full Speed USB": P4 FS PHY on **GPIO24 / GPIO25** (`USB1P1_N` / `USB1P1_P`), with ESD diodes.
+- `USB3` "High speed USB": the P4 HS PHY pins **DM / DP** (`ESP_USB_N` / `ESP_USB_P`).
+- `USB1` "USB-TTL": a **CH340C** bridge to **UART0** (GPIO37 TX / GPIO38 RX), with RTS/DTR transistors on **BOOTMODE** and **CHIP_PU**: the serial port should be flashable with esptool auto-reset (to be confirmed; the JC1060 needed a manual BOOT + RST).
+- All three connectors have 5.1 kOhm on CC and their **VBUS tied to `USB5V_IN`**, which is the board's 5 V input (it feeds the IP5306 charger / battery boost and then the 3.3 V buck). No VBUS source switch or overcurrent limiter appears on these sheets: the board does not power a downstream device. Expect the same wiring as on the JC1060: DDJ-400 and the stick on a **self-powered hub** (or a powered USB-C OTG adapter), the hub also feeding the board. Do not back-feed from two supplies at once.
+- Mapping to the project's two USB roots to be checked on the unit: the HS port suits the DDJ-400 (high-speed UAC1/MIDI, like the JC1060 root 0), the FS port suits the stick but is limited to 12 Mbit/s (library reads and Link downloads will be slower than on the JC1060).
+
+**No Ethernet** (confirmed by the operator and by the schematic: no PHY, no RMII). Network is Wi-Fi through the C6 only, or nothing. The project's web UI, Link and OTA paths all assume Ethernet on the JC1060, and the JC1060 notes say Wi-Fi enable/disable is out of scope there (panic family with the SD host); this board therefore needs its own network decision (Wi-Fi AP/STA, or no web service).
+
+**Audio codec: ES8311** (DAC/ADC), with an **NS4150** class-D speaker amplifier (mono speaker connector `CN3`) and an analog MEMS mic (MSM381A). No headphone or line output is drawn; the DAC output goes to the speaker amp only. I2S0: **MCLK GPIO13, SCLK GPIO12, LRCK GPIO10, DSDIN (P4 output) GPIO9, codec output to P4 on GPIO11** (labelled `ES7210_SDOUT`); amp enable `PA_CTRL` **GPIO20**; codec control on the I2C bus **GPIO7 / GPIO8** (shared with the RTC and the touch FPC).
+
+**microSD ("TF CARD", SDMMC slot 0):** D0-D3 **GPIO39-42**, CLK **GPIO43**, CMD **GPIO44**, 5.1 kOhm pull-ups to **`ESP_LDO_VO4`**, i.e. the card is supplied and signalled from the P4's internal LDO channel 4, not from a fixed rail. Note for E9: the JC1060 mount failure after a warm RST may be tied to that kind of on-chip LDO supply (the card keeps its state while the LDO is re-initialised); hypothesis only, to compare with the JC1060 schematic.
+
+**C6 (ESP-Hosted):** SDIO on `SD2_D0-D3`, CLK, CMD = **GPIO14-19** (SDMMC slot 1), `C6_CHIP_PU` on **GPIO54**, `C6_IO2`.
+
+**Other:** touch FPC `TOUCH_RST` GPIO22 / `TOUCH_INT` GPIO21 (matches the two other sources); backlight `LCD_PWM` GPIO23; display reset GPIO27; one **WS2812** LED on `WS2812_DAT` (GPIO26 by my reading of the P4 sheet); **RX8025T RTC** with a CR1220 cell on the shared I2C; CSI camera connector (MIPI, with its own I2C pair); expansion headers on GPIO2-5, 45-48 and 28-34; battery connector with an IP5306; UART0 header `CN2`; four test pads S1-S4.
+
+Reading caveats: the PNGs were read visually, not from the CAD data, and the GPIO number of a few labels (WS2812, `C6_IO2`) is my reading of the pin table; re-check the ones you rely on.
+
+## What is still unknown (needed for this project)
+
+- Which P4 USB root the project calls "controller" and "storage" on this layout, and whether the FS port can carry the library (speed).
+- The network plan, now that there is no Ethernet.
+- Whether V2 differs from the first-revision schematic (display init, any pin).
+- SD and C6 on separate SDMMC slots here (0 and 1), but still the same SD host driver: the E9 interaction is not ruled out.
 - Flash partition plan and PSRAM size/speed for this board.
 - Power: USB host VBUS control.
 
