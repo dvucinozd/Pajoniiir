@@ -1,0 +1,103 @@
+{
+  "result": "pass",
+  "exit_code": 0,
+  "started_at": "2026-10-13T09:53:02.5662346-04:00",
+  "finished_at": "2026-10-13T13:53:07.7550219-04:00",
+  "requested_duration_seconds": 14400,
+  "elapsed_seconds": 14400.093,
+  "mode": "Observe",
+  "status_samples": 57493,
+  "http_errors": {
+    "status": 0,
+    "library": 0,
+    "firmware": 0
+  },
+  "latency_max_ms": {
+    "status": 1501.468,
+    "library": 103.537,
+    "firmware": 72.039
+  },
+  "firmware": {
+    "version": "M2.5-221-ge8cea37e-dirty",
+    "slot": "factory",
+    "ota_state": "idle"
+  },
+  "identity": {
+    "board_id": "jc1060",
+    "project": "main-deck-jc1060",
+    "source_sha": "4e3aa2b41ebcebdedb7ab9e25715553a6bff9416",
+    "source_dirty": false,
+    "image_elf_sha256": "08e56f320fd473fc1046950ba54922ac8a0724e17ede15255372c884511c736e"
+  },
+  "physical_operator_acceptance": "NOT RUN",
+  "resources": {
+    "lvgl_heap_bytes": 65200,
+    "allocation_failures": 0,
+    "critical_allocation_failures": 0,
+    "last_failed_bytes": 0,
+    "last_failed_caps": 0,
+    "startup_phase": "ready",
+    "last_failed_phase": "none",
+    "stack_min_bytes": [
+      2816,
+      20544,
+      20540,
+      2848,
+      2868,
+      13224,
+      6576,
+      13648,
+      1860
+    ],
+    "stack_sample_ms": [
+      18897097,
+      18901068,
+      18901329,
+      18901288,
+      18901644,
+      18901019,
+      18901297,
+      18900826,
+      18901699
+    ]
+  },
+  "library_tracks": 22,
+  "recovery_seconds": {
+    "controller_ready": 0.0523342,
+    "library_ready": 0.0
+  },
+  "timing_workload": {
+    "samples": 0,
+    "violations": 0
+  },
+  "baseline": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 1315591,
+    "service_log_dropped": 0
+  },
+  "final": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 1315591,
+    "service_log_dropped": 0
+  },
+  "delta": {
+    "output_late": 0,
+    "pcm1": 0,
+    "pcm2": 0,
+    "uac_dropped": 0,
+    "uac_overflow": 0,
+    "uac_underflow": 0,
+    "service_log_dropped": 0
+  },
+  "output_late_max_us": 0,
+  "hard_failures": [],
+  "investigation_triggers": []
+}
