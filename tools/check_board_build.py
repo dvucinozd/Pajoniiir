@@ -28,8 +28,10 @@ def verify(build: Path, project: str, experimental_recorder: bool = False,
     components = set(description["build_components"])
     jc1060 = project == "main-deck-jc1060"
     m3 = project == "main-deck-m3"
-    selected_bsp = {"main-deck-p4": "bsp_jc4880", "main-deck-jc1060": "bsp_jc1060", "main-deck-m3": "bsp_p4_m3"}[project]
-    assert components & {"bsp_jc4880", "bsp_jc1060", "bsp_p4_m3"} == {selected_bsp}, "exactly one matching BSP required"
+    jc8012 = project == "main-deck-jc8012p4a1"
+    selected_bsp = {"main-deck-p4": "bsp_jc4880", "main-deck-jc1060": "bsp_jc1060", "main-deck-m3": "bsp_p4_m3",
+                    "main-deck-jc8012p4a1": "bsp_jc8012p4a1"}[project]
+    assert components & {"bsp_jc4880", "bsp_jc1060", "bsp_p4_m3", "bsp_jc8012p4a1"} == {selected_bsp}, "exactly one matching BSP required"
     assert ("board_ethernet" in components) == jc1060, "wrong Ethernet transport"
     for link_component in ("djlink", "dj_link_core", "dj_link_service"):
         assert link_component in components, "shared network component missing"
@@ -66,11 +68,15 @@ def verify(build: Path, project: str, experimental_recorder: bool = False,
     verify_usb_dma_policy(config, project, experimental_recorder, experimental_s2)
     assert ("#define CONFIG_PAJONIIIR_BOARD_JC1060 1" in config) == jc1060
     assert ("#define CONFIG_PAJONIIIR_BOARD_M3 1" in config) == m3
+    assert ("#define CONFIG_PAJONIIIR_BOARD_JC8012P4A1 1" in config) == jc8012
     assert ("#define CONFIG_AUDIO_ANTIALIAS_CACHE 1" in config) == m3, "wrong persistent FIR memory policy"
     if m3:
         assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" in config, "M3 MAIN must use PCM5102A"
         assert "#define CONFIG_BSP_ES8311_MONITOR 1" not in config, "M3 monitor codec is retired"
         assert "#define CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE 1" in config, "M3 defaults must keep Wi-Fi enabled"
+    if jc8012:
+        assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" not in config, "JC8012P4A1 has no PCM5102A"
+        assert "#define CONFIG_PAJONIIIR_DEFAULT_WIFI_REMOTE 1" in config, "JC8012P4A1 defaults must keep Wi-Fi enabled (no Ethernet)"
     if jc1060:
         assert "#define CONFIG_BSP_PCM5102A_MAIN_OUT 1" not in config, "Ethernet pin conflict"
         assert "#define CONFIG_BSP_ES8311_MONITOR 1" not in config, "USB-only sink must not use codec pacing"
@@ -97,7 +103,7 @@ def verify(build: Path, project: str, experimental_recorder: bool = False,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--build", type=Path, required=True)
-    parser.add_argument("--project", choices=["main-deck-p4", "main-deck-jc1060", "main-deck-m3"], required=True)
+    parser.add_argument("--project", choices=["main-deck-p4", "main-deck-jc1060", "main-deck-m3", "main-deck-jc8012p4a1"], required=True)
     parser.add_argument("--experimental-recorder", action="store_true")
     parser.add_argument("--experimental-link", action="store_true")
     parser.add_argument("--experimental-s2", action="store_true")
