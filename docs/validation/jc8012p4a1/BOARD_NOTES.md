@@ -99,3 +99,19 @@ Findings while scaffolding:
 3. Bring up display and touch only, then storage, then USB host and audio, then Ethernet if present.
 4. Test with the same plan as JC1060 (`docs/validation/jc1060/HARDWARE_TEST_PLAN.md`), keeping the JC1060 defects in mind (SD warm-RST failure, playlist open, loop clamp).
 5. Nothing is built or flashed without an explicit GO.
+
+## UI at 1280 x 800 in the PC simulator (2026-10-13)
+
+`tests/ui_simulator/CMakeLists.txt` has a new target `ui_product_jc8012_e2e` (1280 x 800, board policy JC8012P4A1). Built on this Linux host with `cmake` + `ninja` against the LVGL 9.5.0 checkout in `firmware/main-deck-jc1060/managed_components/lvgl__lvgl` (not the pinned commit the `run_ui_simulator_e2e.ps1` gate downloads, so this is a visual check, not the gate; no baseline manifest was added). The scenario passes and writes 21 captures; four are kept in `evidence/ui-preview-1280x800/`.
+
+What the unchanged UI does at 1280 x 800:
+
+| Page | Result |
+| --- | --- |
+| Overview | Fills the screen. Waveforms, deck headers, FX column and the bottom info strip stretch to the width; nothing cut off. |
+| Hot cues | Fills the screen; the eight pads scale. |
+| Library | **Not adapted.** Fixed 8-row viewport (`UI_LIBRARY_PAGE_ROWS` / `DJ_LIB_ROWS` = 8, 330 px), buttons at the top: the lower ~45 % of the screen is empty. |
+| Settings | **Not adapted.** Panels are top-aligned at the 1024 x 600 positions; the lower ~40 % is empty. |
+| Screensaver, network pages | Captured, not reviewed yet. |
+
+Changing the library row count touches shared arrays and paging used by the other boards (`UI_LIBRARY_PAGE_ROWS`, `DJ_LIB_ROWS`, `s_page_track_keys`, the table cell model and the page keys), so it is a design decision, not a one-line fix: options are (a) accept the empty space for the first bring-up, (b) scale the viewport and row count at build time for tall panels only, (c) a dedicated 1280 x 800 layout. Not started; the baselines of the existing boards must stay unchanged.

@@ -175,6 +175,16 @@ target_compile_definitions(ui_product_m3_e2e PRIVATE ${runtime_definitions}
     UI_SIM_BOARD_POLICY=1 UI_SIM_BOARD_SETTINGS=1 BOARD_CAPABILITIES_PC_TEST=1 CONFIG_PAJONIIIR_BOARD_M3=1)
 target_link_libraries(ui_product_m3_e2e PRIVATE lvgl m)
 
+# JC8012P4A1 (1280x800): layout preview only, no committed baseline yet.
+add_executable(ui_product_jc8012_e2e ${runtime_sources}
+    "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/board_capabilities.c")
+target_include_directories(ui_product_jc8012_e2e PRIVATE ${runtime_includes}
+    "${REPO_ROOT}/firmware/p4-core/components/board_capabilities/include")
+target_compile_definitions(ui_product_jc8012_e2e PRIVATE ${runtime_definitions}
+    UI_SIM_BOARD_POLICY=1 BOARD_CAPABILITIES_PC_TEST=1 CONFIG_PAJONIIIR_BOARD_JC8012P4A1=1
+    DISPLAY_WIDTH=1280 DISPLAY_HEIGHT=800)
+target_link_libraries(ui_product_jc8012_e2e PRIVATE lvgl m)
+
 if(MINGW)
     target_link_options(ui_simulator_e2e PRIVATE -static-libgcc -static-libstdc++)
 endif()
