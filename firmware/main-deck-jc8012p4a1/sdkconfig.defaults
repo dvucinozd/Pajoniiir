@@ -9,5 +9,14 @@ CONFIG_PAJONIIIR_BOARD_JC8012P4A1=y
 # CONFIG_ETH_USE_ESP32_EMAC is not set
 # ESP-Hosted SDIO to the ESP32-C6 on GPIO14-19 with reset GPIO54, as the common defaults
 # already set for the P4 function board (same pins per the JC8012P4A1 schematic).
-# TO CHECK on first bring-up: chip revision (common defaults require >= v1.0), PSRAM size and
+# TO CHECK on first bring-up: PSRAM size and
 # speed (the board has 32 MB), the FS/HS USB role assignment in board_capabilities.c.
+
+# Chip revision: this unit (label V3) is ESP32-P4 v3.2, read with esptool. The common defaults
+# are written for the JC1060's v1.3 and select the "< v3.0" family, which caps the supported
+# revision at v1.99 and makes the bootloader refuse this chip. Revisions <3.0 and >=3.0 are
+# mutually exclusive in ESP-IDF 6.0.2, so the selector is turned off here.
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
+# CONFIG_ESP32P4_REV_MIN_100 is not set
+CONFIG_ESP32P4_REV_MIN_300=y
+CONFIG_ESP32P4_REV_MIN_FULL=300
