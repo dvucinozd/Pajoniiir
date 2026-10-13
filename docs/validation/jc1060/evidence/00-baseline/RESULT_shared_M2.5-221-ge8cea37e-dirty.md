@@ -308,3 +308,5 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 - Playback unaffected: PASS (operator: other deck, no gap, during the downloads). `pcm_underrun1/2` and `output_late_count` read 0 on the current boot (499 s), but the counters of the boot that was reset are lost, so they were not read for the download window.
 - Not verified: atomic write / checksum of the cached file, corruption case, the cache path on SD. The UART is silent at WARN level for Link/download events, so no log supports the observations. The SD may have been unmounted at that boot (warm-RST issue, E9), not checked.
 - Work items: no download progress shown; cancel ineffective; LOAD buttons stay frozen after a failed/slow load (busy flag not released?); "Le Matos" never loaded; Link/download events invisible at WARN.
+- Power cycle at 08:15 confirmed as the operator's (after the frozen LOAD buttons); no crash (`crash_dump.present` false).
+- F7: NOT RUN. Vynull cannot act as tempo master and no CDJ is available, so follower phase, handoff and sink latency were not exercised. Local SYNC between the two decks is covered by C2/C3.
