@@ -7,11 +7,10 @@
  * and audio are in ../../jc-common/board_peripherals.c, gated by
  * CONFIG_PAJONIIIR_BOARD_JC8012P4A1.
  *
- * The panel uses the component's DEFAULT JD9365 register table and its 800x1280 60 Hz
- * DPI timing (Apache-2.0 component). The "V2"/"V3" hardware revisions is described elsewhere as
- * a "new panel" with its own init sequence; if the picture is wrong, a revision-specific table
- * passed through jd9365_vendor_config_t.init_cmds is the next step, from a source whose
- * licence allows it (the EspControl repository is PolyForm Noncommercial, do not copy it).
+ * The panel uses the panel maker's JD9365 register table (jd9365_guition_init.inc, see its
+ * header for origin and licence) with the component's 800x1280 DPI timing adjusted to the
+ * vendor demo's (60 MHz, vertical porches 8 and 20). The Espressif default table gave a black
+ * screen with the backlight on.
  */
 #include "board_adapter.h"
 #include "esp_check.h"
@@ -21,6 +20,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_jd9365.h"
 #include "driver/gpio.h"
+
+#include "jd9365_guition_init.inc"
 
 static const char *TAG = "jc8012_display";
 
@@ -62,10 +63,15 @@ esp_err_t bsp_display_init(void)
      * the other P4 boards; one framebuffer until a refresh-boundary swap is validated. */
     esp_lcd_dpi_panel_config_t dpi = JD9365_800_1280_PANEL_60HZ_DPI_CONFIG_CF(LCD_COLOR_FMT_RGB565);
     dpi.num_fbs = BSP_LCD_FRAMEBUFFER_COUNT;
+    /* Pixel clock and vertical porches as in the vendor demo's own JD9365 header (60 MHz, back 8,
+     * front 20); the Espressif defaults (80 MHz, 12, 30) are for another panel. */
+    dpi.dpi_clock_freq_mhz = 60;
+    dpi.video_timing.vsync_back_porch = 8;
+    dpi.video_timing.vsync_front_porch = 20;
 
     jd9365_vendor_config_t vendor = {
-        .init_cmds = NULL,       /* component default register table */
-        .init_cmds_size = 0,
+        .init_cmds = s_guition_init_cmds,   /* panel maker's table, see the .inc header */
+        .init_cmds_size = sizeof(s_guition_init_cmds) / sizeof(s_guition_init_cmds[0]),
         .mipi_config = {.dsi_bus = bus, .dpi_config = &dpi, .lane_num = BSP_JC8012_DSI_LANES},
     };
     esp_lcd_panel_dev_config_t panel = {
