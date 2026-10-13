@@ -327,3 +327,36 @@ Image 10 (HEAD 4e3aa2b4, ELF 08e56f32...). Both decks in loop, both playing ("Tu
 ## Group H
 - H2: counters PASS. Monitor Observe 3600 s (08:45:30-09:45:35), 14,378 status samples, 0 HTTP errors (max latency status 1118 ms), deltas of `output_late`, `pcm1`, `pcm2`, `uac_dropped`, `uac_overflow`, `uac_underflow`, `service_log_dropped` all 0, `output_late_max_us` 0, allocation_failures 0, no hard failure, no investigation trigger, no reboot, DJ LINK on with Vynull present. Both decks were playing in 97.8 % of the samples (14,069 of 14,379); the loop-doubling bug (see above) stopped them for about 2 min at the start. Evidence: `H-soak/h2_observe_3600s_result.json`. Operator listening for the hour: no crackle, stutter or dropout reported. H2 PASS.
 - H3: counters PASS. Monitor Observe 14,400 s (09:53:02-13:53:08), 57,493 status samples, 0 HTTP errors (max latency status 1501 ms, library 104 ms, firmware 72 ms), deltas of `output_late`, `pcm1`, `pcm2`, `uac_dropped`, `uac_overflow`, `uac_underflow`, `service_log_dropped` all 0, `output_late_max_us` 0, allocation_failures 0, no hard failure or investigation trigger. Both decks playing in 100 % of the samples; uptime monotonic from 4,504 s to 18,905 s (no reboot). Read at 23,958 s uptime (6 h 39 min, 15:17): `pcm_underrun1/2` and `output_late_count` 0, SD `transfer_errors` 0, `crash_dump.present` false, service log 395 lines written with 0 dropped; the UART holds only the 12 usual boot warnings for this boot, no fault line. DJ LINK on with Vynull present, DDJ-400 attached. Evidence: `H-soak/h3_observe_14400s_result.json`. Operator listening over the 4 h: no crackle, stutter or dropout reported. H3 PASS.
+- H4: PASS (operator). Final listening question put to the operator after H3; the answer was "oui" (sound acceptable over the whole campaign; no crackle, stutter or dropout reported in D1, D8, E9, H2, H3).
+
+## Final summary (2026-10-13, image 10, `4e3aa2b4`, 2,663,152 bytes, `source_dirty` false)
+
+Hardware: one Guition JC1060P470C_I_W_Y, DDJ-400 direct on controller root 0, USB stick behind a self-powered hub on storage root 1, Ethernet, Vynull as Link peer. Everything below is on that single unit.
+
+| Group | Outcome |
+| --- | --- |
+| 0 Baseline | 0.1 PASS, 0.3 PASS, 0.2 PARTIAL, 0.4 NOT RUN (no signing key) |
+| O Observability | O4, O5 PASS; O1 PARTIAL; O2, O3, O6, O7 not verified |
+| A Boot/display | A2-A5 PARTIAL (operator) |
+| B USB roles | B3 PASS after fix; B1, B2 PARTIAL; B4-B7 not done |
+| C DDJ-400 | C1-C5 PARTIAL (OK); C7 FAIL; C6, C8 not run |
+| D Audio | D1, D7, D8 PASS; D2, D4, D5, D6 PARTIAL; D3, D9 not testable (library 100 % MP3 44.1 kHz); D10 BLOCKED (no LOAD LOCK in the UI) |
+| E Storage | E7 PASS (FAT32, exFAT; GPT not run); E1-E5 PARTIAL; E9 FAIL on warm RST, PASS on 30 min playback; E6 not run; E8 skipped |
+| F Ethernet/Link | F1, F2 PASS; F4, F5, F6, F8 PARTIAL; F3, F7 NOT RUN; F9 covered by E9/H |
+| G OTA | NOT RUN (no signing key); G6 PASS |
+| H Soak | H2 PASS (60 min), H3 PASS (4 h), H4 PASS; H1 covered by E9 30 min; all counter deltas 0 |
+
+Code fixes made and pushed: `dependencies.lock` hashes (JC1060, M3, P4); USB storage behind a hub (B3); UAC1 high-speed fallback; HTTP on Ethernet; web `cue` action; DDJ-400 loop halve/double notes. Two attempts were reverted (MIDI IN pacing, scrub seek grouping).
+
+Open defects, for the shared-core owner:
+1. C7: unplugging the controller during playback stops the output (`output sink fault`); sound returns only when a track is reloaded.
+2. E9: the SD mount fails 3/3 (`ESP_ERR_TIMEOUT`, `SD_HOST ... slot registered`) on about every other warm RST; fine after a cold power cycle.
+3. Playlists do not open on touch (USB export and Link source); the parser reads the export correctly.
+4. Link: no download progress, cancel does not work, LOAD buttons freeze, a track ("Le Matos") never loaded, the library does not recover by itself after the peer returns, no artwork for remote tracks.
+5. Loop doubling (×2) is not clamped to the track length (`deck_core.c:1421-1444`).
+6. Memory cues cannot be written (no firmware action behind DDJ-400 SHIFT+CALL).
+7. LOAD LOCK missing from the JC1060 UI.
+8. Observability: no `PHASE1 STATUS` lines (B2 validator unusable), WARN log level hides UAC/MIDI/Link events, ELF SHA absent from `/api/status`, USB-storage-behind-hub accepted without a root check (JC1060 only), `recovering USB1` WARN every 30 s with no stick.
+9. Event queue of 32 slots can saturate under sustained jog; scratch window limited to about 4.35 s.
+
+Not tested: OTA (all of G, 0.4), Link tempo master (F7), GPT sticks, E6, D3/D9 (library format), JC4880 and M3 builds (compiled and checked only, not run).
