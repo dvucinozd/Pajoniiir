@@ -1,0 +1,3 @@
+dependencies:
+  idf: "==6.0.2"
+  espressif/esp_lcd_jd9365: "==2.0.2"

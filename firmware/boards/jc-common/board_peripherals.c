@@ -52,8 +52,15 @@ static const char *TAG = "bsp";
 #define BSP_I2S_BCLK_GPIO       GPIO_NUM_12
 #define BSP_I2S_WS_GPIO         GPIO_NUM_10
 #define BSP_I2S_DOUT_GPIO       GPIO_NUM_9    // ESP → codec DAC
+#if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+// JC8012P4A1 schematic (vendor 5-Schematic/7_CODEC.png): ES8311 output to the P4 is on
+// GPIO11 and the NS4150 speaker amplifier enable (PA_CTRL) is GPIO20. Unverified on hardware.
+#define BSP_I2S_DIN_GPIO        GPIO_NUM_11   // codec ADC → ESP (mic, unused for playback)
+#define BSP_AUDIO_PA_GPIO       GPIO_NUM_20   // power-amp enable
+#else
 #define BSP_I2S_DIN_GPIO        GPIO_NUM_48   // codec ADC → ESP (mic, unused for playback)
 #define BSP_AUDIO_PA_GPIO       GPIO_NUM_11   // power-amp enable
+#endif
 
 #if CONFIG_BSP_PCM5102A_MAIN_OUT && !CONFIG_BSP_ES8311_MONITOR
 #define BSP_SPEAKER_ROUTE_RETIRED 1
@@ -155,6 +162,16 @@ static esp_err_t bsp_i2c_bus_init(void)
 esp_err_t bsp_touch_init(void)
 {
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
+#if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+    // GSL3680 (I2C 0x40, reset GPIO22, interrupt GPIO21). The only driver found is
+    // guition-jc/esp_lcd_touch_gsl3680 0.1.0, which requires ESP-IDF >=6.1.0 and ships a
+    // firmware table without an upstream licence (NOTICE), so it is not vendored here.
+    // Until it is integrated the UI runs display-only: return OK with no touch handle,
+    // because app_main() wraps this call in ESP_ERROR_CHECK. See
+    // docs/validation/jc8012p4a1/BOARD_NOTES.md.
+    ESP_LOGW(TAG, "GSL3680 touch driver not integrated; UI is display-only");
+    return ESP_OK;
+#else
 
     // GT911 capacitive touch controller on the shared I2C bus (default addr 0x5D).
     esp_lcd_panel_io_handle_t tp_io = NULL;
@@ -187,6 +204,7 @@ esp_err_t bsp_touch_init(void)
     ESP_LOGI(TAG, "GT911 touch ready (I2C SDA=%d SCL=%d, 800x480 mapped)",
              BSP_I2C_SDA_GPIO, BSP_I2C_SCL_GPIO);
     return ESP_OK;
+#endif
 }
 
 esp_codec_dev_handle_t bsp_audio_get_codec_dev(void)

@@ -1,0 +1,13 @@
+# JC8012P4A1-specific overrides applied after the common P4 defaults
+# (../main-deck-p4/sdkconfig.defaults). SCAFFOLD: never built, never flashed.
+CONFIG_PAJONIIIR_BOARD_JC8012P4A1=y
+# No PCM5102A: MAIN and cue go out over the controller's USB audio, like the JC1060.
+# CONFIG_BSP_PCM5102A_MAIN_OUT is not set
+# The ES8311 codec is not used for playback (USB-only sink, paced by the UAC ring).
+# CONFIG_BSP_ES8311_MONITOR is not set
+# No Ethernet on this board.
+# CONFIG_ETH_USE_ESP32_EMAC is not set
+# ESP-Hosted SDIO to the ESP32-C6 on GPIO14-19 with reset GPIO54, as the common defaults
+# already set for the P4 function board (same pins per the JC8012P4A1 schematic).
+# TO CHECK on first bring-up: chip revision (common defaults require >= v1.0), PSRAM size and
+# speed (the board has 32 MB), the FS/HS USB role assignment in board_capabilities.c.
