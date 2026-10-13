@@ -56,6 +56,10 @@
 #elif CONFIG_PAJONIIIR_BOARD_JC1060
 #define UI_HOR_RES 1024
 #define UI_VER_RES 600
+#elif CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+/* Geometry only: the overview layout has not been checked at 1280x800. */
+#define UI_HOR_RES 1280
+#define UI_VER_RES 800
 #else
 #define UI_HOR_RES   800
 #define UI_VER_RES   480

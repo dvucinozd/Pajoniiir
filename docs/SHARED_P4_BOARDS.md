@@ -11,22 +11,22 @@ storage USB2/root1, PCM MAIN 48000 Hz and Hercules UAC1 FS 44100-Hz packed-24.
 Its exact-image final playback acceptance does not change ordinary defaults or
 qualify a newly built image. See the [current closeout](reviews/2026-10-11-shared-core-hercules-closeout.md).
 
-| Policy | JC4880 | JC1060 | M3 |
-| --- | --- | --- | --- |
-| Entrypoint/project | main-deck-p4 | main-deck-jc1060 | main-deck-m3 |
-| BSP | bsp_jc4880 | bsp_jc1060 | bsp_p4_m3 |
-| Geometry | 800 x 480 | 1024 x 600 | 800 x 480 |
-| Storage / controller root | 0 / 1 | 1 / 0 | 0 / 1 |
-| Physical controller port | board USB1 | board USB0 | USB2 FS |
-| Physical storage port | board USB0 | board USB1 | USB3 HS |
-| MAIN / cue default | PCM5102A / FLX4 | controller USB / controller USB | PCM5102A / FLX4 |
-| MAIN rate policy | existing source-rate policy | existing USB policy | fixed 48 kHz |
-| FIR cache / dense correlation | off / off | off / off | on / on |
-| Panel waveform policy | existing cadence/order | existing cadence/order | waveform first / top to bottom |
-| Wi-Fi capability/default | available, default OFF | unavailable | available, default ON, WPA2 APSTA |
-| Ethernet provider | unavailable | board Ethernet | disabled, pins reserved for I2S |
-| Link service compiled | experiment only | yes, runtime default OFF | experiment only |
-| Recorder / alternative UI | experiment only | experiment only | experiment only |
+| Policy | JC4880 | JC1060 | M3 | JC8012P4A1 (scaffold) |
+| --- | --- | --- | --- | --- |
+| Entrypoint/project | main-deck-p4 | main-deck-jc1060 | main-deck-m3 | main-deck-jc8012p4a1 |
+| BSP | bsp_jc4880 | bsp_jc1060 | bsp_p4_m3 | bsp_jc8012p4a1 |
+| Geometry | 800 x 480 | 1024 x 600 | 800 x 480 | 1280 x 800 (panel 800 x 1280), unverified |
+| Storage / controller root | 0 / 1 | 1 / 0 | 0 / 1 | 1 / 0, assumed from JC1060 |
+| Physical controller port | board USB1 | board USB0 | USB2 FS | HS USB-C (assumed) |
+| Physical storage port | board USB0 | board USB1 | USB3 HS | FS USB-C behind a hub (assumed) |
+| MAIN / cue default | PCM5102A / FLX4 | controller USB / controller USB | PCM5102A / FLX4 | controller USB / controller USB |
+| MAIN rate policy | existing source-rate policy | existing USB policy | fixed 48 kHz | existing USB policy |
+| FIR cache / dense correlation | off / off | off / off | on / on | off / off |
+| Panel waveform policy | existing cadence/order | existing cadence/order | waveform first / top to bottom | existing cadence/order |
+| Wi-Fi capability/default | available, default OFF | unavailable | available, default ON, WPA2 APSTA | available, default ON, WPA2 APSTA |
+| Ethernet provider | unavailable | board Ethernet | disabled, pins reserved for I2S | unavailable (no PHY) |
+| Link service compiled | experiment only | yes, runtime default OFF | experiment only | experiment only |
+| Recorder / alternative UI | experiment only | experiment only | experiment only | experiment only |
 
 M3 keeps DSI506/DYL0023 1 lane / 800 Mbps, RGB888, 27.777 MHz,
 HFP/HSW/HBP 59/2/45, VFP/VSW/VBP 109/2/22, burst sync pulses/no frame ACK,

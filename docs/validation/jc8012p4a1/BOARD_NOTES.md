@@ -76,6 +76,22 @@ No Ethernet, so the web service, Link and OTA go over Wi-Fi on the C6 via ESP-Ho
 
 Sources to get these: Guition schematic or wiki for JC8012P4A1, the vendor demo above (SD and audio pins are only candidates), and `get_chip_info` / board silkscreen once the unit arrives. Before the first flash, back up the whole 16 MB flash of the new board (same procedure as `RECOVERY_IMAGE.md` for the JC1060).
 
+## Scaffold status (2026-10-13, nothing built or run)
+
+Committed on this branch, all of it **uncompiled for the target** (no `idf.py` was run, per the no-build-without-GO rule); only the host tests and a preprocessor check were run:
+
+- Shared core: `BOARD_JC8012P4A1` in `board_capabilities` (row, name, `get()`), Kconfig choice `PAJONIIIR_BOARD_JC8012P4A1` (Wi-Fi remote default ON), `board_adapter.h` panel size 800 x 1280, `ui_overview.c` geometry 1280 x 800. `tests/board_adapter/test_board_capabilities.c` now covers the fourth board in all configurations (also added to `tests/run_p4_host_tests.ps1`); the four existing configurations still pass. `tools/check_board_build.py` accepts `main-deck-jc8012p4a1`.
+- `firmware/boards/jc8012p4a1/bsp_jc8012p4a1`: display only (JD9365, component default table, GPIO27 reset, GPIO23 LEDC backlight, LDO channel 3). Everything else comes from `jc-common/board_peripherals.c`, where two gated changes were made: codec input GPIO11 and amplifier enable GPIO20 for this board, and a touch stub that logs a warning and returns OK (the caller uses `ESP_ERROR_CHECK`). Preprocessing the file with the other boards' flags gives output identical to before the change.
+- `firmware/main-deck-jc8012p4a1`: CMake project (allow-list copied from the JC1060, no Ethernet component), `app_main.c`, `sdkconfig.defaults` (PCM5102A and ES8311 off), `partitions.csv` (same as the JC1060), README. No `dependencies.lock` yet.
+
+Findings while scaffolding:
+
+1. **Touch driver.** `guition-jc/esp_lcd_touch_gsl3680` 0.1.0 (published 2026-10-13, MIT code, I2C address 0x40, `esp_lcd_touch_new_i2c_gsl3680()`) is the only GSL3680 driver found. It requires **ESP-IDF >=6.1.0,<6.2.0** and `esp_lcd_touch ==1.2.1`; this project pins 6.0.2. Its `NOTICE` says the 100 kB controller firmware table has **no upstream licence**, so it should not be copied into this repository. Options: move this board to IDF 6.1 (a project-wide pin question), ask Guition to relax the IDF range, or fetch the component as a dependency at build time. The board runs display-only until then, which is enough to test audio, USB, storage and Wi-Fi.
+2. **Licensing.** The EspControl repository is **PolyForm Noncommercial 1.0.0**. Pin numbers and the board description were used as facts; its display register table and timings were **not** copied. The display uses the Espressif component's Apache-2.0 defaults.
+3. **UI at 1280 x 800.** `ui.c` takes the size from `board_capabilities`, but `ui_overview.c` and `dj_ui.c` have 800 and 1024 layouts; a 1280 x 800 layout (waveforms, deck panels, library) is untested and probably needs work. The UI simulator (`tests/ui_simulator`) can render at a given size without hardware once LVGL 9.5.0 is available; not run.
+4. **Chip and memory.** The common defaults require chip revision >= v1.0 (the JC1060 reported v1.3) and 200 MHz PSRAM; the board has 32 MB PSRAM. Read the boot log of the first run.
+5. **First-run risk.** The SD card is supplied from the same on-chip LDO channel 4 (`ESP_LDO_VO4`) as on the other boards and ESP-Hosted shares the SDMMC controller (Wi-Fi really running here): the E9 SD mount failure seen on the JC1060 may reproduce.
+
 ## Plan
 
 1. Read the board label (V1 / V2 / V3) and confirm the display, touch and SDIO pins above.
