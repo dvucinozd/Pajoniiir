@@ -18,6 +18,10 @@
 #elif defined(CONFIG_PAJONIIIR_BOARD_M3)
 #define BSP_LCD_H_RES 800
 #define BSP_LCD_V_RES 480
+#elif defined(CONFIG_PAJONIIIR_BOARD_JC8012P4A1)
+/* Native panel is 800x1280 portrait; the UI runs 1280x800 landscape. */
+#define BSP_LCD_H_RES 800
+#define BSP_LCD_V_RES 1280
 #else
 #define BSP_LCD_H_RES 480
 #define BSP_LCD_V_RES 800

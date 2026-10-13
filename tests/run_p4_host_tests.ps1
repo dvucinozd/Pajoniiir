@@ -3436,6 +3436,17 @@ $tests = @(
         )
     },
     @{
+        Name = "board_adapter_jc8012p4a1"
+        Dir = "tests/board_adapter"
+        Target = "test_board_capabilities_jc8012p4a1.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=c99", "-DBOARD_CAPABILITIES_PC_TEST", "-DCONFIG_PAJONIIIR_BOARD_JC8012P4A1",
+            "-I../../firmware/p4-core/components/board_capabilities/include",
+            "-o", "test_board_capabilities_jc8012p4a1.exe", "test_board_capabilities.c",
+            "../../firmware/p4-core/components/board_capabilities/board_capabilities.c"
+        )
+    },
+    @{
         Name = "board_adapter_m3_hs_controller"
         Dir = "tests/board_adapter"
         Target = "test_board_capabilities_m3_hs.exe"

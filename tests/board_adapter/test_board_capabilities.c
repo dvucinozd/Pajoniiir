@@ -20,6 +20,15 @@ int main(void)
 #endif
     assert(m->hosted_release_on_stop && m->keylock_dense_correlation);
     assert(m->wifi_apsta && !m->wifi_wpa3_transition);
+    const board_capabilities_t *j = board_capabilities_for(BOARD_JC8012P4A1);
+    assert(j && strcmp(j->project, "main-deck-jc8012p4a1") == 0);
+    assert(strcmp(board_id_name(BOARD_JC8012P4A1), "jc8012p4a1") == 0);
+    assert(j->display_width == 1280 && j->display_height == 800);
+    assert(j->panel_width == 800 && j->panel_height == 1280 && j->panel_rotation == 270);
+    assert(!j->ethernet && j->wifi && !j->pcm5102a && !j->sd_internal_bounce);
+    assert(j->wifi_apsta && !j->wifi_wpa3_transition);
+    assert(j->storage_root != j->controller_root && j->display_framebuffers == 1);
+    assert(strcmp(j->project, a->project) && strcmp(j->project, b->project) && strcmp(j->project, m->project));
     assert(strcmp(m->project, a->project) && strcmp(m->project, b->project));
     assert(a && b && !board_capabilities_for((board_id_t)99));
     assert(a->display_width == 800 && a->display_height == 480);
@@ -35,7 +44,9 @@ int main(void)
         assert(c->storage_root != c->controller_root);
         assert(c->storage_root == i && c->controller_root == 1 - i && c->fs_phy_index == 0);
     }
-#if defined(CONFIG_PAJONIIIR_BOARD_M3)
+#if defined(CONFIG_PAJONIIIR_BOARD_JC8012P4A1)
+    assert(board_capabilities_get() == j);
+#elif defined(CONFIG_PAJONIIIR_BOARD_M3)
     assert(board_capabilities_get() == m);
 #elif defined(CONFIG_PAJONIIIR_BOARD_JC1060)
     assert(board_capabilities_get() == b);

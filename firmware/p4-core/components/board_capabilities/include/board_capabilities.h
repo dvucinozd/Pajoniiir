@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum { BOARD_JC4880, BOARD_JC1060, BOARD_M3 } board_id_t;
+typedef enum { BOARD_JC4880, BOARD_JC1060, BOARD_M3, BOARD_JC8012P4A1 } board_id_t;
 typedef struct {
     board_id_t id;
     const char *name;

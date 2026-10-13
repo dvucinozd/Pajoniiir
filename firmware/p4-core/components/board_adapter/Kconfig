@@ -8,10 +8,12 @@ config PAJONIIIR_BOARD_JC1060
     bool "JC1060P470C_I_W_Y target"
 config PAJONIIIR_BOARD_M3
     bool "JC-ESP32P4-M3-DEV target"
+config PAJONIIIR_BOARD_JC8012P4A1
+    bool "JC8012P4A1 target (10.1 inch, no Ethernet, Wi-Fi on the C6)"
 endchoice
 config PAJONIIIR_DEFAULT_WIFI_REMOTE
     bool
-    default y if PAJONIIIR_BOARD_M3
+    default y if PAJONIIIR_BOARD_M3 || PAJONIIIR_BOARD_JC8012P4A1
     default n
 config PAJONIIIR_SD_INTERNAL_BOUNCE
     bool "Force microSD PSRAM buffers through internal DMA memory"
