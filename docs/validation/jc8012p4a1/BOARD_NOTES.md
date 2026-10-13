@@ -21,6 +21,17 @@ EspControl (ESPHome firmware for Home Assistant), `devices/guition-esp32-p4-jc80
 
 Notes: the SDIO pins used for ESP-Hosted here are the same family as the JC1060 (GPIO14-19, 54). EspControl does not use the SD card, so the SD slot wiring is not given.
 
+## Second source: Sukesh's vendor-demo mirror (read 2026-10-13)
+
+https://github.com/sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ESP32-C6 (last push 2025-05-07, a mirror of the Guition demo package: Arduino and ESP-IDF examples, flash tool). It is older than the EspControl V2 file and is for the first revision, so it confirms but does not replace it.
+
+- Board name given by the README: **JC8012P4A1C-I-W-Y1**; ESP32-P4**NRW32** (dual core, up to 400 MHz, 32 MB PSRAM, 16 MB flash) with an **ESP32-C6-MINI-1U-N4** for Wi-Fi and Bluetooth; 10.1" 800 x 1280 capacitive panel; "TF card interface and IO port interface reserved". No codec, Ethernet or USB host layout is stated.
+- `pins_config.h` (Arduino examples): `LCD_H_RES 800`, `LCD_V_RES 1280`, `LCD_RST 27`, `LCD_LED 23`, touch `SDA 7`, `SCL 8`, `RST 22`, `INT 21`. This matches EspControl V2 exactly.
+- Display driver in the demo: **JD9365** (`esp_lcd_jd9365`), touch **GSL3680** (`esp_lcd_gsl3680`). EspControl V2 uses a custom DSI init, so the JD9365 sequence may differ between revisions; the V2 table is the one to start from.
+- The ESP-IDF demo ships a BSP copied from the Espressif P4 Function EV Board (`esp32_p4_function_ev_board`) with the JC8012 pins patched in (`BSP_LCD_BACKLIGHT 23`, `BSP_LCD_RST 27`, touch `22` / `21`, I2C `7` / `8`). It still declares the EV board's **SD pins GPIO39-44** (D0-D3 = 39-42, CLK 43, CMD 44) and **I2S pins GPIO9-13 with a power-amp enable on GPIO20**. These are probably the EV board defaults left in the BSP, NOT proven for the JC8012P4A1: treat the SD and audio pins as unverified until checked on the unit or with a schematic.
+- `usb_extend_screen`, `esp_video` and camera components exist in the package, so USB device and MIPI camera are probably wired; USB host layout is still unknown.
+- The package contains a `8-Burn operation` flash tool, useful for a vendor-image backup before the first flash.
+
 ## What EspControl does NOT tell us (needed for this project)
 
 - USB host layout: which connector is root 0 / root 1, whether the board has two USB-A host ports, a hub or a single port. The DDJ-400 needs the controller, a stick, and USB audio output.
@@ -30,7 +41,7 @@ Notes: the SDIO pins used for ESP-Hosted here are the same family as the JC1060 
 - Flash partition plan and PSRAM size/speed for this board.
 - Power: USB host VBUS control.
 
-Sources to get these: Guition schematic or wiki for JC8012P4A1, the vendor demo project, and `get_chip_info` / board silkscreen once the unit arrives.
+Sources to get these: Guition schematic or wiki for JC8012P4A1, the vendor demo above (SD and audio pins are only candidates), and `get_chip_info` / board silkscreen once the unit arrives. Before the first flash, back up the whole 16 MB flash of the new board (same procedure as `RECOVERY_IMAGE.md` for the JC1060).
 
 ## Plan
 
