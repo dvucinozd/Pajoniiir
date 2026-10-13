@@ -55,10 +55,19 @@ Sheets read: `1_PWR`, `3_ESP32-P4`, `4_CONN`, `6_USB`, `7_CODEC`. This supersede
 
 Reading caveats: the PNGs were read visually, not from the CAD data, and the GPIO number of a few labels (WS2812, `C6_IO2`) is my reading of the pin table; re-check the ones you rely on.
 
+## Network decision (operator, 2026-10-13): Wi-Fi through the ESP32-C6
+
+No Ethernet, so the web service, Link and OTA go over Wi-Fi on the C6 via ESP-Hosted (SDIO slot 1, GPIO14-19, reset GPIO54).
+
+- The shared core already has this path on two other boards: JC4880 (Wi-Fi available, default OFF) and M3 (available, default ON, WPA2 APSTA), see `docs/SHARED_P4_BOARDS.md`, with `CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6`, `..._SDIO_HOST_INTERFACE`, `..._SDIO_SLOT_1`, `..._SDIO_4_BIT_BUS` in their `sdkconfig.defaults`. This board should follow the JC4880/M3 model, not the JC1060 one (JC1060: `wifi` capability false, Hosted linked but never started).
+- Same SDMMC topology as the JC4880: Hosted on slot 1 owns the single SDMMC controller (registered before `app_main()` under IDF 6) and the microSD sits on slot 0, so the BSP must skip a second `sdmmc_host_init()` and keep the slot-aware deinit, exactly as `firmware/boards/jc4880/bsp_jc4880/bsp_jc4880.c` does (see its comment around the `bsp_sdmmc_host_already_initialized` hook, and its 3-attempt SD mount retry).
+- Risk to carry from the JC1060 campaign: E9 (SD mount fails on about every other warm RST, with an `SD_HOST ... slot registered` error) happens on a board where Hosted is linked but Wi-Fi is never started. With Wi-Fi really running, the SD/Hosted interaction must be tested from the first bring-up, and the JC1060 note for the shared-core owner applies to this board too. The reference fork also panicked when Wi-Fi was disabled at run time on the JC1060 (`sd_host_del_sdmmc_controller`), so do not toggle Wi-Fi off and on without a recovery image.
+- Open: default state (ON like M3, or OFF like JC4880), AP/STA mode and credentials flow (no Ethernet fallback to reach the web UI for provisioning), and OTA over Wi-Fi.
+
 ## What is still unknown (needed for this project)
 
 - Which P4 USB root the project calls "controller" and "storage" on this layout, and whether the FS port can carry the library (speed).
-- The network plan, now that there is no Ethernet.
+- Wi-Fi defaults for this board (default ON or OFF, AP/STA mode, WPA2/WPA3), to decide with the other developer; see "Network decision".
 - Whether V2 differs from the first-revision schematic (display init, any pin).
 - SD and C6 on separate SDMMC slots here (0 and 1), but still the same SD host driver: the E9 interaction is not ruled out.
 - Flash partition plan and PSRAM size/speed for this board.
