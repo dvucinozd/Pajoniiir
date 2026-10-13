@@ -137,3 +137,11 @@ What the unchanged UI does at 1280 x 800:
 | Screensaver, network pages | Captured, not reviewed yet. |
 
 Changing the library row count touches shared arrays and paging used by the other boards (`UI_LIBRARY_PAGE_ROWS`, `DJ_LIB_ROWS`, `s_page_track_keys`, the table cell model and the page keys), so it is a design decision, not a one-line fix: options are (a) accept the empty space for the first bring-up, (b) scale the viewport and row count at build time for tall panels only, (c) a dedicated 1280 x 800 layout. Not started; the baselines of the existing boards must stay unchanged.
+
+## First flash results (2026-10-13)
+
+First build of `main-deck-jc8012p4a1` (app 0x26e2b0 bytes in a 0x400000 partition) flashed over the native USB-JTAG port (`/dev/ttyACM0`, because the CH340 UART could not reset the board). Bootloader, partition table, otadata and app verified by hash.
+
+- The common defaults (written for the JC1060's v1.3) selected the "< v3.0" family, which caps the supported chip revision at v1.99. This board's override file now requires v3.1 or later (`CONFIG_ESP32P4_REV_MIN_301`), the IDF default. v3.0 would also enable a MSPI workaround that only revision 3.0 needs.
+- **LEDC fault.** With that fixed the bootloader sees chip v3.2 and starts the app, which then dies in `ledc_channel_config()` (called from `bsp_display_init`) with `Store access fault` (MCAUSE 7) at the LEDC gamma RAM, MTVAL `0x500d3400` on channel 0 with the automatic clock, `0x500d3440` on channel 1 with the XTAL clock. The vendor image drives the same pin (GPIO23) with the same API on channel 1 and does not fault. Cause not found: ESP-IDF 6.0.2 has the same gamma RAM address for every P4 revision and no separate gamma clock gate. The BSP now drives the backlight as a plain on/off GPIO; PWM dimming is open.
+- After the GPIO change the app no longer crashes, but `/dev/ttyACM0` disappears right after boot: the native USB-JTAG pins (GPIO24/25) are the FS USB-C port, which the firmware takes over as USB host. Logs must be read on the CH340 UART.

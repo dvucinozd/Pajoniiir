@@ -18,5 +18,7 @@ CONFIG_PAJONIIIR_BOARD_JC8012P4A1=y
 # mutually exclusive in ESP-IDF 6.0.2, so the selector is turned off here.
 # CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
 # CONFIG_ESP32P4_REV_MIN_100 is not set
-CONFIG_ESP32P4_REV_MIN_300=y
-CONFIG_ESP32P4_REV_MIN_FULL=300
+# v3.1 is the IDF default; v3.0 would enable the MSPI workaround that only revision 3.0 needs.
+# CONFIG_ESP32P4_REV_MIN_300 is not set
+CONFIG_ESP32P4_REV_MIN_301=y
+CONFIG_ESP32P4_REV_MIN_FULL=301

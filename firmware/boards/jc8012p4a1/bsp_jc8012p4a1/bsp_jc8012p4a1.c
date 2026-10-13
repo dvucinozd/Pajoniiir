@@ -20,7 +20,7 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_jd9365.h"
-#include "driver/ledc.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "jc8012_display";
 
@@ -28,6 +28,11 @@ static const char *TAG = "jc8012_display";
 #define BSP_JC8012_LCD_BL_GPIO    23   /* LCD_PWM, LEDC */
 #define BSP_JC8012_DSI_LDO_CHAN   3    /* VDD_MIPI_DPHY, 2.5 V as on the other P4 boards */
 #define BSP_JC8012_DSI_LANES      2    /* UNVERIFIED: component default, 2 data lanes */
+/* Backlight is a plain on/off GPIO for now. On this chip (ESP32-P4 v3.2) every write to the
+ * LEDC gamma RAM (0x500D3400..) raised a Store access fault inside ledc_channel_config(), on
+ * channel 0 with the automatic clock and on channel 1 with the XTAL clock (the vendor image
+ * uses channel 1 without faulting). Cause not found yet, see BOARD_NOTES.md; PWM dimming is
+ * a follow-up. */
 
 static esp_lcd_panel_handle_t s_panel;
 static esp_ldo_channel_handle_t s_ldo;
@@ -36,13 +41,12 @@ esp_lcd_panel_handle_t bsp_display_get_panel_handle(void) { return s_panel; }
 
 void bsp_display_set_backlight(uint8_t pct)
 {
-    if (pct > 100) pct = 100;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023u * pct / 100u);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    gpio_set_level(BSP_JC8012_LCD_BL_GPIO, pct > 0);
 }
 
 esp_err_t bsp_display_init(void)
 {
+    ESP_LOGI(TAG, "display init: DSI LDO, bus, panel");
     esp_ldo_channel_config_t power = {.chan_id = BSP_JC8012_DSI_LDO_CHAN, .voltage_mv = 2500};
     ESP_RETURN_ON_ERROR(esp_ldo_acquire_channel(&power, &s_ldo), TAG, "DSI power");
 
@@ -75,12 +79,9 @@ esp_err_t bsp_display_init(void)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel), TAG, "panel init");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel, true), TAG, "display on");
 
-    ledc_timer_config_t timer = {.speed_mode = LEDC_LOW_SPEED_MODE, .timer_num = LEDC_TIMER_0,
-        .duty_resolution = LEDC_TIMER_10_BIT, .freq_hz = 5000, .clk_cfg = LEDC_AUTO_CLK};
-    ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), TAG, "backlight timer");
-    ledc_channel_config_t channel = {.gpio_num = BSP_JC8012_LCD_BL_GPIO, .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0, .timer_sel = LEDC_TIMER_0, .duty = 0};
-    ESP_RETURN_ON_ERROR(ledc_channel_config(&channel), TAG, "backlight");
-    bsp_display_set_backlight(80);
+    gpio_config_t bl = {.pin_bit_mask = 1ULL << BSP_JC8012_LCD_BL_GPIO, .mode = GPIO_MODE_OUTPUT};
+    ESP_RETURN_ON_ERROR(gpio_config(&bl), TAG, "backlight gpio");
+    ESP_LOGI(TAG, "panel on, backlight on");
+    bsp_display_set_backlight(100);
     return ESP_OK;
 }
