@@ -9,10 +9,10 @@ Fill `RESULT_<image>.md` next to this file; keep raw evidence under `evidence/`.
 
 | # | Check | Pass |
 | --- | --- | --- |
-| 0.1 | Read the board label (V1/V2/V3) and photograph both sides; note the revision | recorded |
+| 0.1 | Read the board label (V1/V2/V3) and photograph both sides; note the revision | done: V3, SKU 10153001-V3 (2638), chip v3.2 |
 | 0.2 | Wiring for the first run: USB-C UART (CH340C) to the PC; DDJ-400 on the HS USB-C and the stick on the FS USB-C, each through a self-powered hub that also supplies the board, or note what was used | recorded |
-| 0.3 | Back up the 16 MB flash with esptool before any write; record SHA-256 (`RECOVERY_IMAGE.md`) | file + hash |
-| 0.4 | Capture the vendor image's boot log (chip revision, flash size, PSRAM size) | recorded |
+| 0.3 | Back up the 16 MB flash with esptool before any write; record SHA-256 (`RECOVERY_IMAGE.md`) | done: SHA-256 51e4ff9b...50ec3b (see BOARD_NOTES) |
+| 0.4 | Capture the vendor image's boot log (chip revision, flash size, PSRAM size) | done (see BOARD_NOTES) |
 
 ## A. Display and boot (no touch expected)
 

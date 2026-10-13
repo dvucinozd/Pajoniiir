@@ -8,8 +8,8 @@
  * CONFIG_PAJONIIIR_BOARD_JC8012P4A1.
  *
  * The panel uses the component's DEFAULT JD9365 register table and its 800x1280 60 Hz
- * DPI timing (Apache-2.0 component). The "V2" hardware revision is described elsewhere as
- * a "new panel" with its own init sequence; if the picture is wrong, a V2-specific table
+ * DPI timing (Apache-2.0 component). The "V2"/"V3" hardware revisions is described elsewhere as
+ * a "new panel" with its own init sequence; if the picture is wrong, a revision-specific table
  * passed through jd9365_vendor_config_t.init_cmds is the next step, from a source whose
  * licence allows it (the EspControl repository is PolyForm Noncommercial, do not copy it).
  */

@@ -1,10 +1,32 @@
-# Guition JC8012P4A1 V2 (10.1", 1280x800) - bring-up notes
+# Guition JC8012P4A1 V3 (10.1", 1280x800) - bring-up notes
 
-Branch `jc8012p4a1-v2`, started from `jc1060-hw-bench` at `00041a0d` (shared P4 core with the JC1060 fixes). The board is not in hand yet (expected 2026-10-13 evening). Nothing here has been checked on hardware.
+Branch `jc8012p4a1-v3` (renamed from `jc8012p4a1-v2` once the label showed V3), started from `jc1060-hw-bench` at `00041a0d` (shared P4 core with the JC1060 fixes). The board arrived on 2026-10-13; only the identity and factory-boot facts in "The unit in hand" come from the unit. Everything else here is still unchecked on hardware.
 
 ## Source of the facts below
 
 EspControl (ESPHome firmware for Home Assistant), `devices/guition-esp32-p4-jc8012p4a1-v2/device/device.yaml` in https://github.com/jtenniswood/espcontrol (main, read 2026-10-13). Other variants exist in the same repo: `jc8012p4a1`, `jc8012p4a1-v3`, `jc8012p4a1-v3-test`. The V2 file says "V2/new-panel 800x1280 native MIPI DSI panel", so V1 and V2 do not share a display configuration. Check the label on the board before trusting any pin below.
+
+## The unit in hand (2026-10-13)
+
+Label: `SKU:10153001-V3 (2638)`, `P4-10.1 inch Capacitive touch`, `Models:JC8012P4A1C_I_W_Y`, `Resolution: 800*1280`. Everything below was read from the unit over the CH340 USB-C port; nothing was written to it.
+
+| Item | Value |
+| --- | --- |
+| Chip | ESP32-P4 **revision v3.2** (ROM `esp32p4-eco7-20260109`), dual core + LP core, 400 MHz, eFuse block revision v1.2 |
+| MAC | `80:f1:b2:d8:0c:b1` |
+| Flash | 16 MB, manufacturer 0x68, device 0x4018, QIO 40 MHz |
+| PSRAM | 32 MB, 200 MHz, hex (X16) |
+| Factory image | `esp_brookesia_demo` 1.0.1, built with ESP-IDF v6.0.2 (same version as this project), Wi-Fi enabled by default |
+| Factory partitions | `nvs` 0xb000/0x6000, `phy_init` 0x11000, `factory` 0x20000/0x700000, `storage` 0x720000/0x800000 |
+| Factory flash backup | 16 777 216 bytes, SHA-256 `51e4ff9b4c924919ebb682f11908fcf8545cc434e4ffec5e8e4946e53950ec3b` (kept outside git) |
+
+Factory boot log, relevant lines:
+- Display: `jd9365: version: 2.0.2`, `LCD ID: 93 65 04`, `Display resolution 800x1280`. The user confirms the factory picture is shown. This is the same Espressif component this project uses, but whether the demo passes its own init table is not known from the log.
+- Touch: the GSL3680 loads its firmware (`load fw success`) but then logs `startup_chip failed read 0xb0 = 5a,5a,5a,5a`. The user reports the tablet works under the factory image, so the log line is not proof that touch is broken.
+- SD: `sdmmc_card_init failed (0x107)`; **no card was inserted**, so this is the expected empty-slot result, not the E9 defect.
+- ES8311 codec opens; the C6 is reset through GPIO54, SDIO runs at 40 MHz on GPIO14-19 and the slave is identified as `esp32c6`. This confirms the C6 pins above.
+
+EspControl publishes a separate `jc8012p4a1-v3` device file. Compared with its V2 file (both read 2026-10-13), pins, DSI timings (70 MHz, 2 lanes, 840 Mbps) and the touch setup are the same; only the display init sequence and the `engineering_sample` flag differ (V3 targets production silicon), and its default screen rotation is 180. The init table is not copied (licence, see below). Our rotation of 270 is still unverified.
 
 ## What EspControl tells us (V2)
 
@@ -69,7 +91,7 @@ No Ethernet, so the web service, Link and OTA go over Wi-Fi on the C6 via ESP-Ho
 
 - Which P4 USB root the project calls "controller" and "storage" on this layout, and whether the FS port can carry the library (speed).
 - STA credential flow and OTA over Wi-Fi; the Wi-Fi defaults are decided (see "Network decision").
-- Whether V2 differs from the first-revision schematic (display init, any pin).
+- Whether the V3 differs from the first-revision schematic (display init, any pin).
 - SD and C6 on separate SDMMC slots here (0 and 1), but still the same SD host driver: the E9 interaction is not ruled out.
 - Flash partition plan and PSRAM size/speed for this board.
 - Power: USB host VBUS control.
@@ -94,7 +116,7 @@ Findings while scaffolding:
 
 ## Plan
 
-1. Read the board label (V1 / V2 / V3) and confirm the display, touch and SDIO pins above.
+1. (Done: V3, chip v3.2.) Confirm the display, touch and SDIO pins above.
 2. Add `firmware/boards/jc8012p4a1/bsp_jc8012p4a1` and `firmware/main-deck-jc8012p4a1`, following `firmware/boards/jc1060` and `docs/SHARED_P4_BOARDS.md` (new column for this board, capabilities, geometry 1280 x 800).
 3. Bring up display and touch only, then storage, then USB host and audio, then Ethernet if present.
 4. Test with the same plan as JC1060 (`docs/validation/jc1060/HARDWARE_TEST_PLAN.md`), keeping the JC1060 defects in mind (SD warm-RST failure, playlist open, loop clamp).

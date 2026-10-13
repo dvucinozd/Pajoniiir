@@ -6,7 +6,7 @@ Status: **scaffold only. Never built, never flashed, hardware NOT RUN.** Created
 first: it lists the sources, the schematic findings and the open questions.
 
 - 10.1" panel, native 800x1280 portrait, UI 1280x800 landscape. JD9365 over MIPI-DSI with
-  the Espressif component's default register table (may not match the "V2" panel).
+  the Espressif component's default register table (unverified on the V3 unit).
 - Touch GSL3680: **not integrated**. The UI runs display-only (`bsp_touch_init()` returns OK
   with no handle). The only driver found, `guition-jc/esp_lcd_touch_gsl3680` 0.1.0, requires
   ESP-IDF >=6.1.0 (this project pins 6.0.2) and ships a controller firmware table with no
