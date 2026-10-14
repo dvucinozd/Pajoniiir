@@ -36,3 +36,16 @@ Cause: the project replaces the esp-usb FIFO split on the HS controller (`apply_
 Fix: JC8012P4A1 joins the JC1060 in the patch (160 lines) and in the 640-byte packet admission of `controller_usb_audio_stream.c`. Setting `CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT` alone did nothing, because the patch replaces that computation.
 
 Group C, first listening (operator): a track loaded and playing; the sound is correct on the controller, on MAIN and on the cue (PFL). Not done: the 10 min and 60 min soak with `monitor_p4_reliability.ps1`, the counters, the NS4150 silence check.
+
+## Group D (storage and Wi-Fi), 2026-10-14, unattended
+
+| # | Check | Result |
+| --- | --- | --- |
+| D1 | microSD mounts at every boot | **fail, E9 reproduced**: 10 warm resets (RTS on CHIP_PU, reset reason 1), SD02G card inserted. Boots 1, 3, 5, 7, 9 failed all 3 mount attempts (`0x107` timeout, each time `sd_host_del_sdmmc_controller ... host controller with slot registered`); boots 2, 4, 6, 8, 10 mounted at the first try. Strict alternation, always a failure after a good boot. No panic. 10 cold boots not done (needs a power cycle by hand) |
+| D2 | Wi-Fi AP+STA WPA2 default ON | partial: from an INFO-level build the log shows `softap started`, `web AP started: ssid=Pajoniiir-JC8012`, DHCP server on 192.168.4.1, HTTP server on port 80, mDNS `pajoniiir.local`. No error in 60 s. Not checked from a client: the PC has no Wi-Fi interface. STA join not tested |
+| D3 | Audio counters with web polling | not run (needs a client on the AP and playing decks) |
+| D4 | Wi-Fi toggle off and on | not run on purpose (the reference fork panicked on the JC1060; recovery image needed) |
+
+On a boot where the SD mount fails, the retries (3 x about 3 s) delay the start by about 7 s. With a good boot the DDJ-400 profile from the SD is loaded (`profile=local`); with a failed one it falls back to `profile=unsupported`, so the controller has no mapping until the next reset.
+
+ESP-Hosted: host 2.13.0 and C6 firmware 2.12.0 (`Version mismatch`); `service_log: sync barrier acknowledgement timed out` seen at about 13 s and 26 s at WARN level in several boots, but not in the 60 s INFO-level boot.
