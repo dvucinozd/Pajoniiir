@@ -69,3 +69,12 @@ Observation: after the PC was restarted, the AP `Pajoniiir-JC8012` was no longer
 - Reading: the ESP32-C6 radio can be left in a state that a reset of the P4 (GPIO54 pulse) does not clear; a full power cut does. Cause not established. Candidates: the PC USB 5 V dropping and returning during the PC restart while the hub keeps feeding the same rail, or the two supplies fighting.
 - Consequence for the plan: do not leave the PC USB as a second power source. Use a data-only serial cable (VBUS cut) or an isolator, or power from the PC USB only if it can supply the tablet (it cannot).
 - Not tested: whether the AP is also lost by a warm reset alone without a PC restart (the earlier D2 and the 4 INFO boots say no).
+
+## Group C, serial-only soak of about 11 min, 2026-10-14 (partial)
+
+Both decks playing, DDJ-400 on the HS port, stick on the FS port, SD mounted, Wi-Fi AP up (started at 7.3 s); the tablet is powered by the hub and the PC USB at the same time (see the power note above). Evidence: the serial log only, because the PC Wi-Fi card is not reliable, so there are no counters from `monitor_p4_reliability.ps1`.
+
+- 654 s of log from the last boot: no panic, abort, watchdog, brownout or `E (` line; no underrun, overflow or dropped-frame message (the only matches of the search are boot lines of the PSRAM and GPIO drivers).
+- 427 decode lines for the two decks: decode time at most 41.7 ms for a block, ring between 78 528 and 93 696 frames, steady.
+- The first capture of the run had a boot with the SD mount failing (E9); the operator reset the board, and the next boot mounted the SD.
+- Not shown: audio counters (`output_late`, `uac_*`), the 60 min run, the NS4150 silence check, a client polling the web API. Group C stays partial.
