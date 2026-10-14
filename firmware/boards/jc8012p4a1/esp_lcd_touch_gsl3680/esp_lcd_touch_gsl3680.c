@@ -233,7 +233,7 @@ esp_err_t esp_lcd_touch_new_i2c_gsl3680(esp_lcd_panel_io_handle_t io, const esp_
 
         vTaskDelay(pdMS_TO_TICKS(50));
     } else {
-        ESP_LOGW(TAG, "Unable to initialize the I2C address");
+        ESP_LOGI(TAG, "No INT pin: skipping the I2C address selection, plain reset");
         /* Reset controller */
         ret = touch_gsl3680_reset(esp_lcd_touch_gsl3680);
         ESP_GOTO_ON_ERROR(ret, err, TAG, "GSL3680 reset failed");

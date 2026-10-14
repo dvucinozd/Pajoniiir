@@ -164,3 +164,7 @@ The GSL3680 driver of the vendor demo (`sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ES
 The `espcontrol` `gsl3680` component was read for facts only: it is GPLv3 (from `kvj/esphome`) with another copy of the same kind of firmware table, so it is not used. Facts taken from it: the controller reports presses reliably but not always releases (the UI polls, so a release is seen); initialisation should wait up to 300 ms for the "running" marker (register 0xb0) and retry once, which explains the factory log line `startup_chip failed read 0xb0 = 5a` that appears even though the tablet works.
 
 Operator reports (2026-10-14): swap_xy + mirror_x gave an inverted touch (camera edge is the top), swap_xy + mirror_y mirrored left/right, swap_xy + mirror_x + mirror_y rotated it 180 degrees (top right hit bottom left). Flags now swap_xy only (rotation 270); verified on the unit (2026-10-14). The boot log shows `gsl3680: Unable to initialize the I2C address` although touch responds.
+
+## Backlight (2026-10-14)
+
+The LEDC driver of IDF 6.0.2 clears the gamma RAM on every channel configuration, which raised a Store access fault on this chip (v3.2). The backlight on GPIO23 now uses the MCPWM (group 0, 25 kHz, 10 MHz resolution); the dimmer works on the unit. The LEDC fault itself is not explained.
