@@ -156,3 +156,11 @@ Three tables were tried on the V3 unit with the same DPI timing family:
 It lives in `firmware/boards/jc8012p4a1/bsp_jc8012p4a1/jd9365_guition_init.inc`. **Licence caveat:** no licence is attached to the vendor firmware or table; the project owner decided to use it for this unit. Before any release, get a licence or a documented sequence from Guition. The factory image has a second 171-entry table, identical to the Espressif default, used for another panel.
 
 Not yet checked: orientation (rotation 270 assumed), colours, UI at 1280x800, touch (not integrated), backlight dimming (GPIO on/off only, LEDC faults on this chip).
+
+## Touch (2026-10-13, owner's explicit decision, option A)
+
+The GSL3680 driver of the vendor demo (`sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ESP32-C6`, `esp_lcd_touch_gsl3680`) is vendored in `firmware/boards/jc8012p4a1/esp_lcd_touch_gsl3680/` and used by `bsp_touch_init()` for this board only (I2C 0x40 on the shared bus at 400 kHz, reset GPIO22, no interrupt line, the UI polls). **No licence** is attached to it or to its controller firmware table; see the README next to it. Release blocker, same as the display table.
+
+The `espcontrol` `gsl3680` component was read for facts only: it is GPLv3 (from `kvj/esphome`) with another copy of the same kind of firmware table, so it is not used. Facts taken from it: the controller reports presses reliably but not always releases (the UI polls, so a release is seen); initialisation should wait up to 300 ms for the "running" marker (register 0xb0) and retry once, which explains the factory log line `startup_chip failed read 0xb0 = 5a` that appears even though the tablet works.
+
+Swap/mirror flags are the JC4880's (swap_xy and mirror_x at rotation 270) and unverified here.

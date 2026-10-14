@@ -17,6 +17,9 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_touch_gt911.h"
+#if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+#include "esp_lcd_touch_gsl3680.h"
+#endif
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "esp_vfs_fat.h"
@@ -163,13 +166,30 @@ esp_err_t bsp_touch_init(void)
 {
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
 #if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
-    // GSL3680 (I2C 0x40, reset GPIO22, interrupt GPIO21). The only driver found is
-    // guition-jc/esp_lcd_touch_gsl3680 0.1.0, which requires ESP-IDF >=6.1.0 and ships a
-    // firmware table without an upstream licence (NOTICE), so it is not vendored here.
-    // Until it is integrated the UI runs display-only: return OK with no touch handle,
-    // because app_main() wraps this call in ESP_ERROR_CHECK. See
-    // docs/validation/jc8012p4a1/BOARD_NOTES.md.
-    ESP_LOGW(TAG, "GSL3680 touch driver not integrated; UI is display-only");
+    // GSL3680 on the shared I2C bus: address 0x40, reset GPIO22, interrupt GPIO21 (not used;
+    // the UI polls). The driver is the vendor demo's copy, see esp_lcd_touch_gsl3680/README.md.
+    esp_lcd_panel_io_handle_t tp_io = NULL;
+    esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_GSL3680_CONFIG();
+    tp_io_cfg.scl_speed_hz = 400000;
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(s_i2c_bus, &tp_io_cfg, &tp_io),
+                        TAG, "GSL3680 panel IO failed");
+    // Native panel 800x1280 portrait, UI landscape rotated 270: same swap/mirror as the
+    // JC4880 (480x800 native), UNVERIFIED for this panel.
+    esp_lcd_touch_config_t tp_cfg = {
+        .x_max        = BSP_LCD_H_RES,
+        .y_max        = BSP_LCD_V_RES,
+        .rst_gpio_num = GPIO_NUM_22,
+        .int_gpio_num = GPIO_NUM_NC,
+        .levels = {.reset = 0, .interrupt = 0},
+        .flags = {
+            .swap_xy  = board_capabilities_get()->panel_rotation == 270,
+            .mirror_x = board_capabilities_get()->panel_rotation == 270,
+            .mirror_y = 0,
+        },
+    };
+    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_gsl3680(tp_io, &tp_cfg, &s_touch),
+                        TAG, "GSL3680 init failed");
+    ESP_LOGI(TAG, "GSL3680 touch ready");
     return ESP_OK;
 #else
 
