@@ -146,8 +146,13 @@ First build of `main-deck-jc8012p4a1` (app 0x26e2b0 bytes in a 0x400000 partitio
 - **LEDC fault.** With that fixed the bootloader sees chip v3.2 and starts the app, which then dies in `ledc_channel_config()` (called from `bsp_display_init`) with `Store access fault` (MCAUSE 7) at the LEDC gamma RAM, MTVAL `0x500d3400` on channel 0 with the automatic clock, `0x500d3440` on channel 1 with the XTAL clock. The vendor image drives the same pin (GPIO23) with the same API on channel 1 and does not fault. Cause not found: ESP-IDF 6.0.2 has the same gamma RAM address for every P4 revision and no separate gamma clock gate. The BSP now drives the backlight as a plain on/off GPIO; PWM dimming is open.
 - After the GPIO change the app no longer crashes, but `/dev/ttyACM0` disappears right after boot: the native USB-JTAG pins (GPIO24/25) are the FS USB-C port, which the firmware takes over as USB host. Logs must be read on the CH340 UART.
 
-## Display init table from the vendor demo (2026-10-13, owner's decision)
+## Display init table (2026-10-13)
 
-With the Espressif default JD9365 table the unit booted cleanly but the screen stayed black with the backlight on. The vendor demo ships its own copy of the driver with a different table (about 198 commands) and DPI timing (60 MHz, vertical back/front porch 8/20, 1500 Mbps lanes). The table is now in `firmware/boards/jc8012p4a1/bsp_jc8012p4a1/jd9365_guition_init.inc` and the BSP uses it with 60 MHz and porches 8/20.
+Three tables were tried on the V3 unit with the same DPI timing family:
+1. Espressif `esp_lcd_jd9365` 2.0.2 default: boots cleanly, screen black with the backlight on.
+2. The older table in the Guition demo repository (`sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ESP32-C6`, 198 entries) with that demo's 60 MHz and porches 8/20: coloured vertical bands, and the same bands on a direct framebuffer test pattern (so not an LVGL or rotation problem).
+3. **The table the unit's own factory firmware uses**: 204 `jd9365_lcd_init_cmd_t` entries found in the 16 MB backup (`esp_brookesia_demo` 1.0.1, array at flash `0x4b890` in the app image, data pointers resolved through the app's segment table; arguments the firmware keeps in zero-initialised storage are not in the image and are 0x00, the Espressif default table has 0x00 at the same positions). With it and the component's default timing and 1500 Mbps lanes, the Pajoniiir UI is displayed.
 
-**Licence caveat.** The demo repository (`sukesh-ak/JC8012P4A1-GUITION-ESP32-P4_ESP32-C6`) has no licence file. Its driver file is Espressif's Apache-2.0 code with the panel maker's table substituted. The project owner decided to take the table anyway; before any release, get a licence or a documented sequence from Guition, or replace the table. The `.inc` header says the same.
+It lives in `firmware/boards/jc8012p4a1/bsp_jc8012p4a1/jd9365_guition_init.inc`. **Licence caveat:** no licence is attached to the vendor firmware or table; the project owner decided to use it for this unit. Before any release, get a licence or a documented sequence from Guition. The factory image has a second 171-entry table, identical to the Espressif default, used for another panel.
+
+Not yet checked: orientation (rotation 270 assumed), colours, UI at 1280x800, touch (not integrated), backlight dimming (GPIO on/off only, LEDC faults on this chip).

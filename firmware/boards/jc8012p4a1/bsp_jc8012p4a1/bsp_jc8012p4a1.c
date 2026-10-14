@@ -7,10 +7,10 @@
  * and audio are in ../../jc-common/board_peripherals.c, gated by
  * CONFIG_PAJONIIIR_BOARD_JC8012P4A1.
  *
- * The panel uses the panel maker's JD9365 register table (jd9365_guition_init.inc, see its
- * header for origin and licence) with the component's 800x1280 DPI timing adjusted to the
- * vendor demo's (60 MHz, vertical porches 8 and 20). The Espressif default table gave a black
- * screen with the backlight on.
+ * The panel uses the 204-entry JD9365 register table read from the factory firmware of the V3
+ * unit (jd9365_guition_init.inc, see its header for origin and licence) with the component's
+ * 800x1280 DPI timing and 1500 Mbps lanes. The Espressif default table gave a black screen
+ * and the Guition demo repository's older table gave scrambled vertical bands.
  */
 #include "board_adapter.h"
 #include "esp_check.h"
@@ -63,11 +63,6 @@ esp_err_t bsp_display_init(void)
      * the other P4 boards; one framebuffer until a refresh-boundary swap is validated. */
     esp_lcd_dpi_panel_config_t dpi = JD9365_800_1280_PANEL_60HZ_DPI_CONFIG_CF(LCD_COLOR_FMT_RGB565);
     dpi.num_fbs = BSP_LCD_FRAMEBUFFER_COUNT;
-    /* Pixel clock and vertical porches as in the vendor demo's own JD9365 header (60 MHz, back 8,
-     * front 20); the Espressif defaults (80 MHz, 12, 30) are for another panel. */
-    dpi.dpi_clock_freq_mhz = 60;
-    dpi.video_timing.vsync_back_porch = 8;
-    dpi.video_timing.vsync_front_porch = 20;
 
     jd9365_vendor_config_t vendor = {
         .init_cmds = s_guition_init_cmds,   /* panel maker's table, see the .inc header */
