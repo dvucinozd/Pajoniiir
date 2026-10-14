@@ -30,7 +30,7 @@
 /* Packet admission follows the controller's physical root FIFO, not device
  * speed: a Full Speed Hercules can be connected to M3's HS controller root.
  * Host tests select real board/root policies instead of PC-only widening. */
-#if defined(CONFIG_PAJONIIIR_BOARD_JC4880) || defined(CONFIG_PAJONIIIR_BOARD_JC1060) || (CONFIG_BSP_M3_HS_CONTROLLER && CONFIG_CONTROLLER_USB_HS_AUDIO_DIAGNOSTIC)
+#if defined(CONFIG_PAJONIIIR_BOARD_JC4880) || defined(CONFIG_PAJONIIIR_BOARD_JC1060) || defined(CONFIG_PAJONIIIR_BOARD_JC8012P4A1) || (CONFIG_BSP_M3_HS_CONTROLLER && CONFIG_CONTROLLER_USB_HS_AUDIO_DIAGNOSTIC)
 #define STREAM_CONTROLLER_FIFO_BYTES 640u
 #elif CONFIG_BSP_M3_HS_CONTROLLER
 #define STREAM_CONTROLLER_FIFO_BYTES 512u
