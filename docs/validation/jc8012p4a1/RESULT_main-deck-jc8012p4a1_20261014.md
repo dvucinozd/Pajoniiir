@@ -59,3 +59,13 @@ ESP-Hosted: host 2.13.0 and C6 firmware 2.12.0 (`Version mismatch`); `service_lo
 - A set of six resets that tried to correlate the SD mount result with the AP being visible is **invalid**: the PC card could no longer scan.
 - Redo needed: serial capture opened before the run and not touched during it, a reliable Wi-Fi client, then 10 min and 60 min.
 - The operator had to restart the board once because the SD card was not detected (consistent with E9, D1).
+
+## Power and Wi-Fi AP lost after a PC restart, 2026-10-14
+
+Setup during the tests: the tablet is powered by the self-powered hub and, at the same time, by the PC through the USB-TTL port (the CH340 used for flashing and the serial log). The schematic ties the VBUS of the three USB-C connectors to `USB5V_IN` (BOARD_NOTES), so two supplies feed the same rail. The operator reports that the PC USB port alone cannot power the tablet: it resets in a loop.
+
+Observation: after the PC was restarted, the AP `Pajoniiir-JC8012` was no longer visible on the phone or on the PC, although the serial log of every boot (INFO level, SD mounted or not) showed `softap started`, DHCP on 192.168.4.1 and `Wi-Fi remote enabled`. Resetting the board by RTS (about 10 boots) did not bring the AP back. The AP came back after the operator unplugged both supplies (hub and PC USB) for about 10 s and plugged them back in.
+
+- Reading: the ESP32-C6 radio can be left in a state that a reset of the P4 (GPIO54 pulse) does not clear; a full power cut does. Cause not established. Candidates: the PC USB 5 V dropping and returning during the PC restart while the hub keeps feeding the same rail, or the two supplies fighting.
+- Consequence for the plan: do not leave the PC USB as a second power source. Use a data-only serial cable (VBUS cut) or an isolator, or power from the PC USB only if it can supply the tablet (it cannot).
+- Not tested: whether the AP is also lost by a warm reset alone without a PC restart (the earlier D2 and the 4 INFO boots say no).
