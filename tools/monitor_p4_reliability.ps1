@@ -11,7 +11,7 @@ library recovery against the documented 15/20-second investigation limits.
 [CmdletBinding()]
 param(
     [string]$BaseUrl = "http://192.168.4.1",
-    [ValidateSet('m3','jc4880','jc1060')]
+    [ValidateSet('m3','jc4880','jc1060','jc8012p4a1')]
     [string]$ExpectedBoard = 'm3',
     [string]$ExpectedSourceSha = '',
     [string]$ExpectedElfSha256 = '',
@@ -309,7 +309,7 @@ try {
         throw "Initial status request failed: $($initialStatusResponse.Error)"
     }
     $baseline = $initialStatusResponse.Body | ConvertFrom-Json
-    $expectedProjects = @{ m3='main-deck-m3'; jc4880='main-deck-p4'; jc1060='main-deck-jc1060' }
+    $expectedProjects = @{ m3='main-deck-m3'; jc4880='main-deck-p4'; jc1060='main-deck-jc1060'; jc8012p4a1='main-deck-jc8012p4a1' }
     $identity = [ordered]@{
         board_id = Require-Value $baseline 'board_id'
         project = Require-Value $baseline 'project'

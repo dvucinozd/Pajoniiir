@@ -49,3 +49,13 @@ Group C, first listening (operator): a track loaded and playing; the sound is co
 On a boot where the SD mount fails, the retries (3 x about 3 s) delay the start by about 7 s. With a good boot the DDJ-400 profile from the SD is loaded (`profile=local`); with a failed one it falls back to `profile=unsupported`, so the controller has no mapping until the next reset.
 
 ESP-Hosted: host 2.13.0 and C6 firmware 2.12.0 (`Version mismatch`); `service_log: sync barrier acknowledgement timed out` seen at about 13 s and 26 s at WARN level in several boots, but not in the 60 s INFO-level boot.
+
+## Group C/D3 soak attempt, 2026-10-14 (not validated)
+
+`tools/monitor_p4_reliability.ps1` now accepts `-ExpectedBoard jc8012p4a1` (`-ExpectedLibraryTracks 22` for this stick). A 30 s run with the decks stopped passes. A 10 min Observe run with both decks playing (web polling at 4 Hz over the AP) stopped at 397 s of 600: `status API unavailable for at least 15 seconds` (`/api/status`, then `/api/diagnostic-log`, both 15 s timeouts).
+
+- Before the outage: both decks playing, UAC streaming, counters at 0 (`output_late`, `uac_dropped`, `uac_overflow`, `uac_underflow`, `service_log_dropped`); status latency peaks 1.5 to 5.2 s.
+- Cause **not established**. The PC Wi-Fi card (Realtek RTL8812AE, `rtl8821ae`) lost the AP at the same time (`Connection to AP ... lost`) and then failed with `Init MAC failed` / `not ready ... after DPC`, so the outage may be on the PC side. The board was then restarted by opening its serial port (the serial open resets it), so whether it had crashed is unknown. The crash dump present afterwards is the old LEDC fault (other ELF hash).
+- A set of six resets that tried to correlate the SD mount result with the AP being visible is **invalid**: the PC card could no longer scan.
+- Redo needed: serial capture opened before the run and not touched during it, a reliable Wi-Fi client, then 10 min and 60 min.
+- The operator had to restart the board once because the SD card was not detected (consistent with E9, D1).
