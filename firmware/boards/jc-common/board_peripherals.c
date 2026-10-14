@@ -173,8 +173,9 @@ esp_err_t bsp_touch_init(void)
     tp_io_cfg.scl_speed_hz = 400000;
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(s_i2c_bus, &tp_io_cfg, &tp_io),
                         TAG, "GSL3680 panel IO failed");
-    // Native panel 800x1280 portrait, UI landscape rotated 270: same swap/mirror as the
-    // JC4880 (480x800 native), UNVERIFIED for this panel.
+    // Native panel 800x1280 portrait, UI landscape rotated 270 (camera on top). Checked on the
+    // unit: swap_xy alone is right; with mirror_x, mirror_y or both the touch is mirrored or
+    // rotated 180 degrees.
     esp_lcd_touch_config_t tp_cfg = {
         .x_max        = BSP_LCD_H_RES,
         .y_max        = BSP_LCD_V_RES,
@@ -183,7 +184,7 @@ esp_err_t bsp_touch_init(void)
         .levels = {.reset = 0, .interrupt = 0},
         .flags = {
             .swap_xy  = board_capabilities_get()->panel_rotation == 270,
-            .mirror_x = board_capabilities_get()->panel_rotation == 270,
+            .mirror_x = 0,
             .mirror_y = 0,
         },
     };
