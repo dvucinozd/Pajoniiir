@@ -102,3 +102,7 @@ Noted on the way: the Task WDT at 1073 s in one run (httpd on CPU0 reading the c
 ## NS4150 silence check, 2026-10-15
 
 Operator: checked, no sound from the onboard speaker amplifier path. Reported by the operator; the test setup (speaker on `CN3` or not) and the level of GPIO20 were not recorded, so the GPIO20 pin assignment from the schematic is still not measured.
+
+## D4 Wi-Fi toggle off and on, 2026-10-15
+
+Operator, on the clean image `eeef2f0d`: Wi-Fi switched off and on, no crash. Afterwards the board answers on 192.168.4.1 (ping 1.6 ms, `/api/status` with `wifi: true`, uptime 279 s, same image, no counter fault: `output_late` 0, `pcm_underrun` 0/0). The method (which control) and the number of cycles were not recorded, and no serial log was open during the toggle. The JC1060 reference fork panicked on this action; no panic is known here.
