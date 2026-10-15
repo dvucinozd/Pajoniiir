@@ -36,7 +36,9 @@ int main(void)
     assert(!a->ethernet && a->wifi && a->pcm5102a && !a->sd_internal_bounce);
     assert(!a->wifi_apsta && a->wifi_wpa3_transition);
     assert(b->display_width == 1024 && b->display_height == 600);
-    assert(b->panel_rotation == 0 && b->ethernet && !b->wifi && !b->pcm5102a);
+    assert(b->panel_rotation == 0 && b->ethernet && b->wifi && !b->pcm5102a);
+    assert(b->wifi_apsta && !b->wifi_wpa3_transition && !b->hosted_release_on_stop);
+    assert(strcmp(b->softap_ssid, "Pajoniiir-JC1060") == 0);
     assert(b->sd_internal_bounce);
     assert(strcmp(a->project, b->project) != 0);
     for (unsigned i = 0; i < 2; ++i) {

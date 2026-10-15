@@ -115,6 +115,7 @@ static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
+static lv_obj_t *s_label_wifi_ap = NULL;   /* second switch, boards with Ethernet and Wi-Fi */
 static lv_obj_t *s_label_main_sink;
 
 static void main_sink_event_cb(lv_event_t *event)
@@ -362,6 +363,29 @@ static void wifi_remote_event_cb(lv_event_t *event)
                                     on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
     }
     ESP_LOGI(TAG, "%s: %s", ethernet ? "Ethernet Link" : "Wi-Fi remote", on ? "on" : "off");
+}
+
+/* Boards with both Ethernet and Wi-Fi: the first switch stays DJ LINK, this one
+ * is the Wi-Fi access point. */
+static void wifi_ap_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#ifndef WIN32
+    app_settings_set_wifi_remote(on ? 1 : 0);
+    on = app_settings_get().wifi_remote != 0;
+#endif
+    if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+    if (s_wifi_toggle_cb) {
+        s_wifi_toggle_cb(on);
+    }
+    if (s_label_wifi_ap) {
+        lv_label_set_text(s_label_wifi_ap, on ? "WI-FI: ON" : "WI-FI: OFF");
+        lv_obj_set_style_text_color(s_label_wifi_ap,
+                                    on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
+    }
+    ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
 }
 
 #if !defined(WIN32) && CONFIG_AUDIO_RECORDER_ENABLED
@@ -677,8 +701,13 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #ifndef WIN32
     ethernet = board_capabilities_get()->ethernet;
 #endif
+    bool both_links = false;
+#ifndef WIN32
+    both_links = ethernet && board_capabilities_get()->wifi;
+#endif
     lv_obj_t *wifi_section = ui_settings_section(screen, s_config.hor_res / 2 + 10, 240,
-                                                s_config.hor_res / 2 - 40, 82,
+                                                s_config.hor_res / 2 - 40, both_links ? 112 : 82,
+                                                both_links ? "ETHERNET / DJ LINK / WI-FI" :
                                                 ethernet ? "ETHERNET / DJ LINK" : "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
     ui_settings_style_wireless_switch(sw_wifi, COL_GREEN);
@@ -696,6 +725,24 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     if (ethernet) {
         lv_label_set_text(s_label_wifi_remote, wifi_remote_init ? "DJ LINK: ON" : "DJ LINK: OFF");
     }
+
+#ifndef WIN32
+    if (both_links) {
+        const bool ap_init = cfg.wifi_remote != 0;
+        lv_obj_t *sw_ap = lv_switch_create(wifi_section);
+        ui_settings_style_wireless_switch(sw_ap, COL_GREEN);
+        lv_obj_set_pos(sw_ap, 16, 72);
+        lv_obj_add_event_cb(sw_ap, wifi_ap_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+        if (ap_init) {
+            lv_obj_add_state(sw_ap, LV_STATE_CHECKED);
+        }
+        s_label_wifi_ap = ui_settings_value_label(wifi_section,
+                                                  ap_init ? "WI-FI: ON" : "WI-FI: OFF",
+                                                  ap_init ? COL_GREEN : COL_TEXT_DIM,
+                                                  &lv_font_montserrat_14,
+                                                  96, 75);
+    }
+#endif
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS");
     ui_settings_static_tile(mixer_section, 18, 34, 110, 22,

@@ -13,7 +13,7 @@ config PAJONIIIR_BOARD_JC8012P4A1
 endchoice
 config PAJONIIIR_DEFAULT_WIFI_REMOTE
     bool
-    default y if PAJONIIIR_BOARD_M3 || PAJONIIIR_BOARD_JC8012P4A1
+    default y if PAJONIIIR_BOARD_M3 || PAJONIIIR_BOARD_JC8012P4A1 || PAJONIIIR_BOARD_JC1060
     default n
 config PAJONIIIR_SD_INTERNAL_BOUNCE
     bool "Force microSD PSRAM buffers through internal DMA memory"

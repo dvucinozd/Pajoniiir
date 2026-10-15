@@ -406,7 +406,10 @@ esp_err_t wifi_link_start(void)
 static void stop_ap_services(void)
 {
     dns_server_stop();
-    web_server_stop();
+    /* A board with Ethernet serves the web UI there too; leave it running. */
+    if (!board_capabilities_get()->ethernet) {
+        web_server_stop();
+    }
 }
 
 static void stop_wifi_stack(void)
