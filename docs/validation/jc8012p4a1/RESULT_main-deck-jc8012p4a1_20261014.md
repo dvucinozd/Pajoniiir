@@ -116,3 +116,11 @@ That is about 38 MB/s, far above what a 12 Mbit/s link can carry (about 1.2 MB/s
 ## D2 STA join, 2026-10-15
 
 Operator started the built-in Wi-Fi probe (AP -> STA -> AP) on the clean image `202c0824` against a home network (SSID not recorded here). Read back afterwards from `GET /api/ota/config`: `probe.state` `ok`, detail `round trip complete`, address `192.168.100.72` (DHCP lease obtained in STA mode). The AP came back: ping 1.4 ms, `/api/status` answers, uptime 531 s (no reboot since the flash), `output_late` and both `pcm_underrun` at 0 right after, nothing dropped in the service log. This closes the "STA join" part of D2. `pajoniiir.local` from a client was shown earlier from the PC. Not done: a download over STA (the stored OTA URL `https://168.100.147/ota` looks incomplete, probably a missing first octet; not used by this test), and no serial log was open during the round trip.
+
+## Closing decisions, 2026-10-15 (operator)
+
+- **D1 cold boots: PASS**, reported by the operator (count not recorded). With the warm-reset result (26 of 26 mounted at the first attempt after the fix `981225e5`), D1 is closed.
+- **Task watchdog at 1073 s** (one run, `httpd` reading the coredump partition): the operator believes it was momentary. Not reproduced since, not explained, no change made. It stays a single unexplained observation.
+- **ESP-Hosted version mismatch** (host 2.13.0, C6 firmware 2.12.0): the C6 is not updated. The operator reports the Wi-Fi stable since the PC power-saving change. The `Version mismatch` warning is still printed at every boot.
+- **Licence** of the vendored GSL3680 driver and the JD9365 init table: noted for now, no decision. It still blocks any release or publication.
+- **Access point password** is still the shared constant in `wifi_link.h`; not changed.
