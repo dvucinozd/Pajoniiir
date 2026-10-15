@@ -360,3 +360,11 @@ Open defects, for the shared-core owner:
 9. Event queue of 32 slots can saturate under sustained jog; scratch window limited to about 4.35 s.
 
 Not tested: OTA (all of G, 0.4), Link tempo master (F7), GPT sticks, E6, D3/D9 (library format), JC4880 and M3 builds (compiled and checked only, not run).
+
+## E9 retest with the JC8012 fix, 2026-10-15 (image built from `d2582cfc` plus the one-line board condition, `source_dirty` true at build time)
+
+Change: the SD power cycle added for the JC8012 (release LDO channel 4 and hold CLK/CMD/D0-D3 low for 150 ms before the first mount, `bsp_sd_init` in `jc-common/board_peripherals.c`) now also applies to the JC1060. Cause on the JC8012: a warm reset leaves the card powered through the pull-ups, so it comes back in its previous 4-bit state and the first init times out on the next boot; same symptom and same code path as the E9 FAIL above. No upstream report of this exact failure was found; esp-idf #14000 describes the same principle (restart without card power cycle) in SPI mode.
+
+Image: JC1060 flashed by hand in download mode (adapter is a CP2102, auto reset does not enter the bootloader; the `esptool` DTR/RTS reset also does not restart the board). Backup of the previous flash (0x0 to 0x420000, image `4e3aa2b4`): `~/jc1060-flash-backup/jc1060_4e3aa2b4_flash_0_to_420000_20261015.bin`, SHA-256 `7da113cf...5dc15`. After the flash `/api/status` reports `jc1060` / `d2582cfc`.
+
+Test: serial capture open, then the operator pressed RESET 10 times about 25 s apart (11 boots in the capture, every boot reports reset reason `0x1`). Result: **11 of 11 boots without any SD mount failure** (no `SD mount attempt ... failed`, no `sdmmc_card_init failed`), `profile=local 'DDJ-400'` on every boot. Before the change the same unit failed about every other warm reset. The boots were at WARN log level, which hides `SD card mounted`; success is read from the absence of failures and from the SD-loaded profile. Not done: 10 cold boots; a playback check after the new image (E9 30 min); the other open JC1060 defects are not touched.
