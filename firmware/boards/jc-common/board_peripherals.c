@@ -85,6 +85,14 @@ static const char *TAG = "bsp";
 // with a short settle delay so /sd comes up reliably at boot.
 #define BSP_SD_MOUNT_ATTEMPTS       3
 #define BSP_SD_MOUNT_RETRY_DELAY_MS 150
+#if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+// A warm reset leaves the card powered: it is kept alive through the pull-ups on
+// its CLK/CMD/D0-D3 lines even while the LDO is off, so it comes back in the
+// state the previous boot left it (4-bit, SSR/ACMD41 time out) on about every
+// other boot (E9). Before the first mount, switch the rail off and hold the
+// lines low so the card really loses power.
+#define BSP_SD_POWER_CYCLE_OFF_MS   150
+#endif
 
 #if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && \
     ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
@@ -604,6 +612,26 @@ esp_err_t bsp_sd_init(void)
             .ldo_chan_id = BSP_SD_LDO_CHAN,
         };
         esp_err_t pwr_rc = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &s_sd_pwr);
+#if CONFIG_PAJONIIIR_BOARD_JC8012P4A1
+        if (pwr_rc == ESP_OK) {
+            // Acquiring enabled the rail, releasing it switches it off.
+            sd_pwr_ctrl_del_on_chip_ldo(s_sd_pwr);
+            s_sd_pwr = NULL;
+            static const gpio_num_t sd_pins[] = {
+                GPIO_NUM_43, GPIO_NUM_44, GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42,
+            };
+            for (size_t i = 0; i < sizeof(sd_pins) / sizeof(sd_pins[0]); i++) {
+                gpio_reset_pin(sd_pins[i]);
+                gpio_set_direction(sd_pins[i], GPIO_MODE_OUTPUT);
+                gpio_set_level(sd_pins[i], 0);
+            }
+            vTaskDelay(pdMS_TO_TICKS(BSP_SD_POWER_CYCLE_OFF_MS));
+            for (size_t i = 0; i < sizeof(sd_pins) / sizeof(sd_pins[0]); i++) {
+                gpio_reset_pin(sd_pins[i]);
+            }
+            pwr_rc = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &s_sd_pwr);
+        }
+#endif
         if (pwr_rc != ESP_OK) {
             ESP_LOGW(TAG, "SD LDO%d power control unavailable (%s) — /sd unavailable",
                      BSP_SD_LDO_CHAN, esp_err_to_name(pwr_rc));

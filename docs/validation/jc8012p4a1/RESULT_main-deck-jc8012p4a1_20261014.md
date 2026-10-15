@@ -41,10 +41,18 @@ Group C, first listening (operator): a track loaded and playing; the sound is co
 
 | # | Check | Result |
 | --- | --- | --- |
-| D1 | microSD mounts at every boot | **fail, E9 reproduced**: 10 warm resets (RTS on CHIP_PU, reset reason 1), SD02G card inserted. Boots 1, 3, 5, 7, 9 failed all 3 mount attempts (`0x107` timeout, each time `sd_host_del_sdmmc_controller ... host controller with slot registered`); boots 2, 4, 6, 8, 10 mounted at the first try. Strict alternation, always a failure after a good boot. No panic. 10 cold boots not done (needs a power cycle by hand) |
+| D1 | microSD mounts at every boot | **fail, E9 reproduced (fixed afterwards, see D1 follow-up)**: 10 warm resets (RTS on CHIP_PU, reset reason 1), SD02G card inserted. Boots 1, 3, 5, 7, 9 failed all 3 mount attempts (`0x107` timeout, each time `sd_host_del_sdmmc_controller ... host controller with slot registered`); boots 2, 4, 6, 8, 10 mounted at the first try. Strict alternation, always a failure after a good boot. No panic. 10 cold boots not done (needs a power cycle by hand) |
 | D2 | Wi-Fi AP+STA WPA2 default ON | partial (AP and web UI pass): from an INFO-level build the log shows `softap started`, `web AP started: ssid=Pajoniiir-JC8012`, DHCP server on 192.168.4.1, HTTP server on port 80, mDNS `pajoniiir.local`. No error in 60 s. Operator, from a phone on the AP (password in `wifi_link.h`): the web page is shown at http://192.168.4.1. Not tested: `pajoniiir.local`, STA join |
 | D3 | Audio counters with web polling | not run (needs a client on the AP and playing decks) |
 | D4 | Wi-Fi toggle off and on | not run on purpose (the reference fork panicked on the JC1060; recovery image needed) |
+
+### D1 follow-up, 2026-10-15: E9 root cause and fix
+
+Cause: a warm reset does not power the card down. With the LDO (channel 4) off the card is still kept alive through the pull-ups on CLK/CMD/D0-D3, so after a good mount it comes back in its previous 4-bit state and the next boot fails (`sdmmc_init_sd_ssr` then `send_op_cond` timeouts, `0x107`); the failed boot leaves the card idle, hence the strict alternation.
+
+Eliminated by test (10 warm resets each, alternation unchanged): switching the LDO off for 250 ms alone; holding the C6 reset line (GPIO54) low during the mount.
+
+Fix (`bsp_sd_init`, JC8012P4A1 only): release the LDO and drive CLK/CMD/D0-D3 low for 150 ms before the first mount. Result: 8/8 at 500 ms, then 20/20 and 6/6 at 150 ms warm resets, SD mounted at the first attempt every time, `profile=local`, SD up at about 4.0 s. 10 cold boots not done. Not applied to JC1060/JC4880 (same shared file, not tested there; JC1060 shows the same E9 symptom and is the first candidate).
 
 On a boot where the SD mount fails, the retries (3 x about 3 s) delay the start by about 7 s. With a good boot the DDJ-400 profile from the SD is loaded (`profile=local`); with a failed one it falls back to `profile=unsupported`, so the controller has no mapping until the next reset.
 
