@@ -106,3 +106,9 @@ Operator: checked, no sound from the onboard speaker amplifier path. Reported by
 ## D4 Wi-Fi toggle off and on, 2026-10-15
 
 Operator, on the clean image `eeef2f0d`: Wi-Fi switched off and on, no crash. Afterwards the board answers on 192.168.4.1 (ping 1.6 ms, `/api/status` with `wifi: true`, uptime 279 s, same image, no counter fault: `output_late` 0, `pcm_underrun` 0/0). The method (which control) and the number of cycles were not recorded, and no serial log was open during the toggle. The JC1060 reference fork panicked on this action; no panic is known here.
+
+## B2 stick read speed, 2026-10-15 (measured, result differs from the plan's assumption)
+
+Temporary probe (not committed): after the stick mounted, 3 passes of 64 raw reads of 32 KB (2 MB per pass, `msc_host_read_sector`, different sector ranges) at boot, stick VID 0x090C PID 0x1000, 30 594 MB. Result: 38 721, 39 339 and 38 306 KB/s (52 to 53 ms per 2 MB), all `ESP_OK`.
+
+That is about 38 MB/s, far above what a 12 Mbit/s link can carry (about 1.2 MB/s at best), so the stick runs at **high speed** on this board, not at full speed as B2 assumed. The "stick on the FS port" wording used above for the role mapping does not match this measurement; the mapping `storage_root` 1 / `controller_root` 0 is unchanged and works, but which physical port is high speed was not re-checked. Only raw sector reads were timed (USB link plus stick); FAT file reads and track loading speed were not. Probe removed; board reflashed with the clean image `202c0824`.
