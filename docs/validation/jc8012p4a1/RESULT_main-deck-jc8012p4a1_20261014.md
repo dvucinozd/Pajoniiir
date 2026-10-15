@@ -86,3 +86,15 @@ Both decks playing, DDJ-400 on the HS port, stick on the FS port, SD mounted, Wi
 - 427 decode lines for the two decks: decode time at most 41.7 ms for a block, ring between 78 528 and 93 696 frames, steady.
 - The first capture of the run had a boot with the SD mount failing (E9); the operator reset the board, and the next boot mounted the SD.
 - Not shown: audio counters (`output_late`, `uac_*`), the 60 min run, the NS4150 silence check, a client polling the web API. Group C stays partial.
+
+## Display freeze under API polling, 2026-10-15 (cause found, fix applied)
+
+Symptom: after 2 to 18 min of `/api/status` + `/api/library` + `/api/firmware` + `/api/resources` polling (the reliability monitor pattern), the LVGL task stops (UI frozen, audio and API still fine, no log line). The 60 min Observe soak with the monitor passed its audio counters (`output_late` 5, everything else 0) but the UI froze at about 17 min; the monitor does not check the UI.
+
+Diagnosis: a probe task (LVGL heartbeat, `abort()` after 8 s) and a printout of the blocked LVGL task stack showed it waiting forever in `ppa_do_operation` (`xSemaphoreTake(trans_elm->sem, portMAX_DELAY)`) under `ui_overview_blit_wave_overlay_rgb565` -> `ppa_do_scale_rotate_mirror`. Known upstream bug: espressif/esp-idf #19023 and #19096 (270 degree RGB565 SRM into a DSI framebuffer that is being scanned out never completes), fixed on master by commit 469aa16 (DIG-734 workaround did not swap width/height and x/y scales for 90/270 degree), backport announced for 5.5, 6.0 and 6.1, not in 6.0.2.
+
+Fix: `firmware/p4-core/components/esp_driver_ppa` is a copy of the IDF 6.0.2 component with that change in `ppa_srm.c`, added to `EXTRA_COMPONENT_DIRS` of `main-deck-jc8012p4a1` only. Drop it when the IDF in use carries 469aa16.
+
+Result with the fix (instrumented image, probe armed): 45 min of the same polling at 4 Hz, 10 782 requests, 0 errors, 1.0 s max latency, both decks playing, UI render counter still rising at the end, no probe trigger. Before the fix the same test froze after 2, 6, 6 and 7 min. Not a proof (the bug depends on block geometry); the clean-image soak below confirms or not.
+
+Noted on the way: the Task WDT at 1073 s in one run (httpd on CPU0 reading the coredump partition on each `/api/status`, `esp_core_dump_image_check`) is a separate effect, not reproduced after the cache experiment; not fixed.

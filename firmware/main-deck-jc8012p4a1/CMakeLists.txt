@@ -17,6 +17,9 @@ set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../boards/jc8012p4a1")
 foreach(component IN LISTS PAJONIIIR_SHARED_COMPONENTS)
     list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/${component}")
 endforeach()
+# Same-named copy of IDF 6.0.2 esp_driver_ppa with the SRM 90/270 leftover fix
+# (espressif/esp-idf 469aa16); drop it once the IDF in use carries that commit.
+list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../p4-core/components/esp_driver_ppa")
 list(APPEND EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
     "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health"
