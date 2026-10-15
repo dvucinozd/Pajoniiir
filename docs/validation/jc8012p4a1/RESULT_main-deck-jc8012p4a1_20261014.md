@@ -95,6 +95,6 @@ Diagnosis: a probe task (LVGL heartbeat, `abort()` after 8 s) and a printout of 
 
 Fix: `firmware/p4-core/components/esp_driver_ppa` is a copy of the IDF 6.0.2 component with that change in `ppa_srm.c`, added to `EXTRA_COMPONENT_DIRS` of `main-deck-jc8012p4a1` only. Drop it when the IDF in use carries 469aa16.
 
-Result with the fix (instrumented image, probe armed): 45 min of the same polling at 4 Hz, 10 782 requests, 0 errors, 1.0 s max latency, both decks playing, UI render counter still rising at the end, no probe trigger. Before the fix the same test froze after 2, 6, 6 and 7 min. Not a proof (the bug depends on block geometry); the clean-image soak below confirms or not.
+Result with the fix (instrumented image, probe armed): 45 min of the same polling at 4 Hz, 10 782 requests, 0 errors, 1.0 s max latency, both decks playing, UI render counter still rising at the end, no probe trigger. Before the fix the same test froze after 2, 6, 6 and 7 min. This is a bounded test, not a proof (the bug depends on block geometry). The operator accepted it as sufficient and asked for no further soak: the 60 min monitor soak was not re-run on the final image `eeef2f0d` (clean, flashed, UI and audio seen running at boot only), and the earlier 60 min counters (5 `output_late`, others 0) stand for the audio side.
 
 Noted on the way: the Task WDT at 1073 s in one run (httpd on CPU0 reading the coredump partition on each `/api/status`, `esp_core_dump_image_check`) is a separate effect, not reproduced after the cache experiment; not fixed.
