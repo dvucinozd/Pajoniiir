@@ -15,12 +15,20 @@ int main(void)
     static cp_runtime_t runtime;
     controller_profile_meta_t meta = {0};
     cp_event_t event;
-    assert(bytes == 6112u && cp_profile_parse(blob, bytes, &profile) == CP_OK);
+    assert(bytes == 6176u && cp_profile_parse(blob, bytes, &profile) == CP_OK);
     assert(controller_profile_meta_parse(blob, bytes, &meta) == ESP_OK && meta.valid);
     assert(profile.vid == 0x2b73u && profile.pid == 0x0026u);
-    assert(profile.input_count == 284u && profile.output_count == 127u);
+    assert(profile.input_count == 288u && profile.output_count == 127u);
     cp_runtime_init(&runtime);
     for (unsigned deck = 0u; deck < 2u; ++deck) {
+        for (unsigned command=0; command<2; ++command) {
+            assert(cp_runtime_process(&profile,&runtime,0x90u+deck,0x3du+command,127,&event));
+            assert(event.id==(deck ? CTRL_ID_DECK2_EXT_ACTION : CTRL_ID_DECK1_EXT_ACTION));
+            unsigned action=command ? CTRL_DECK_EXT_ACTION_MEMORY_DELETE : CTRL_DECK_EXT_ACTION_MEMORY_STORE;
+            assert(event.value==CTRL_DECK_EXT_VALUE(action,true));
+            assert(cp_runtime_process(&profile,&runtime,0x90u+deck,0x3du+command,0,&event));
+            assert(event.value==CTRL_DECK_EXT_VALUE(action,false));
+        }
         const uint8_t ids[] = {
             deck ? CTRL_ID_DECK2_LOOP_HALVE : CTRL_ID_DECK1_LOOP_HALVE,
             deck ? CTRL_ID_DECK2_LOOP_DOUBLE : CTRL_ID_DECK1_LOOP_DOUBLE,

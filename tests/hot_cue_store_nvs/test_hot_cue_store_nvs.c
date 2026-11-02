@@ -3,6 +3,7 @@
  * Writes may already be visible when commit fails: never infer rollback from
  * a failed commit. Real power-loss/reboot acceptance still requires hardware. */
 #include "hot_cue_store.h"
+#include "memory_cue_store.h"
 #include "nvs.h"
 #include <assert.h>
 #include <stdio.h>
@@ -192,6 +193,59 @@ static void test_full_identity_collision_fails_closed(void)
     assert(hot_cue_store_reset_to_source(&other)==ESP_ERR_INVALID_STATE); closed();
     load_point(&id,4000);
 }
+static void test_memory_bank_persistence_capacity_identity_and_failures(void)
+{
+    memset(entries, 0, sizeof(entries));
+    media_persistent_id_t id = identity("memory-a"), other = identity("memory-b");
+    memory_cue_bank_t bank = {0}, out = {0};
+    assert(memory_cue_store_load(&id, &out) == ESP_ERR_NOT_FOUND); closed();
+    for (unsigned i = 16; i > 0; --i)
+        assert(memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=i*1000u,.type=1}) == ESP_OK);
+    assert(bank.count == 16 && bank.cues[0].pos_ms == 1000 && bank.cues[15].pos_ms == 16000);
+    assert(memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=17000,.type=1}) == ESP_ERR_INVALID_SIZE);
+    assert(memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=5000,.end_ms=8000,.type=2}) == ESP_OK);
+    assert(bank.count == 16 && bank.cues[4].end_ms == 8000);
+    assert(memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=5000,.end_ms=4000,.type=2}) == ESP_ERR_INVALID_ARG);
+    assert(memory_cue_store_save(&id, &bank) == ESP_OK); closed();
+    assert(memory_cue_store_load(&id, &out) == ESP_OK && !memcmp(&bank, &out, sizeof(bank))); closed();
+    assert(memory_cue_store_load(&other, &out) == ESP_ERR_NOT_FOUND); closed();
+    media_persistent_id_t collision = id; collision.bytes[31] ^= 1;
+    unsigned writes = sets;
+    assert(memory_cue_store_save(&collision, &bank) == ESP_ERR_INVALID_STATE && sets == writes); closed();
+    assert(memory_cue_store_restore(&collision) == ESP_ERR_INVALID_STATE); closed();
+    fail_read = true;
+    assert(memory_cue_store_save(&id, &bank) == ESP_FAIL && sets == writes); fail_read=false; closed();
+    fail_open_rw=true;
+    assert(memory_cue_store_save(&id, &bank) == ESP_FAIL); fail_open_rw=false; closed();
+    fail_set=true;
+    assert(memory_cue_store_save(&id, &bank) == ESP_FAIL); fail_set=false; closed();
+    fail_commit=true;
+    assert(memory_cue_store_save(&id, &bank) == ESP_FAIL); fail_commit=false; closed();
+    fail_erase=true;
+    assert(memory_cue_store_restore(&id) == ESP_FAIL); fail_erase=false; closed();
+    entry_t *record = NULL;
+    for (unsigned i=0; i<16; ++i) if (entries[i].used && !strcmp(entries[i].ns,"memorycue_v1")) record=&entries[i];
+    assert(record); entry_t intact=*record;
+    record->data[record->len-1] ^= 1;
+    memset(&out, 0x5a, sizeof(out)); memory_cue_bank_t sentinel=out;
+    assert(memory_cue_store_load(&id, &out) == ESP_ERR_INVALID_CRC && !memcmp(&out,&sentinel,sizeof(out))); closed();
+    writes=sets;
+    assert(memory_cue_store_save(&id, &bank) == ESP_ERR_INVALID_CRC && sets==writes); closed();
+    assert(memory_cue_store_restore(&id)==ESP_OK); closed();
+    *record=intact; --record->len;
+    assert(memory_cue_store_load(&id, &out) == ESP_ERR_INVALID_SIZE); closed();
+    record->len=39u;
+    assert(memory_cue_store_restore(&id)==ESP_ERR_INVALID_SIZE); closed();
+    *record=intact;
+    for (unsigned i=1; i<=16; ++i) assert(memory_cue_bank_delete(&bank,i*1000u)==ESP_OK);
+    assert(memory_cue_bank_delete(&bank,1000)==ESP_ERR_NOT_FOUND);
+    assert(memory_cue_store_save(&id,&bank)==ESP_OK); closed();
+    assert(memory_cue_store_load(&id,&out)==ESP_OK && out.count==0); closed();
+    assert(memory_cue_store_restore(&id)==ESP_OK); closed();
+    assert(memory_cue_store_load(&id,&out)==ESP_ERR_NOT_FOUND); closed();
+    assert(memory_cue_store_restore(&id)==ESP_OK); closed();
+}
+
 int main(void)
 {
     test_export_isolation_tombstone_and_restore();
@@ -199,6 +253,7 @@ int main(void)
     test_truncated_or_corrupt_record_does_not_publish_or_get_overwritten();
     test_full_identity_collision_fails_closed();
     test_clear_removes_legacy_before_current();
+    test_memory_bank_persistence_capacity_identity_and_failures();
     puts("hot_cue_store_nvs: production NVS adapter contract tests passed");
     return 0;
 }

@@ -12,11 +12,11 @@
     "library_playlist_tracks": "ca9371aa8f943730b1d8dd96e1b06560afe5554db551c5ca857a83f566ab5daa",
     "overview_color_pwv4": "070da0c1c828fc5e66347e9b9e0052db364a48332539837880b6e6a2b93fe375",
     "hot_cues": "7cb1de44f883eed34a75e7a4287d2860a17bad67d2b51fece259d1364db3905a",
-    "settings": "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
+    "settings": "5871560aebb866220bb4a9f5f6cdf9749b563ce913dd52487f30f434b3794dac",
     "screensaver": "ebef1da480aca395f88c76ca69c51f63e64e793379c4ab001ba52b40e5fb51f8",
-    "settings_restored": "4370a6ab568f9afa75568a8fe5439b4a75c1a1b82d7546172125e24e3f946aaa",
-    "memory_cues": "add4f2886ae35c387ad2b38fd557438f20f1b67236820273aa4b114dedaf4dad",
-    "memory_cues_scrolled": "add4f2886ae35c387ad2b38fd557438f20f1b67236820273aa4b114dedaf4dad",
+    "settings_restored": "5871560aebb866220bb4a9f5f6cdf9749b563ce913dd52487f30f434b3794dac",
+    "memory_cues": "8c72c91bd5d9e9f9169611f3da7f41ac83ef5587192666cda0f8d4f106b8cd2e",
+    "memory_cues_scrolled": "d8d25f69846fe4bc4bd5939c1bd162928e4724ec5dd2b689591e3694a0ad4a30",
     "overview_loading": "a1d93d254d15f8f797e6ef454cad1840c59a54b69ec6522cb945df9b331fb697",
     "overview_error": "e4cc176c4eb7d2ab31da439c230e55ef08904019039c69930ec853447293a681",
     "network_wait": "419bf3f4566d65bb58a81175e7b923f4ec32efbc282faa5322f510c9bac05a16",
@@ -24,6 +24,8 @@
     "network_locked": "43f9aa8959485e5041df324d80a24622d28ffb5fddb87bfada98d3daa5e2dfe9",
     "overview_empty": "45adf08d1f9c73c477716ff24121907feefea6811027476ebd442cb9a53b7f1f",
     "library_unavailable": "20cc00e00c5ecd3649a547bbb78d8d1bf0d7f3399537716868cfec88baccf851",
-    "overview_artwork_missing": "78db52456e99ae7044b2d9bbf278b6d303dffc179f7a556c53b9a06c95a10f80"
+    "overview_artwork_missing": "78db52456e99ae7044b2d9bbf278b6d303dffc179f7a556c53b9a06c95a10f80",
+    "completion_memory": "8b5ee7fb4c46dcffe4c700e60b92967b70a8266c1d0d762c6e09661acb898c13",
+    "completion_settings": "5871560aebb866220bb4a9f5f6cdf9749b563ce913dd52487f30f434b3794dac"
   }
 }

@@ -46,7 +46,7 @@ The table distinguishes tested functions from profiles awaiting hardware checks.
 | [Pioneer DDJ-FLX4](docs/DDJ_FLX4_MIDI_MAP.md) | Reference controller; stable JC4880 support and accepted beta2 M3/JC4880 image scopes | USB MIDI/LED feedback and UAC1 headphone cue; ordinary port policy | Transport, mixer, jogs, pads, loops and effects. Exact board/image qualification and remaining gates are recorded separately. |
 | [Hercules DJControl Inpulse 500](controllers/hercules_djcontrol_inpulse_500/README.md) | Beta support; tested on M3 and JC4880 | USB MIDI/LED feedback, UAC1 headphones and native headphone Mix/Volume; M3 requires the experimental USB port swap | M3 exact-image hour and JC4880 short functional blocks accepted. Individual pad/FX/LED coverage remains partial; controller RCA MAIN is unqualified. |
 | [Native Instruments Traktor Kontrol S2 MK3](controllers/ni_traktor_s2_mk3_full/README.md) | Experimental M3 support; operator-closed with explicit waivers | MIDI mode, shared MIDI/LED profile and HS UAC2 headphones; controller USB3 / storage USB2 | Historical exact-image 48/44.1-kHz hours accepted. Remaining checks were waived, not passed; other boards are unqualified. |
-| [Pioneer DDJ-400](controllers/pioneer_ddj_400/README.md) | Software profile available; canonical-image hardware acceptance NOT RUN | Shared MIDI/LED and USB audio implementation | Loop halve/double included; four memory-store/delete inputs remain omitted. Scoped contributor testing is recorded separately; new-image qualification is pending. |
+| [Pioneer DDJ-400](controllers/pioneer_ddj_400/README.md) | Software profile available; canonical-image hardware acceptance NOT RUN | Shared MIDI/LED and USB audio implementation | Loop halve/double and memory store/delete included; memory actions require matching post-beta2 firmware. Scoped contributor testing is recorded separately; new-image qualification is pending. |
 | [Numark DJ2GO2 Touch](controllers/numark_dj2go2_touch/README.md) | Software profile; repaired-image hardware acceptance NOT RUN | MIDI/LED, latching PFL levels and focused FS UAC1 contract | Requires newer firmware than published beta2; native/software level interaction and remaining LED/pad coverage need qualification. |
 
 The [Numark DJ2GO2 Touch profile](controllers/numark_dj2go2_touch/README.md) is
@@ -158,7 +158,7 @@ for module provenance and the detailed implementation history.
 | Target | Entrypoint / signed project | Ordinary product policy | Physical evidence |
 | --- | --- | --- | --- |
 | JC4880P443C_I_W | `firmware/main-deck-p4` / `main-deck-p4` | 800 x 480, PCM5102A MAIN, controller USB1 / storage USB0 | Named Hercules audio/control/MT/loop/seek/CUE/PFL blocks accepted on `e22ff334`; long soak explicitly waived |
-| JC1060P470C_I_W_Y | `firmware/main-deck-jc1060` / `main-deck-jc1060` | 1024 x 600, controller USB MAIN/cue, Ethernet provider, controller USB0 / storage USB1 | NOT RUN; contributor Kayrosen will test later |
+| JC1060P470C_I_W_Y | `firmware/main-deck-jc1060` / `main-deck-jc1060` | 1024 x 600, controller USB MAIN/cue, Ethernet and optional Wi-Fi, controller USB0 / storage USB1 | New candidate physical acceptance NOT RUN; local JC1060/FLX4 qualification is next |
 | JC-ESP32P4-M3-DEV | `firmware/main-deck-m3` / `main-deck-m3` | DSI506/FT5426 800 x 480, fixed-48-kHz PCM5102A MAIN, Wi-Fi ON, controller USB2 FS / storage USB3 HS | Historical exact-image waveform/controller/soak acceptance; later images have their own recorded scope |
 
 See the [board policies](docs/SHARED_P4_BOARDS.md) for BSP geometry, USB roots,
@@ -288,9 +288,11 @@ LOAD; stop the deck before loading another track.
 
 ## Wi-Fi Remote and updates
 
-These Wi-Fi instructions apply to JC4880 and M3. JC1060 uses its Ethernet
-provider and has no Wi-Fi capability. Ordinary M3 starts with Wi-Fi enabled;
-its AP name is `Pajoniiir-M3` (use the name shown in Settings).
+Wi-Fi Remote is available on all three boards. Ordinary M3 starts with Wi-Fi
+enabled (`Pajoniiir-M3`); JC1060 defaults OFF (`Pajoniiir-JC1060`) and retains
+Ethernet management. Use the AP name shown in Settings. JC1060's Wi-Fi switch
+is independent of Ethernet DJ LINK; Link remains Ethernet-only. This newer
+candidate requires its own physical acceptance before broader support claims.
 
 1. Enable **Wi-Fi Remote** on the Settings screen.
 2. Connect a phone or computer to the `Pajoniiir` Wi-Fi network. The default

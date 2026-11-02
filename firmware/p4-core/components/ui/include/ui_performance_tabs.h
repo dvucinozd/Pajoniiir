@@ -36,6 +36,7 @@ typedef struct {
     void (*set_loop)(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
     void (*clear_loop)(uint8_t deck);
     void (*restore_source_cues)(uint8_t deck);
+    void (*memory_action)(uint8_t deck, uint8_t action);
     void (*set_jog_mode)(uint8_t deck, bool cdj);
     void (*hot_cue_pad)(uint8_t deck, uint8_t pad, bool pressed, bool deleted);
     void (*update_overview_cue_markers)(uint8_t deck);

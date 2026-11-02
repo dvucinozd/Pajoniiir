@@ -12,6 +12,7 @@
 #include "audio_loop_range.h"
 #include "beat_jump.h"
 #include "hot_cue_store.h"
+#include "memory_cue_store.h"
 #include "rekordbox_anlz.h"
 #if !defined(DECK_CORE_PC_TEST)
 #include "esp_timer.h"
@@ -784,6 +785,92 @@ static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
 
 static bool set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
 static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state);
+static uint32_t loaded_track_duration_ms(uint8_t deck, const deck_loaded_track_summary_t *loaded);
+
+esp_err_t deck_core_get_memory_cues(uint8_t deck, memory_cue_bank_t *out)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !out) return ESP_ERR_INVALID_ARG;
+    deck_loaded_track_summary_t summary = {0};
+    anlz_snapshot_t *snapshot = NULL;
+    if (!deck_loaded_track_store_acquire(&s_loaded_tracks, deck, &summary, &snapshot) ||
+        !summary.valid || !summary.persistent_id.valid) {
+        anlz_snapshot_release(snapshot);
+        return ESP_ERR_INVALID_STATE;
+    }
+    memory_cue_bank_t bank = {0};
+    esp_err_t rc = memory_cue_store_load(&summary.persistent_id, &bank);
+    if (rc == ESP_ERR_NOT_FOUND) {
+        const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
+        rc = ESP_OK;
+        if (meta) for (unsigned i = 0; i < meta->memory_cue_count && i < ANLZ_MAX_MEMORY_CUES; ++i) {
+            const anlz_cue_t *cue = &meta->memory_cues[i];
+            hot_cue_store_slot_t slot = {.pos_ms = cue->start_ms,
+                .end_ms = cue->type == ANLZ_CUE_LOOP ? cue->end_ms : 0,
+                .type = cue->type == ANLZ_CUE_LOOP ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE};
+            if (cue->type != ANLZ_CUE_SINGLE && cue->type != ANLZ_CUE_LOOP) continue;
+            if (summary.duration_ms && (slot.pos_ms >= summary.duration_ms || slot.end_ms > summary.duration_ms)) continue;
+            rc = memory_cue_bank_put(&bank, slot);
+            if (rc != ESP_OK) break;
+        }
+    }
+    anlz_snapshot_release(snapshot);
+    media_persistent_id_t current = {0};
+    if (!loaded_track_identity_for_deck(deck, &current) ||
+        !media_persistent_id_equal(&current, &summary.persistent_id)) return ESP_ERR_INVALID_STATE;
+    if (rc == ESP_OK) *out = bank;
+    return rc;
+}
+
+static esp_err_t memory_action(uint8_t deck, uint8_t action, deck_state_t *state)
+{
+    media_persistent_id_t id = {0};
+    if (!state || !loaded_track_identity_for_deck(deck, &id)) return ESP_ERR_INVALID_STATE;
+    if (action == CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE) return memory_cue_store_restore(&id);
+    memory_cue_bank_t bank = {0};
+    esp_err_t rc = deck_core_get_memory_cues(deck, &bank);
+    if (rc != ESP_OK) return rc;
+    if (action == CTRL_DECK_EXT_ACTION_MEMORY_PREV || action == CTRL_DECK_EXT_ACTION_MEMORY_NEXT) {
+        /* Recall never starts playback and never interrupts a playing deck. */
+        if (state->playing || state->cue_held) return ESP_ERR_INVALID_STATE;
+        uint32_t pos = current_deck_position_ms(deck, state);
+        int at = -1;
+        for (unsigned i = 0; i < bank.count; ++i) {
+            if (action == CTRL_DECK_EXT_ACTION_MEMORY_PREV && bank.cues[i].pos_ms < pos) at = (int)i;
+            if (action == CTRL_DECK_EXT_ACTION_MEMORY_NEXT && bank.cues[i].pos_ms > pos) { at = (int)i; break; }
+        }
+        if (at < 0) return ESP_ERR_NOT_FOUND;
+        const hot_cue_store_slot_t cue = bank.cues[at];
+        deck_loaded_track_summary_t summary = {0};
+        (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &summary);
+        uint32_t duration = loaded_track_duration_ms(deck, &summary);
+        if ((duration && cue.pos_ms >= duration) ||
+            (cue.type == HOT_CUE_STORE_TYPE_LOOP && !audio_loop_range_valid(cue.pos_ms, cue.end_ms, duration)))
+            return ESP_ERR_INVALID_ARG;
+        rc = audio_engine_deck_seek(deck, cue.pos_ms);
+        if (rc != ESP_OK) return rc;
+        state->position_ms = state->cue_point_ms = cue.pos_ms;
+        if (cue.type == HOT_CUE_STORE_TYPE_LOOP) {
+            if (!set_deck_loop(deck, cue.pos_ms, cue.end_ms)) return ESP_ERR_INVALID_ARG;
+        } else (void)audio_engine_deck_clear_loop(deck);
+        return ESP_OK;
+    }
+    /* MEMORY stores the current CUE, or the complete active loop. It does not
+     * move the transport. DELETE removes only that exact start coordinate. */
+    deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+    uint32_t pos = loop.active ? loop.start_ms : state->cue_point_ms;
+    if (action == CTRL_DECK_EXT_ACTION_MEMORY_DELETE) rc = memory_cue_bank_delete(&bank, pos);
+    else {
+        deck_loaded_track_summary_t summary = {0};
+        (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &summary);
+        uint32_t duration = loaded_track_duration_ms(deck, &summary);
+        if (duration && (pos >= duration || (loop.active && loop.end_ms > duration)))
+            return ESP_ERR_INVALID_ARG;
+        rc = memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=pos,
+            .end_ms=loop.active ? loop.end_ms : 0,
+            .type=loop.active ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE});
+    }
+    return rc == ESP_OK ? memory_cue_store_save(&id, &bank) : rc;
+}
 
 static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
 {
@@ -2486,6 +2573,18 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             return true;
         }
         switch (action) {
+        case CTRL_DECK_EXT_ACTION_MEMORY_STORE:
+        case CTRL_DECK_EXT_ACTION_MEMORY_DELETE:
+        case CTRL_DECK_EXT_ACTION_MEMORY_PREV:
+        case CTRL_DECK_EXT_ACTION_MEMORY_NEXT:
+        case CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE: {
+            esp_err_t rc = memory_action(deck, action, state);
+            state->memory_cue_error = rc;
+            hot_cue_revision_advance();
+            ESP_LOGI(TAG, "deck %u memory action %u: %s", (unsigned)deck + 1u,
+                     (unsigned)action, esp_err_to_name(rc));
+            return true;
+        }
         case CTRL_DECK_EXT_ACTION_SYNC_MASTER:
             set_sync_master(deck, state);
             return true;

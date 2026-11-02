@@ -406,7 +406,9 @@ esp_err_t wifi_link_start(void)
 static void stop_ap_services(void)
 {
     dns_server_stop();
-    web_server_stop();
+    /* Ethernet owns an independent management path on JC1060. Turning Wi-Fi
+     * off, or switching AP to STA for a probe, must not stop that HTTP server. */
+    if (!board_capabilities_get()->ethernet) web_server_stop();
 }
 
 static void stop_wifi_stack(void)

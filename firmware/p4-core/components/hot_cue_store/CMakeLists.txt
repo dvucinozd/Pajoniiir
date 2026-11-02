@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "hot_cue_store.c"
+    SRCS "hot_cue_store.c" "memory_cue_store.c"
     INCLUDE_DIRS "include"
     REQUIRES nvs_flash log media_identity
 )

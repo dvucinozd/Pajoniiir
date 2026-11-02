@@ -285,6 +285,22 @@ static void test_link_is_default_off_and_durable(void)
     CHECK(app_settings_get().dj_link == 0);
 }
 
+static void test_load_lock_defaults_on_persists_and_rejects_failed_write(void)
+{
+    reset_all();
+    CHECK(app_settings_init()==ESP_OK && app_settings_get().load_lock==1);
+    g_test_nvs.fail_next_set=1;
+    app_settings_set_load_lock(0);
+    CHECK(app_settings_get().load_lock==1);
+    app_settings_set_load_lock(0);
+    CHECK(app_settings_get().load_lock==0);
+    app_settings_test_reset();
+    CHECK(app_settings_init()==ESP_OK && app_settings_get().load_lock==0);
+    g_test_nvs.stored_load_lock=9;
+    app_settings_test_reset();
+    CHECK(app_settings_init()==ESP_OK && app_settings_get().load_lock==1);
+}
+
 int main(void)
 {
     reset_all();
@@ -324,6 +340,7 @@ int main(void)
     test_ota_configuration_is_one_durable_blob();
     test_ota_clear_persists_tombstone_and_reports_failure();
     test_link_is_default_off_and_durable();
+    test_load_lock_defaults_on_persists_and_rejects_failed_write();
 
     printf("TESTS_RUN=%d\n", s_checks);
     if (s_failures == 0) {

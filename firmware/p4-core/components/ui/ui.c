@@ -304,7 +304,6 @@ static anlz_snapshot_t *ui_performance_anlz_acquire(void)
 
 static bool ui_performance_persistent_id(media_persistent_id_t *out)
 {
-#ifndef WIN32
     if (!out) return false;
     deck_loaded_track_summary_t loaded = {0};
     uint8_t deck = ui_controls_active_deck(&s_controls);
@@ -312,10 +311,6 @@ static bool ui_performance_persistent_id(media_persistent_id_t *out)
         !loaded.persistent_id.valid) return false;
     *out = loaded.persistent_id;
     return true;
-#else
-    (void)out;
-    return false;
-#endif
 }
 
 static deck_state_t ui_performance_deck_state(void)
@@ -402,6 +397,19 @@ static void ui_performance_set_jog_mode(uint8_t deck, bool cdj)
         ESP_LOGW(TAG, "D%u jog mode queue failed: %s",
                  (unsigned)deck + 1u, esp_err_to_name(rc));
     }
+#endif
+}
+
+static void ui_performance_memory_action(uint8_t deck, uint8_t action)
+{
+    ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
+        .id=ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION, CTRL_ID_DECK2_EXT_ACTION),
+        .value=CTRL_DECK_EXT_VALUE(action, true)};
+#ifdef WIN32
+    deck_core_test_apply_event(&ev);
+#else
+    esp_err_t rc = deck_core_queue_event(&ev);
+    if (rc != ESP_OK) ESP_LOGW(TAG, "memory action queue failed: %s", esp_err_to_name(rc));
 #endif
 }
 
@@ -1085,6 +1093,7 @@ esp_err_t ui_init(void) {
             .set_loop = ui_performance_set_loop,
             .clear_loop = ui_performance_clear_loop,
             .restore_source_cues = ui_performance_restore_source_cues,
+            .memory_action = ui_performance_memory_action,
             .set_jog_mode = ui_performance_set_jog_mode,
             .hot_cue_pad = ui_performance_hot_cue_pad,
             .update_overview_cue_markers = ui_update_overview_cue_markers,

@@ -185,7 +185,9 @@ bool deck_core_get_loaded_track(uint8_t deck, deck_loaded_track_summary_t *out)
 }
 const uint16_t *ui_library_deck_artwork(uint8_t deck)
 {return loaded?ui_artwork_get(deck?1003u:1001u,UI_ARTWORK_DECK):NULL;}
-bool deck_core_get_load_lock(void) { return true; }
+static bool s_load_lock = true;
+bool deck_core_get_load_lock(void) { return s_load_lock; }
+void deck_core_set_load_lock(bool on) { s_load_lock = on; }
 uint32_t deck_core_hot_cue_revision(void) { return 0; }
 bool deck_core_load_allowed(uint8_t deck) { return deck != 1; }
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)

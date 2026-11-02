@@ -21,6 +21,9 @@ and [L integration](../../docs/validation/FORK_IMPROVEMENTS_PACKAGE_L_SOFTWARE_2
 - PCM5102A is disabled: GPIO50/51/52 overlap Ethernet. ES8311 is disabled for
   USB-only pacing. Do not apply JC4880 external-DAC wiring to this board.
 - RMII Ethernet starts DHCP; Link defaults OFF and binds only the Ethernet netif.
+- Optional WPA2 APSTA uses `Pajoniiir-JC1060`, default OFF on fresh NVS, with
+  an independent Settings switch. Wi-Fi OFF retains Ethernet HTTP. Pending-image
+  acceptance still requires Ethernet and any saved enabled Wi-Fi.
 - No Wi-Fi Link or local browsable NFS/DBServer library server.
 - Recorder, SD experiments and UI preview remain OFF in regular builds.
 - Separate committed `dependencies.lock`; IDF 6.0.2 and LVGL 9.5.0 are retained.
@@ -41,7 +44,7 @@ git diff --exit-code -- dependencies.lock
 ```
 
 Never reuse the JC4880 sdkconfig or alter managed dependencies without reviewing
-the resulting lock. Shared changes require both board builds and relevant host
+the resulting lock. Shared changes require all three board builds and relevant host
 and simulator suites. Linux codec/socket/sanitizer checks are separate from
 Windows portable suites. See the [checklist](../../docs/STARTUP_CHECKLIST.md).
 
@@ -54,9 +57,11 @@ development channel location, not proof of published/accepted JC1060 artifacts.
 Initial partition provisioning requires an identified board's wired install;
 app-only OTA cannot change it.
 
-Panel/revision, flash/PSRAM, USB topology, touch/render, Ethernet/SD, DDJ-400
+The [2026-11-03 completion candidate](../../docs/JC1060_COMPLETION_20261103.md)
+is prepared for the local operator's JC1060/DDJ-FLX4 testing. New-image
+panel/revision, flash/PSRAM, USB topology, touch/render, Ethernet/Wi-Fi/SD, DDJ-400
 MIDI/LED/SysEx/audio/reconnect, actual CDJ/rekordbox peers, media replacement,
 sync phase/latency and OTA/recovery all remain **NOT RUN**. No clean build,
 green LOCKED state or donor hardware report closes those gates. Only the named
-JC4880/FLX4 configuration in the
-[v91 release](../../docs/validation/JC4880_V91_RELEASE_20261005.md) is published.
+JC4880/FLX4 stable configuration in the
+[M2.5 release](../../docs/validation/M2_5_RELEASE_20261006.md) has production scope.

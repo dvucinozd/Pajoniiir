@@ -1,4 +1,5 @@
 #include "deck_core.h"
+#include "memory_cue_store.h"
 #include "control_link.h"
 #include "hot_cue_store.h"
 #include "audio_engine.h"
@@ -3512,8 +3513,55 @@ static void test_loop_resize_refuses_past_track_end(void)
     }
 }
 
+static void test_memory_actions_preserve_transport_source_and_identity(void)
+{
+    deck_core_test_reset(); reset_audio_engine_stub();
+    anlz_metadata_t meta = {0};
+    meta.memory_cue_count=2;
+    meta.memory_cues[0]=(anlz_cue_t){.type=ANLZ_CUE_SINGLE,.start_ms=1000};
+    meta.memory_cues[1]=(anlz_cue_t){.type=ANLZ_CUE_LOOP,.start_ms=3000,.end_ms=4000};
+    publish_loaded_track(0,0xabcddc01u,120,&meta);
+    publish_loaded_track(1,0xabcddc02u,120,&meta);
+    memory_cue_bank_t bank={0};
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);
+    ctrl_event_t action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_NEXT,true);
+    audio_engine_stub_deck_position_ms[0]=0;
+    deck_core_test_apply_event(&action);
+    assert(audio_engine_stub_deck_position_ms[0]==1000 && !audio_engine_stub_deck_playing[0]);
+    assert(deck_core_get_deck_state(0).cue_point_ms==1000);
+    action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_DELETE,false);
+    deck_core_test_apply_event(&action);
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);
+    action.value=CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_MEMORY_DELETE,true);
+    deck_core_test_apply_event(&action);
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==1 && bank.cues[0].pos_ms==3000);
+    assert(deck_core_get_memory_cues(1,&bank)==ESP_OK && bank.count==2);
+    action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_STORE,true);
+    deck_core_test_apply_event(&action);
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2 && bank.cues[0].pos_ms==1000);
+    action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_NEXT,true);
+    deck_core_test_apply_event(&action);
+    assert(audio_engine_stub_deck_position_ms[0]==3000 && audio_engine_stub_loop_active[0]);
+    assert(audio_engine_stub_loop_start_ms[0]==3000 && audio_engine_stub_loop_end_ms[0]==4000);
+    ctrl_event_t play=deck_button(CTRL_ID_DECK1_PLAY);
+    deck_core_test_apply_event(&play);
+    int seeks=audio_engine_stub_deck_seek_count[0];
+    action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_PREV,true);
+    deck_core_test_apply_event(&action);
+    assert(audio_engine_stub_deck_seek_count[0]==seeks && deck_core_get_deck_state(0).memory_cue_error==ESP_ERR_INVALID_STATE);
+    deck_core_reset_deck(0); /* Local edits survive deck reset/reload. */
+    publish_loaded_track(0,0xabcddc01u,120,&meta);
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);
+    action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE,true);
+    deck_core_test_apply_event(&action);
+    assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);
+    assert(meta.memory_cue_count==2 && meta.memory_cues[0].start_ms==1000);
+    assert(deck_core_get_memory_cues(2,&bank)==ESP_ERR_INVALID_ARG);
+}
+
 int main(void)
 {
+    test_memory_actions_preserve_transport_source_and_identity();
     test_remote_cue_tap_is_one_admission();
     test_loop_resize_refuses_past_track_end();
     test_physical_controller_input_uses_wake_policy();

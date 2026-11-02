@@ -9,6 +9,7 @@
 #include "ui_library.h"
 #include "library.h"
 #include "hot_cue_store.h"
+#include "memory_cue_store.h"
 #include "ui_artwork_thumb.h"
 #include "ui_artwork_placeholder.h"
 #include "artwork_fixture.h"
@@ -272,6 +273,7 @@ static unsigned count_objects(lv_obj_t *object, const lv_obj_class_t *type)
 
 #ifdef UI_LINK_SIMULATOR
 extern void ui_link_mock_available(bool available);
+extern void ui_link_mock_new_epoch(void);
 extern void ui_link_mock_empty(void);
 extern void ui_link_mock_error(void);
 extern void ui_link_mock_pending(bool pending);
@@ -371,6 +373,12 @@ static int link_scenario(const char *output)
     ui_link_mock_available(false); pump(256);
     if (link_table(lv_screen_active())) fail("lost source retained remote rows");
     save_ppm(output,"link_unavailable");
+    ui_link_mock_new_epoch(); ui_link_mock_available(true); pump(1500);
+    link_row("Remote track 1");
+    if (!find_visible_label(lv_screen_active(), "LINK #1 RB")) fail("source return lost selected peer");
+    deck_loaded_track_summary_t recovered={0};
+    deck_core_get_loaded_track(CTRL_DECK_1,&recovered);
+    if (recovered.track_key != before.track_key) fail("source return changed an already loaded deck");
     click_label("LINK #1 RB"); pump(256);
     lv_obj_t *table=link_table(lv_screen_active());
     uint32_t selected=0,column=0;
@@ -382,9 +390,83 @@ static int link_scenario(const char *output)
 }
 #endif
 
+#if defined(UI_SIM_BOARD_SETTINGS) && defined(UI_SIM_BOARD_JC1060)
+static void memory_button(const char *text, bool hold)
+{
+    lv_obj_t *label=find_visible_label(lv_screen_active(),text);
+    if (!label) { fail("memory action button missing"); return; }
+    lv_obj_t *button=lv_obj_get_parent(label);
+    lv_obj_send_event(button,LV_EVENT_PRESSED,NULL);
+    lv_obj_send_event(button,hold ? LV_EVENT_LONG_PRESSED : LV_EVENT_CLICKED,NULL);
+    lv_obj_send_event(button,LV_EVENT_RELEASED,NULL);
+    pump(64);
+}
+static void settings_switch(const char *text, bool on)
+{
+    lv_obj_t *label=find_visible_label(lv_screen_active(),text), *sw=NULL;
+    if (label) {
+        lv_obj_t *parent=lv_obj_get_parent(label);
+        for (uint32_t i=0;i<lv_obj_get_child_count(parent);++i) {
+            lv_obj_t *child=lv_obj_get_child(parent,(int32_t)i);
+            if (lv_obj_check_type(child,&lv_switch_class) && abs(lv_obj_get_y(child)-lv_obj_get_y(label))<6) sw=child;
+        }
+    }
+    if (!sw) { fail("Settings switch missing");return; }
+    if (on) lv_obj_add_state(sw,LV_STATE_CHECKED); else lv_obj_remove_state(sw,LV_STATE_CHECKED);
+    lv_obj_send_event(sw,LV_EVENT_VALUE_CHANGED,NULL);pump(320);
+}
+static lv_obj_t *completion_table(lv_obj_t *root)
+{
+    if (lv_obj_check_type(root,&lv_table_class) && lv_obj_is_visible(root) && lv_obj_get_height(root)>40) return root;
+    for (uint32_t i=0;i<lv_obj_get_child_count(root);++i) {
+        lv_obj_t *found=completion_table(lv_obj_get_child(root,(int32_t)i));if(found)return found;
+    }
+    return NULL;
+}
+static int completion_controls_scenario(const char *output)
+{
+    click_label("LIBRARY");click_label("PLAYLISTS");
+    lv_obj_t *table=completion_table(lv_screen_active());
+    if (!table) fail("playlist table missing");
+    else {lv_table_set_selected_cell(table,0,0);lv_obj_send_event(table,LV_EVENT_CLICKED,NULL);pump(64);}
+    table=completion_table(lv_screen_active());
+    if (!table || strcmp(lv_table_get_cell_value(table,0,0),"Night Set")) fail("touch did not open already-selected first folder");
+    else {lv_table_set_selected_cell(table,0,0);lv_obj_send_event(table,LV_EVENT_CLICKED,NULL);pump(64);}
+    if (ui_library_load_selected_for_deck(CTRL_DECK_1)!=ESP_OK) fail("touch playlist did not retain ordered load");
+    deck_loaded_track_summary_t loaded={0};
+    if (!deck_core_get_loaded_track(0,&loaded) || loaded.track_key!=1003) fail("touch playlist order changed");
+    click_label("HOT CUES");click_deck(1);click_label("MEMORY");
+    extern void ui_simulator_deck_set_position(uint32_t);
+    ui_simulator_deck_set_playing(false);ui_simulator_deck_set_position(0);
+    memory_button("NEXT",false);
+    if (!deck_core_get_deck_state(1).cue_point_ms) fail("touch memory recall did not set CUE");
+    memory_cue_bank_t bank={0};
+    memory_button("DELETE",false);
+    if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=15) fail("touch memory delete failed");
+    memory_button("HOLD SOURCE",false);
+    if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=15) fail("short click restored memory bank");
+    memory_button("STORE",false);
+    if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=16) fail("touch memory store failed");
+    memory_button("DELETE",false);memory_button("HOLD SOURCE",true);
+    if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=16) fail("held restore did not restore imported memory bank");
+    save_ppm(output,"completion_memory");click_label("MEMORY");click_label("SETTINGS");
+    settings_switch("LOAD LOCK ON",false);
+    if (deck_core_get_load_lock() || app_settings_get().load_lock) fail("LOAD LOCK switch did not update actor and settings");
+    settings_switch("LOAD LOCK OFF",true);
+    settings_switch("WI-FI: OFF",true);
+    if (!app_settings_get().wifi_remote || app_settings_get().dj_link) fail("Wi-Fi switch changed Ethernet Link setting");
+    settings_switch("DJ LINK: OFF",true);
+    if (!app_settings_get().wifi_remote || !app_settings_get().dj_link) fail("Link switch changed Wi-Fi setting");
+    settings_switch("WI-FI: ON",false);settings_switch("DJ LINK: ON",false);
+    save_ppm(output,"completion_settings");
+    puts("JC1060 touch playlist, memory actions/restore, LOAD LOCK and independent Wi-Fi/Link controls exercised");
+    return s_failures ? 1 : 0;
+}
+#endif
+
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
+    if (argc != 2 && argc != 3) {
         fprintf(stderr, "usage: ui_simulator_e2e <screenshot-output-dir>\n");
         return 2;
     }
@@ -420,6 +502,9 @@ int main(int argc, char **argv)
     }
 
     pump(3200);
+#if defined(UI_SIM_BOARD_SETTINGS) && defined(UI_SIM_BOARD_JC1060)
+    if (argc==3 && !strcmp(argv[2],"--jc1060-controls")) return completion_controls_scenario(argv[1]);
+#endif
 #ifdef UI_LINK_SIMULATOR
     return link_scenario(argv[1]);
 #endif
@@ -560,10 +645,10 @@ int main(int argc, char **argv)
     save_ppm(argv[1], "hot_cues");
 #if !CONFIG_PAJONIIIR_DJ_OVERVIEW
     if (!click_label("MEMORY")) fail("memory cue list missing");
-    if (!find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16 (TRUNCATED)"))
+    if (!find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16/16 (SOURCE TRUNCATED)"))
         fail("memory cue count/truncation missing");
     save_ppm(argv[1], "memory_cues");
-    lv_obj_t *memory_title = find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16 (TRUNCATED)");
+    lv_obj_t *memory_title = find_visible_label(lv_screen_active(), "D2 MEMORY CUES: 16/16 (SOURCE TRUNCATED)");
     if (memory_title) {
         lv_obj_scroll_to_y(lv_obj_get_parent(memory_title), 400, LV_ANIM_OFF);
         pump(64);

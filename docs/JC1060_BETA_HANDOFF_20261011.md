@@ -1,5 +1,12 @@
 # JC1060 shared P4 beta contributor handoff
 
+Update 2026-11-03: the operator now has a JC1060 and selected DDJ-FLX4 for local
+qualification. The [completion candidate](JC1060_COMPLETION_20261103.md) adds
+memory-bank editing, ordinary LOAD LOCK and optional Wi-Fi, plus playlist/Link
+UI repairs. Its new build/package identities and physical gates are separate
+from the published beta2 and historical contributor records below. JC8012 is
+deferred; no new-image installation or physical PASS is implied here.
+
 Date: 2026-10-11. Future physical testing owner: contributor Kayrosen
 ([kayrozen](https://github.com/kayrozen)). The operator has no JC1060 available.
 Physical acceptance of the published beta is **NOT RUN**; preparing this handoff

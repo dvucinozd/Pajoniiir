@@ -23,6 +23,13 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
     throw "No such release directory: $ReleaseDir"
 }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$candidateManifest = Join-Path $ReleaseDir 'manifest.json'
+if (Test-Path -LiteralPath $candidateManifest) {
+    $candidate = Get-Content -LiteralPath $candidateManifest -Raw | ConvertFrom-Json
+    if ($candidate.experimental_sd_cold_power) {
+        throw 'Experimental SD cold-power candidates cannot generate a public pull channel'
+    }
+}
 if (-not $BaseUrl) {
     $BaseUrl = switch ($Project) {
         'main-deck-p4' { 'https://ota.pajoniiir.eu' }

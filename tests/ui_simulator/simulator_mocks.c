@@ -165,6 +165,7 @@ const char *audio_engine_last_error_text(void)
 }
 
 static app_settings_t s_settings = {
+    .load_lock = 1,
     .audio_out = 0,
     .backlight_pct = 80,
     .time_remain = 1,
@@ -194,6 +195,7 @@ void app_settings_set_cue_mode(uint8_t value) { s_settings.cue_mode = value; }
 void app_settings_set_master_trim_preset(uint8_t value) { s_settings.master_trim_preset = value; }
 void app_settings_set_wifi_remote(uint8_t value) { s_settings.wifi_remote = value; }
 void app_settings_set_dj_link(uint8_t value) { s_settings.dj_link = value; }
+void app_settings_set_load_lock(uint8_t value) { s_settings.load_lock = value; }
 
 int64_t esp_timer_get_time(void)
 {

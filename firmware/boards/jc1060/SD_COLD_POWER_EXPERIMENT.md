@@ -5,6 +5,16 @@ selective adaptation of donor commits `981225e5` and `1e288dbd`, not a claim tha
 the donor's reported 11/11 mounts qualify the canonical image. JC1060 Wi-Fi
 policy is unchanged and remains a separate feature decision.
 
+The 2026-11-03 completion program prepares this experiment for the local
+operator's JC1060/FLX4 bench. Ordinary firmware retains OFF. For a clean
+experiment build, `tools/package_ota_release.ps1 -Project main-deck-jc1060
+-BuildName <experiment-build> -SdColdPowerCandidate` requires the enabled flag,
+runs the explicit board verifier and emits a separate `-sd-cold-power` package
+directory with a signed `experimental_sd_cold_power` manifest field. The public
+channel generator rejects this class. This is local test delivery, not hardware
+acceptance or a change to ordinary defaults. Optional JC1060 Wi-Fi is now a
+separate default-OFF capability; original donor observations remain historical.
+
 The single startup call to `bsp_sd_init()` owns SDMMC slot 0, LDO4 and
 GPIO43/44/39/40/41/42. ESP-Hosted owns slot 1 when enabled. The experiment runs
 before FATFS initializes slot 0, never from runtime recovery, and never resets

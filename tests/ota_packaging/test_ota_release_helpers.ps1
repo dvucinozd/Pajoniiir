@@ -134,6 +134,32 @@ try {
         }
         $result = & $readBuild $tempRoot $definition $project
         Assert-Equal $project $result.Project 'ordinary project reader'
+        '#define CONFIG_PAJONIIIR_SD_COLD_POWER_EXPERIMENT 1' | Set-Content $config
+        $rejected=$false
+        try { & $readBuild $tempRoot $definition $project | Out-Null }
+        catch { $rejected=$_.Exception.Message -match 'matching explicit SdColdPowerCandidate' }
+        if (-not $rejected) { throw 'SD experiment accepted without explicit packaging admission' }
+        $readSd = {
+            param($RepoRoot,$definition,$project)
+            $BuildName='build_test'; $SdColdPowerCandidate=$true; . $definition
+            Read-TargetBuild -RelativeProjectDir "firmware/$project" -ExpectedProject $project -ExpectedChipId 0x12 -SlotSize 0x400000
+        }
+        if ($project -eq 'main-deck-jc1060') {
+            $sdResult=& $readSd $tempRoot $definition $project
+            Assert-Equal $project $sdResult.Project 'explicit JC1060 SD reader'
+        } else {
+            $rejected=$false
+            try { & $readSd $tempRoot $definition $project | Out-Null }
+            catch { $rejected=$_.Exception.Message -match 'JC1060-only' }
+            if (-not $rejected) { throw 'SD packaging admitted another board' }
+        }
+        Set-Content $config ''
+        if ($project -eq 'main-deck-jc1060') {
+            $rejected=$false
+            try { & $readSd $tempRoot $definition $project | Out-Null }
+            catch { $rejected=$_.Exception.Message -match 'matching explicit SdColdPowerCandidate' }
+            if (-not $rejected) { throw 'SD packaging admitted an ordinary config' }
+        }
         foreach ($flag in @('PAJONIIIR_DJ_OVERVIEW','USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM')) {
             "#define CONFIG_$flag 1" | Set-Content $config
             $rejected=$false
@@ -169,6 +195,13 @@ try {
     }
     $latest = Get-Content (Join-Path $releaseDir 'latest.json') -Raw | ConvertFrom-Json
     Assert-Equal 'M2.1/main-deck-jc1060.ddjota' $latest.p4.url 'JC1060 compatible channel schema'
+    $sdManifest=Join-Path $releaseDir 'manifest.json'
+    '{"experimental_sd_cold_power":true}' | Set-Content -LiteralPath $sdManifest
+    $rejected=$false
+    try { & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-jc1060 -ReleaseDir $releaseDir -PublicKey $publicKey | Out-Null }
+    catch { $rejected=$_.Exception.Message -match 'cannot generate a public pull channel' }
+    if (-not $rejected) { throw 'Experimental SD candidate generated a public channel' }
+    Remove-Item -LiteralPath $sdManifest
     $rejected=$false
     try { & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-jc1060 -ReleaseDir $releaseDir -PublicKey $publicKey -BaseUrl 'https://ota.pajoniiir.eu/' | Out-Null }
     catch { $rejected=$_.Exception.Message -match 'separate OTA channel' }

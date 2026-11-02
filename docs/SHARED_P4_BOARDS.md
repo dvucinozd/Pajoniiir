@@ -23,10 +23,17 @@ qualify a newly built image. See the [current closeout](reviews/2026-10-11-share
 | MAIN rate policy | existing source-rate policy | existing USB policy | fixed 48 kHz |
 | FIR cache / dense correlation | off / off | off / off | on / on |
 | Panel waveform policy | existing cadence/order | existing cadence/order | waveform first / top to bottom |
-| Wi-Fi capability/default | available, default OFF | unavailable | available, default ON, WPA2 APSTA |
+| Wi-Fi capability/default | available, default OFF | available, default OFF, WPA2 APSTA | available, default ON, WPA2 APSTA |
 | Ethernet provider | unavailable | board Ethernet | disabled, pins reserved for I2S |
 | Link service compiled | experiment only | yes, runtime default OFF | experiment only |
 | Recorder / alternative UI | experiment only | experiment only | experiment only |
+
+JC1060 Wi-Fi uses `Pajoniiir-JC1060`, an independent Settings switch and the
+existing C6 lifecycle. Ethernet HTTP stays running across Wi-Fi OFF/AP-to-STA
+transitions. Link still binds only Ethernet; pending-image readiness still
+requires Ethernet management and any saved enabled Wi-Fi. This candidate's
+physical networking/reconnect acceptance is NOT RUN; see the
+[completion record](JC1060_COMPLETION_20261103.md).
 
 M3 keeps DSI506/DYL0023 1 lane / 800 Mbps, RGB888, 27.777 MHz,
 HFP/HSW/HBP 59/2/45, VFP/VSW/VBP 109/2/22, burst sync pulses/no frame ACK,

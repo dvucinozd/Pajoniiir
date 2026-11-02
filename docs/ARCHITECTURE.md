@@ -38,6 +38,20 @@ M3 Link experiment supplies STA; the normal M3 image neither starts the service
 nor exposes active Link controls. Network transport writes share LOAD ownership.
 Recorder and alternative UI are shared experiments with separate build gates.
 
+JC1060 additionally offers an optional, default-OFF WPA2 APSTA management path.
+Its Wi-Fi lifecycle does not stop Ethernet HTTP, and never changes the Link
+interface provider. Pending-image acceptance retains the required Ethernet
+readiness gate and additionally checks saved enabled Wi-Fi.
+
+Memory cues use a separate full-media-identity NVS namespace from Hot Cues.
+Until edited, the ordered bank comes from the retained ANLZ snapshot; a local
+bank overrides that complete source bank, including an intentionally empty
+bank. Explicit HOLD SOURCE removes the memory override without writing export
+files or changing Hot Cues. The deck actor serializes writes and semantic
+recall; PREV/NEXT are stopped-only and cannot autoplay. UI bank reads occur on
+track/revision changes, outside the audio render callback. LOAD LOCK now has
+a persisted ordinary Settings control, default ON.
+
 `/api/firmware` distinguishes source SHA, source cleanliness, embedded ELF digest,
 running slot and IDF image state. The signed manifest binds the complete image
 and bundle hashes; the ELF digest is not the `.bin` hash. The read-only reliability

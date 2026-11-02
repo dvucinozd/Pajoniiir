@@ -76,11 +76,21 @@ static void status_publish(int mode,int error,bool active) { (void)mode;(void)er
 static int start_under_lease(void) { ++start_calls; if(start_calls<=4)return ESP_ERR_NO_MEM;s_active=true;return ESP_OK; }
 static int wifi_link_stop(void) { ++stop_calls;s_active=false;s_desired=true;return ESP_OK; }
 static void stop_under_lease(void) { s_active=false; }
+static struct board_caps { bool ethernet; } caps;
+static const struct board_caps *board_capabilities_get(void) { return &caps; }
+static unsigned dns_stops, web_stops;
+static void dns_server_stop(void) { ++dns_stops; }
+static void web_server_stop(void) { ++web_stops; }
 '''
+code += function('static void stop_ap_services(void)')
 code += function('esp_err_t wifi_link_probe_start(void)')
 code += function('static void wifi_link_worker(void *arg)')
 code += r'''
 int main(void) {
+    caps.ethernet=true;stop_ap_services();
+    assert(dns_stops==1 && web_stops==0);
+    caps.ethernet=false;stop_ap_services();
+    assert(dns_stops==2 && web_stops==1);
     s_active=true; stop_during_acquire=true;
     assert(wifi_link_probe_start()==ESP_ERR_INVALID_STATE);
     assert(!owner && !s_probe_running && !spawn_count && releases==1);

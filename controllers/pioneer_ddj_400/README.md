@@ -20,12 +20,15 @@ Initial SysEx is emitted once per activation before LED feedback; VU scale
 
 CUE/LOOP CALL notes 90/51, 90/53, 91/51 and 91/53 map to the corresponding
 deck's loop halve/double. Shared loop admission refuses ranges beyond the
-known track length. Four memory-store/delete inputs still lack semantic
-actions and remain in `omitted_inputs`; source memory cues/loops are available
-through the library/UI implementation.
+known track length. Notes 90/3D and 91/3D store the current CUE or active loop;
+90/3E and 91/3E delete that exact start coordinate. These new semantic actions
+require the 2026-11-03 matching firmware, newer than published beta2. Local
+memory banks contain up to 16 ordered points/loops keyed by full media identity.
+The Hot Cues MEMORY panel provides stopped-only PREV/NEXT, STORE, DELETE and
+HOLD SOURCE (restore imported memory cues). Source Rekordbox files are unchanged.
 
-The v4 binary has 284 inputs, 127 outputs and 6,112 bytes. Its compile identity,
-production parser/storage validator and the four press/release mappings pass
+The v4 binary has 288 inputs, 127 outputs and 6,176 bytes. Its compile identity,
+production parser/storage validator and loop/memory press/release mappings pass
 host tests. Kayrosen's separate JC1060/DDJ-400 branch has scoped hardware
 evidence recorded in the [contributor review](../../docs/reviews/2026-10-14-jc1060-contributor-review.md).
 Those results do not qualify the newly integrated canonical firmware; its

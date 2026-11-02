@@ -475,6 +475,7 @@ void pajoniiir_common_app_main_with_network(const p4_app_network_provider_t *pro
     // controller producer.
     QueueHandle_t ctrl_queue;
     ESP_ERROR_CHECK(deck_core_init(&ctrl_queue));
+    deck_core_set_load_lock(settings.load_lock != 0);
 
     // ── UI ───────────────────────────────────────────────────────────────────
     firmware_resources_phase("ui");

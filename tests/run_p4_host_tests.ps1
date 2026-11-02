@@ -2771,6 +2771,7 @@ $tests = @(
             "-I../../firmware/p4-core/components/media_identity/include",
             "-o", "test_hot_cue_store_nvs.exe", "test_hot_cue_store_nvs.c",
             "../../firmware/p4-core/components/hot_cue_store/hot_cue_store.c",
+            "../../firmware/p4-core/components/hot_cue_store/memory_cue_store.c",
             "../../firmware/p4-core/components/media_identity/media_identity.c"
         )
     },
