@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+  "source_dirty": false,
+  "scope": "local software only; no device access or physical acceptance",
+  "github_actions": "NOT RUN: operator budget instruction; no push or dispatch",
+  "host": {
+    "exit_code": 0,
+    "functional_build_steps": 144,
+    "run_steps": 206,
+    "optional_skip": false,
+    "log_sha256": "b2bf2d7bb0a9346da7b26cd88cbdc5b4012b51c57e716cb94b5400ea4a7e0ca0"
+  },
+  "ui": {
+    "legacy": {
+      "captures": 21,
+      "log_sha256": "1d37a910119d49a1582f497cb433921a927ca6627db4c95b52e9d6819f27f1d8",
+      "baseline_sha256": "f6f23d3de31bfda1f943d59284c57a2c90be8734ee57103873145d8d2d2e2672"
+    },
+    "product-compact": {
+      "captures": 21,
+      "log_sha256": "e32433a95fa76dbfe866eb21843a0e59d3f9c48f27d5cdda6701666cd58c4ee4",
+      "baseline_sha256": "f6f23d3de31bfda1f943d59284c57a2c90be8734ee57103873145d8d2d2e2672"
+    },
+    "product-wide": {
+      "captures": 23,
+      "log_sha256": "5ce041bf10e6eb8ab1f37d808a3f31cb192d8277de2f3ac163ac89fcb94de3db",
+      "baseline_sha256": "bf5153f4ea977df73858792e7c2b0f51e4355c6a215142dc6667de39818877a7"
+    },
+    "product-m3": {
+      "captures": 26,
+      "log_sha256": "afb9e119840c76348610b5fc1e2960a69c20f69bc630b4a1336f522543c15766",
+      "baseline_sha256": "5170879f6c1e7052316544511b5e9ad6a1db7408a876a5aa0cc3c65cfe4ec075"
+    },
+    "native-compact": {
+      "captures": 9,
+      "log_sha256": "290aa29feef8f211ae8108dbb63ef1e424a4273ebd711d7dcae8c877bc57d407",
+      "baseline_sha256": "792fc0c12cc8216f87bf13482932c4a79b7e777392130d8b4f4ef55d1170cbbc"
+    },
+    "native-wide": {
+      "captures": 9,
+      "log_sha256": "6f0f07fed018775742baa86e72d2e9e87ba36c0b71ad5d0ffe389fdb6cfcf26d",
+      "baseline_sha256": "4fcc66aee468c534b43b6e458ac1a3a1ba0a9c518d2fe8c97788066ad6b7d9e9"
+    },
+    "runtime-compact": {
+      "captures": 14,
+      "log_sha256": "5db0e6b7cd2617ce32098c252f9b226dddcc18aa0968cd522a20ffef2cbdceee",
+      "baseline_sha256": "ed6aac09c148fb8afcfdb8ccc6b7e0b1e34997e56f90512d80efab4f50b4416c"
+    },
+    "runtime-wide": {
+      "captures": 14,
+      "log_sha256": "251536b4a991b17ecf75d2b9e912196ed13b5adc805ce2c5663551ec4877f674",
+      "baseline_sha256": "0f09cc9fbc2e2a42a8b4d9d7500fd09352a4b098eaaac578a8c3edc112bf2cfb"
+    },
+    "link-wide": {
+      "captures": 8,
+      "log_sha256": "32347ec4663dc0c34775d7ec68b2a935f7033699cb599a83c89125aa87b2282c",
+      "baseline_sha256": "013a10adc5a8861f0e9e50228cb2a18e07e26c8e122a6088895d1fb2b1b33992"
+    }
+  },
+  "ui_total_captures": 145,
+  "builds": [
+    {
+      "project": "main-deck-p4",
+      "build": "build",
+      "experimental_sd_cold_power": false,
+      "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+      "source_dirty": 0,
+      "version": "M2.5-295-g8bc3b53a",
+      "idf": "v6.0.2",
+      "bytes": 2614112,
+      "bin_sha256": "1b16fb8a625c8ce9274cb9244848bfb34583cd75c46f2c6e20a98f1bec23cea1",
+      "elf_sha256": "4ee533579dfa497771c7b5c68ef9fad3a3781e47c30d0cadeef58c470689cb6b",
+      "sdkconfig_h_sha256": "fdf82e6dfc5a7131e696b4abb146ecb5051ad81a742e0b43feb7b03bc57a6b71",
+      "dependency_lock_sha256": "fdfe2610010b7cb25137a35fff3aba3165bc77ffaeff887df9fc715013d85927",
+      "minimum_chip_revision": "100",
+      "maximum_chip_revision": "199",
+      "budget_bytes": 3670016,
+      "remaining_bytes": 1055904
+    },
+    {
+      "project": "main-deck-jc1060",
+      "build": "build",
+      "experimental_sd_cold_power": false,
+      "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+      "source_dirty": 0,
+      "version": "M2.5-295-g8bc3b53a",
+      "idf": "v6.0.2",
+      "bytes": 2673392,
+      "bin_sha256": "6f89ba21c8127ea0ba55853fe5c52d39a88de2506e442099f7d0f25e1e786fc8",
+      "elf_sha256": "21c7917b1d79ffdf04c66a6e7f223aaa40fe297f4d7d46cdb2bc815022525fac",
+      "sdkconfig_h_sha256": "df50d9a4c5da503d2ca018ce96f48618655395fe7c98e8e9ce787ce8d9a1e250",
+      "dependency_lock_sha256": "b41213015dc95ae87952b56c5e5672503ffe12bc63325c3a68698ee6f958f72e",
+      "minimum_chip_revision": "100",
+      "maximum_chip_revision": "199",
+      "budget_bytes": 3670016,
+      "remaining_bytes": 996624,
+      "package_directory": "D:\\Documents\\DDJ-FFL4\\releases\\jc1060-completion-8bc3b53a-20261103\\pajoniiir-jc1060-M2.5-295-g8bc3b53a",
+      "bundle_bytes": 2673580,
+      "bundle_sha256": "7123bb8335601f97421b15c781b8905f25f1300b81878e0c5e7ed3f860390fa1",
+      "manifest_sha256": "a9e268eb759bddd2c06ce6cfd423c957e4a2dfd9ce77d258e2c99867fd1c11b2"
+    },
+    {
+      "project": "main-deck-m3",
+      "build": "build",
+      "experimental_sd_cold_power": false,
+      "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+      "source_dirty": 0,
+      "version": "M3-dev-g8bc3b53aff98",
+      "idf": "v6.0.2",
+      "bytes": 2607440,
+      "bin_sha256": "029b08dc15c1f7f29fb8b94027195bba314d6a12528fb6824ff605d56c976acd",
+      "elf_sha256": "9225bbddd8ba5b9b05de9d2ac3c8feaa13cbce35b512461445f5498a4ce78396",
+      "sdkconfig_h_sha256": "f442291d5e9fe38994d9d97ef308682b5e885548b2d6fef5d44c52fa3b79a036",
+      "dependency_lock_sha256": "d034fe6b34c26d451d75878546947b95dba2a0fedf9f53d10216182784f14f3c",
+      "minimum_chip_revision": "100",
+      "maximum_chip_revision": "199",
+      "budget_bytes": 3670016,
+      "remaining_bytes": 1062576
+    },
+    {
+      "project": "main-deck-jc1060",
+      "build": "build_completion_sd",
+      "experimental_sd_cold_power": true,
+      "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+      "source_dirty": 0,
+      "version": "M2.5-295-g8bc3b53a",
+      "idf": "v6.0.2",
+      "bytes": 2674384,
+      "bin_sha256": "107be27e159c8f7a01587e3a8edd945b745d056f3bc0a68ba78121b1c02986be",
+      "elf_sha256": "e6e412613b33d8a408bd3041a8f7e0d9eb5c516232fc64b6cac3ebe75839a3cd",
+      "sdkconfig_h_sha256": "97e2924301d295bde6c62c72d56c7684b60ebc33965e42cc2c564c392c3c969d",
+      "dependency_lock_sha256": "b41213015dc95ae87952b56c5e5672503ffe12bc63325c3a68698ee6f958f72e",
+      "minimum_chip_revision": "100",
+      "maximum_chip_revision": "199",
+      "budget_bytes": 3670016,
+      "remaining_bytes": 995632,
+      "package_directory": "D:\\Documents\\DDJ-FFL4\\releases\\jc1060-completion-8bc3b53a-20261103\\pajoniiir-jc1060-M2.5-295-g8bc3b53a-sd-cold-power",
+      "bundle_bytes": 2674572,
+      "bundle_sha256": "c5223943333317a3c6ebfe0cf8411aed12665818432bde9aac12dada81a4ecbb",
+      "manifest_sha256": "ced283028f52f720a9e35c30e7edcf8889128492d8b26321cf3ecdada96bd185"
+    }
+  ],
+  "board_disposition": "COM3 confirmed by operator; another agent owns board; no serial/API/flash until released",
+  "physical_tests": "NOT RUN",
+  "installed_state": "NOT INSPECTED",
+  "source_bundle_prerequisite": "5f41df1bfec994e325ec1ccdd4b3ebf4ad88061e"
+}

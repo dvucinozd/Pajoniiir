@@ -1,0 +1,17 @@
+{
+  "source_sha": "8bc3b53aff98c8b624696c64addbb8c1b5a4c577",
+  "checks": [
+    "pajoniiir-jc1060-M2.5-295-g8bc3b53a: modified header rejected",
+    "pajoniiir-jc1060-M2.5-295-g8bc3b53a: modified payload rejected",
+    "pajoniiir-jc1060-M2.5-295-g8bc3b53a-sd-cold-power: modified header rejected",
+    "pajoniiir-jc1060-M2.5-295-g8bc3b53a-sd-cold-power: modified payload rejected",
+    "modified inventory rejected"
+  ],
+  "signed_inventory_files": 51,
+  "kit_verification": "PASS",
+  "source_recovery": "PASS from canonical prerequisite 5f41df1bfec994e325ec1ccdd4b3ebf4ad88061e",
+  "inventory_sha256": "f93a50a1efb06f7b8679ef2453dd8a83f88d8a2273cad29a9619088f7d3ee288",
+  "inventory_signature_sha256": "a90a4e5eabace884e0a8a0866df9d77f79cd9c556efa96cddaec7c3a4043b89d",
+  "physical_tests": "NOT RUN",
+  "device_access": "NONE; COM3 held by another agent until operator releases it"
+}

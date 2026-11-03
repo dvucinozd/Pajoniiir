@@ -15,6 +15,14 @@ acceptance are unchanged. GitHub Actions is not dispatched during development,
 following the operator's budget instruction. Earlier dated progress below
 retains its original image and policy scope.
 
+Final clean `8bc3b53a` passes full local host qualification (144 build/206 run
+steps, no optional SKIP), all nine UI presentations/145 exact hashes, all three
+ordinary IDF6.0.2 builds and the separately configured SD variant. Both JC1060
+signed packages, a 51-file signed delivery inventory and source recovery verify.
+The operator confirms COM3 but reserves the board for another agent and will
+announce availability. Device access and all physical gates remain NOT RUN;
+do not open/reset/probe it before release. No push, Actions or public update.
+
 PR54 is merged into `master` as `37d5bddb`; its reviewed head and merge both
 pass all thirteen migration jobs, including SD-power. Master also passes
 documentation, Pages and separate dual-USB workflows. The
