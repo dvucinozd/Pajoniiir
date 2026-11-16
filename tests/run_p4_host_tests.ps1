@@ -2074,6 +2074,33 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_decim2"
+        Dir = "tests/audio_decim2"
+        Target = "test_audio_decim2.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99", "-O2",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine",
+            "-o", "test_audio_decim2.exe",
+            "test_audio_decim2.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decim2.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_pcm_file"
+        Dir = "tests/audio_pcm_file"
+        Target = "test_audio_pcm_file.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-o", "test_audio_pcm_file.exe",
+            "test_audio_pcm_file.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_recorder_wav"
         Dir = "tests/audio_recorder_wav"
         Target = "test_audio_recorder_wav.exe"
@@ -2296,6 +2323,8 @@ $tests = @(
             "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decim2.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
             "../../firmware/p4-core/components/audio_engine/audio_diag.c",
             "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "../../firmware/p4-core/components/audio_engine/audio_censor.c",
