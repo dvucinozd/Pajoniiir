@@ -259,6 +259,10 @@ def convert_profile(web_data):
         })
     }
 
+    audio = firmware_profile["audio"] = dict(firmware_profile["audio"])
+    if "wireFormat" in audio:
+        audio["wire_format"] = audio.pop("wireFormat")
+
     if "initSysex" in abi:
         firmware_profile["init_sysex"] = abi["initSysex"]
 

@@ -15,6 +15,7 @@ int review_claim_result = 0;
 #include "fixtures/hercules_inpulse_500_fs_config.h"
 #include "fixtures/ddj400_hs_as_config.h"
 #include "fixtures/numark_touch_fs_as_config.h"
+#include "fixtures/ddj_sb3_fs_config.h"
 
 static unsigned packet_detail_count;
 static uint32_t packet_details[4][4];
@@ -936,6 +937,134 @@ static void test_numark_touch_fs(void)
     puts("PASS Numark FS focused fixture: PCM16 44.1k, sync cadence, MAIN/CUE routing, 48k source conversion, stop");
 }
 
+static void test_ddj_sb3_trailing_fragment(void)
+{
+    flx4_uac_descriptor_result_t parsed;
+    flx4_uac_playback_format_t selected;
+    uint8_t extended[sizeof(descriptor) + 2u];
+
+    memcpy(extended, descriptor, sizeof(descriptor));
+    extended[2] = (uint8_t)(sizeof(descriptor) + 1u);
+    extended[sizeof(descriptor)] = 0x09;
+    assert(flx4_uac_parse_playback_formats(extended, sizeof(descriptor) + 1u, &parsed));
+    assert(parsed.format_count == 1u);
+
+    memcpy(extended, descriptor, sizeof(descriptor));
+    extended[2] = (uint8_t)(sizeof(descriptor) + 2u);
+    extended[sizeof(descriptor)] = 0x09;
+    extended[sizeof(descriptor) + 1u] = 0x24;
+    assert(!flx4_uac_parse_playback_formats(extended, sizeof(descriptor) + 2u, &parsed));
+
+    assert(flx4_uac_parse_playback_formats(ddj_sb3_fs_config, sizeof(ddj_sb3_fs_config), &parsed));
+    assert(parsed.format_count == 1u);
+    assert(parsed.formats[0].interface_num == 1u && parsed.formats[0].alternate_setting == 1u);
+    assert(parsed.formats[0].endpoint_addr == 0x01u && parsed.formats[0].max_packet_size == 576u);
+    assert(parsed.formats[0].channels == 4u && parsed.formats[0].bits_per_sample == 24u);
+    assert(parsed.formats[0].bytes_per_sample == 3u && parsed.formats[0].interval == 1u);
+    assert(parsed.formats[0].sync_type == 3u && !parsed.formats[0].requires_feedback);
+    assert(parsed.formats[0].pcm_explicit && parsed.formats[0].frequency_control);
+    assert(flx4_uac_format_supports_rate(&parsed.formats[0], 44100u));
+    assert(flx4_uac_format_supports_rate(&parsed.formats[0], 48000u));
+    assert(!flx4_uac_parse_playback_formats(ddj_sb3_fs_config, sizeof(ddj_sb3_fs_config) - 1u, &parsed));
+
+    assert(controller_usb_audio_stream_is_quiesced());
+    assert(controller_usb_audio_stream_set_policy(false, false, false) == ESP_OK);
+    assert(select_stream_format(ddj_sb3_fs_config, sizeof(ddj_sb3_fs_config), &selected));
+    assert(selected.channels == 4u && selected.bits_per_sample == 24u && selected.bytes_per_sample == 3u);
+    assert(selected.max_packet_size == 576u && selected.sync_type == 3u && !selected.requires_feedback);
+    assert(s_target_rate == 44100u);
+    assert(controller_usb_audio_stream_set_policy(true, false, false) == ESP_OK);
+    puts("PASS DDJ-SB3 FS: 4ch packed-24 with one-byte tail, overrun tail still rejected");
+}
+
+/* Fills the ring with a constant per-channel pattern, submits one URB and
+ * decodes every frame; returns the frame count after checking all frames match. */
+static int submit_constant_sb3(int sample_bytes, int16_t decoded[4])
+{
+    int16_t main[32 * 2], phones[32 * 2];
+    for (unsigned i = 0; i < 32u; ++i) {
+        main[i * 2] = 4000; main[i * 2 + 1] = -8000;
+        phones[i * 2] = 12000; phones[i * 2 + 1] = -16000;
+    }
+    for (unsigned chunk = 0; chunk < 12u; ++chunk)
+        (void)controller_usb_audio_stream_write(main, phones, 32, 44100);
+    usb_transfer_t *transfer = s_isoc[0];
+    s_isoc_active[0] = false;
+    assert(prepare_and_submit(transfer) == ESP_OK);
+    const int frame_bytes = 4 * sample_bytes;
+    int total = 0, frames = 0;
+    for (int p = 0; p < transfer->num_isoc_packets; ++p) {
+        const int n = transfer->isoc_packet_desc[p].num_bytes;
+        assert(n == 44 * frame_bytes || n == 45 * frame_bytes);
+        total += n;
+    }
+    assert(transfer->num_bytes == total);
+    for (int f = 0; f < total / frame_bytes; ++f, ++frames) {
+        for (int c = 0; c < 4; ++c) {
+            const uint8_t *s = &transfer->data_buffer[f * frame_bytes + c * sample_bytes];
+            int16_t v;
+            if (sample_bytes == 3) {
+                assert(s[0] == 0u);
+                v = (int16_t)(s[1] | (s[2] << 8));
+            } else v = (int16_t)(s[0] | (s[1] << 8));
+            if (f == 0) decoded[c] = v;
+            else assert(v == decoded[c]);
+        }
+    }
+    return frames;
+}
+
+static void test_ddj_sb3_s16le_wire_format(void)
+{
+    controller_usb_audio_stream_stats_t stats;
+    assert(controller_usb_audio_stream_set_wire_format((controller_uac_wire_format_t)2) ==
+           ESP_ERR_INVALID_ARG);
+    controller_usb_audio_stream_get_stats(&stats);
+    assert(stats.wire_format == CONTROLLER_UAC_WIRE_DESCRIPTOR);
+
+    assert(controller_usb_audio_stream_is_quiesced());
+    assert(controller_usb_audio_stream_set_policy(false, false, false) == ESP_OK);
+    assert(controller_usb_audio_stream_start((void *)1, (void *)2,
+        ddj_sb3_fs_config, sizeof(ddj_sb3_fs_config), (void *)3, 10, 5) == ESP_OK);
+    s_control->status = USB_TRANSFER_STATUS_COMPLETED;
+    control_callback(s_control);
+    control_callback(s_control);
+    assert(s_streaming && !s_faulted && s_target_rate == 44100u && s_format.bytes_per_sample == 3u);
+
+    /* Descriptor format: 24-bit LE, 12 bytes per frame. */
+    int16_t packed24[4], packed16[4];
+    const int frames24 = submit_constant_sb3(3, packed24);
+    assert(packed24[0] != 0 && packed24[0] != packed24[1] && packed24[2] != packed24[3]);
+
+    /* The profile switches a running stream; the next URB is 16-bit LE with the
+     * same samples on the same channels and 16-bit packet lengths. */
+    assert(controller_usb_audio_stream_set_wire_format(CONTROLLER_UAC_WIRE_S16LE) == ESP_OK);
+    controller_usb_audio_stream_get_stats(&stats);
+    assert(stats.wire_format == CONTROLLER_UAC_WIRE_S16LE && stats.subslot_bytes == 3u);
+    const int frames16 = submit_constant_sb3(2, packed16);
+    assert(frames16 >= 4 * 44 && frames24 >= 4 * 44);
+    assert(memcmp(packed16, packed24, sizeof(packed16)) == 0);
+
+    /* The setting survives a stream restart; only the profile owner resets it. */
+    controller_usb_audio_stream_request_stop(false);
+    retire_transfers(); finish_cleanup();
+    assert(controller_usb_audio_stream_is_quiesced());
+    assert(controller_usb_audio_stream_start((void *)1, (void *)2,
+        ddj_sb3_fs_config, sizeof(ddj_sb3_fs_config), (void *)3, 10, 5) == ESP_OK);
+    s_control->status = USB_TRANSFER_STATUS_COMPLETED;
+    control_callback(s_control);
+    control_callback(s_control);
+    assert(s_streaming);
+    (void)submit_constant_sb3(2, packed16);
+    assert(controller_usb_audio_stream_set_wire_format(CONTROLLER_UAC_WIRE_DESCRIPTOR) == ESP_OK);
+    (void)submit_constant_sb3(3, packed24);
+    controller_usb_audio_stream_request_stop(false);
+    retire_transfers(); finish_cleanup();
+    assert(controller_usb_audio_stream_is_quiesced());
+    assert(controller_usb_audio_stream_set_policy(true, false, false) == ESP_OK);
+    puts("PASS DDJ-SB3 S16LE wire format: 16-bit LE packets in a 24-bit alternate, live switch, restart persistence");
+}
+
 static void test_flx4_dedicated_headphones_preserve_pcm_level(void)
 {
     assert(controller_usb_audio_stream_set_policy(true, false, false) == ESP_OK);
@@ -1056,6 +1185,8 @@ int main(void)
     test_hs_reconnect_under_heap_pressure();
     test_ddj400_hs_uac1_cadence();
     test_numark_touch_fs();
+    test_ddj_sb3_trailing_fragment();
+    test_ddj_sb3_s16le_wire_format();
     test_flx4_dedicated_headphones_preserve_pcm_level();
     assert(review_live_transfers == 0 && review_live_payload_bytes == 0);
     puts("PASS UAC 16/24-bit, consumer pacing, bounded timeout, ownership, reconnect and channel routing");

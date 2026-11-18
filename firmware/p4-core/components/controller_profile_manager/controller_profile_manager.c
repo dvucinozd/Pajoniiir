@@ -82,8 +82,8 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
     uint8_t pair_slot_count = data[28];
     uint16_t sysex_len = version >= 4 ? rd_u16(data + 30) : 0;
     if (sysex_len > CPM_MAX_INIT_SYSEX ||
-        ((rd_u32(data + 20) & (1u << 5)) && !(rd_u32(data + 20) & (1u << 1))) ||
-        (version < 4 && (rd_u32(data + 20) & ((1u << 4) | (1u << 5))))) {
+        ((rd_u32(data + 20) & ((1u << 5) | (1u << 6))) && !(rd_u32(data + 20) & (1u << 1))) ||
+        (version < 4 && (rd_u32(data + 20) & ((1u << 4) | (1u << 5) | (1u << 6))))) {
         return ESP_ERR_INVALID_ARG;
     }
     if (input_count > CPM_MAX_INPUTS || output_count > CPM_MAX_OUTPUTS ||

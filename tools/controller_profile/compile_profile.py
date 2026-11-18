@@ -78,6 +78,12 @@ PF_JOG_TOUCH = 1 << 2
 PF_PITCH_14BIT = 1 << 3
 PF_FILTER_ALWAYS = 1 << 4
 PF_NATIVE_HEADPHONES = 1 << 5
+PF_UAC_S16LE = 1 << 6
+
+# audio.wire_format values. "descriptor" (default) sends the sample size the
+# USB audio descriptor advertises; "s16le" sends 16-bit little-endian samples
+# even when a UAC1 alternate advertises 3-byte subslots (Pioneer DDJ-SB3).
+AUDIO_WIRE_FORMATS = ("descriptor", "s16le")
 
 # control_link.h namespaces
 NS_DECK1 = 0x10
@@ -144,8 +150,9 @@ EXT_ACTIONS = {
     "censor": 0, "sync_master": 1, "reloop_stop": 2, "loop_adjust_in": 3,
     "loop_adjust_out": 4, "quantize": 5, "sync_off": 6,
     "restore_source_cues": 7, "jog_vinyl": 8, "jog_cdj": 9,
-    "memory_store": 10, "memory_delete": 11, "memory_prev": 12,
-    "memory_next": 13, "memory_restore_source": 14,
+    "jog_toggle": 10,
+    "memory_store": 15, "memory_delete": 16, "memory_prev": 17,
+    "memory_next": 18, "memory_restore_source": 19,
 }
 
 # control_link.h LED ids
@@ -157,7 +164,7 @@ LED_IDS = {
     "loop_in": 15, "loop_out": 16, "smart_cfx": 41, "smart_fader": 42,
     "beat_fx_on": 43, "master_cue": 52, "censor": 53, "cue_shift": 54,
     "loop_adjust_in": 55, "loop_adjust_out": 56, "track_load_deck1": 57,
-    "track_load_deck2": 58,
+    "track_load_deck2": 58, "vinyl": 69,
 }
 LED_BANKS = {
     "beat_loop_pads": (17, 8), "pad_fx1_pads": (25, 8), "pad_fx2_pads": (33, 8),
@@ -431,6 +438,13 @@ def compile_profile(profile):
         if any(item.get("event") in native_events for item in profile.get("inputs", [])):
             raise ValueError("native_headphone_controls forbids software headphone mirrors")
         flags |= PF_NATIVE_HEADPHONES
+    wire_format = profile.get("audio", {}).get("wire_format", "descriptor")
+    if wire_format not in AUDIO_WIRE_FORMATS:
+        raise ValueError("audio.wire_format must be one of: " + ", ".join(AUDIO_WIRE_FORMATS))
+    if wire_format == "s16le":
+        if not caps.get("usb_audio"):
+            raise ValueError("audio.wire_format s16le requires usb_audio")
+        flags |= PF_UAC_S16LE
     sysex_values = [num(v) for v in profile.get("init_sysex", [])]
     if sysex_values and (not 2 <= len(sysex_values) <= MAX_INIT_SYSEX or
                          sysex_values[0] != 0xF0 or sysex_values[-1] != 0xF7 or
@@ -451,7 +465,7 @@ def compile_profile(profile):
                          (profile_size, MAX_PROFILE_SIZE))
     crc = zlib.crc32(tail + body) & 0xFFFFFFFF
     version = S3CP_SCALED_VERSION if any(e.raw_type == RAW_CC7_TO14 for e in entries) else S3CP_VERSION
-    if sysex or flags & (PF_FILTER_ALWAYS | PF_NATIVE_HEADPHONES) or any(e.raw_type >= RAW_NOTE_SELECT for e in entries) or any(o.value_scale for o in outputs):
+    if sysex or flags & (PF_FILTER_ALWAYS | PF_NATIVE_HEADPHONES | PF_UAC_S16LE) or any(e.raw_type >= RAW_NOTE_SELECT for e in entries) or any(o.value_scale for o in outputs):
         version = S3CP_EXTENDED_VERSION
     header = S3CP_MAGIC + struct.pack("<HHII", version, HEADER_SIZE,
                                       profile_size, crc) + tail

@@ -171,6 +171,19 @@ bool audio_compressed_cache_prefetch(audio_compressed_cache_t *cache,
     return load_page(cache, aligned, NULL) != NULL;
 }
 
+void audio_compressed_cache_prefetch_pages(audio_compressed_cache_t *cache,
+                                           size_t start, size_t page_count)
+{
+    if (!cache || start >= cache->file_size || cache->page_size == 0u) return;
+    size_t offset = page_aligned_offset(cache, start);
+    if (page_count > cache->page_count) page_count = cache->page_count;
+    for (size_t page = 0; page < page_count; ++page) {
+        (void)audio_compressed_cache_prefetch(cache, offset);
+        if (cache->file_size - offset <= cache->page_size) break;
+        offset += cache->page_size;
+    }
+}
+
 size_t audio_compressed_cache_capacity(const audio_compressed_cache_t *cache)
 {
     return cache ? cache->storage_bytes : 0u;

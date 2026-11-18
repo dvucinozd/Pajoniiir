@@ -59,6 +59,33 @@ class ConverterTests(unittest.TestCase):
         path = ROOT / "controllers/pioneer_ddj_400/profile.json"
         self.assertEqual(compile_profile(json.loads(path.read_text())), path.with_suffix(".s3bin").read_bytes())
 
+    def test_ddj_sb3_generated_binary_is_reproducible(self):
+        import json
+        path = ROOT / "controllers/pioneer_ddj_sb3/profile.json"
+        self.assertEqual(compile_profile(json.loads(path.read_text())), path.with_suffix(".s3bin").read_bytes())
+
+    def test_audio_wire_format_sets_v4_bit6_and_requires_usb_audio(self):
+        import struct
+        base = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,
+                "capabilities": {"usb_audio": True}}
+        plain = compile_profile(base)
+        self.assertEqual(struct.unpack_from("<H", plain, 4)[0], 2)
+        self.assertEqual(compile_profile(dict(base, audio={"wire_format": "descriptor"})), plain)
+        b = compile_profile(dict(base, audio={"wire_format": "s16le"}))
+        self.assertEqual(struct.unpack_from("<H", b, 4)[0], 4)
+        self.assertEqual(struct.unpack_from("<I", b, 20)[0], (1 << 1) | (1 << 6))
+        for bad in ({"capabilities": {}, "audio": {"wire_format": "s16le"}},
+                    {"audio": {"wire_format": "s24le"}}):
+            with self.assertRaises(ValueError): compile_profile(dict(base, **bad))
+        # Web profiles spell it audio.wireFormat.
+        p = profile()
+        p["firmwareAbi"]["capabilities"] = {"usbAudio": True}
+        p["audio"] = {"enabled": True, "wireFormat": "s16le"}
+        converted = convert_profile(p)
+        self.assertEqual(converted["audio"], {"enabled": True, "wire_format": "s16le"})
+        self.assertEqual(p["audio"], {"enabled": True, "wireFormat": "s16le"})
+        self.assertTrue(struct.unpack_from("<I", compile_profile(converted), 20)[0] & (1 << 6))
+
     def test_v4_layout_and_oldest_version(self):
         import struct
         p = {"schema": "p4-controller-profile-v1", "vid": 1, "pid": 2,

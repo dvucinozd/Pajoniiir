@@ -46,7 +46,7 @@ static void write_wav(const char *path,
         fwrite(samples, sizeof(int16_t), (size_t)frame_count * channels, fp);
     } else {
         for (uint32_t i = 0; i < frame_count * channels; ++i) {
-            int32_t s24 = ((int32_t)samples[i]) << 8;
+            int32_t s24 = (int32_t)samples[i] * 256;
             fputc((int)(s24 & 0xff), fp);
             fputc((int)((s24 >> 8) & 0xff), fp);
             fputc((int)((s24 >> 16) & 0xff), fp);
@@ -106,20 +106,50 @@ static void test_mono_wav_duplicates_to_stereo(void)
     audio_decoder_close(&dec);
 }
 
-static void test_24bit_wav_is_rejected_in_phase_1(void)
+static void test_open_read_24bit_wav(void)
 {
     const int16_t samples[] = { 100, -100 };
     write_wav("test_24bit.wav", 2, 24, samples, 1);
 
     audio_decoder_t dec;
-    assert(audio_decoder_open(&dec, "test_24bit.wav") == ESP_ERR_NOT_SUPPORTED);
+    assert(audio_decoder_open(&dec, "test_24bit.wav") == ESP_OK);
+    assert(dec.info.bits_per_sample == 24 && dec.info.total_frames == 1);
+    size_t frames_read = 0;
+    int16_t out[2] = {0};
+    assert(audio_decoder_read_pcm_s16(&dec, out, 1, &frames_read) == ESP_OK);
+    assert(frames_read == 1 && out[0] == 100 && out[1] == -100);
+    audio_decoder_close(&dec);
+}
+
+static void test_open_seek_read_aiff(void)
+{
+    static const uint8_t aiff[] = {
+        'F','O','R','M', 0,0,0,52, 'A','I','F','F',
+        'C','O','M','M', 0,0,0,18, 0,2, 0,0,0,2, 0,16,
+        0x40,0x0e,0xac,0x44,0,0,0,0,0,0,
+        'S','S','N','D', 0,0,0,16, 0,0,0,0, 0,0,0,0,
+        0,1,0,2, 0x12,0x34,0x80,0,
+    };
+    FILE *fp = fopen("test_pcm.aiff", "wb");
+    assert(fp && fwrite(aiff, sizeof(aiff), 1, fp) == 1);
+    assert(fclose(fp) == 0);
+    audio_decoder_t dec;
+    assert(audio_decoder_open(&dec, "test_pcm.aiff") == ESP_OK);
+    assert(dec.info.sample_rate == 44100 && dec.info.total_frames == 2);
+    assert(audio_decoder_seek_frame(&dec, 1) == ESP_OK);
+    size_t frames_read = 0;
+    int16_t out[2] = {0};
+    assert(audio_decoder_read_pcm_s16(&dec, out, 1, &frames_read) == ESP_OK);
+    assert(frames_read == 1 && out[0] == 0x1234 && out[1] == -32768);
+    audio_decoder_close(&dec);
 }
 
 int main(void)
 {
     test_open_read_seek_stereo_wav();
     test_mono_wav_duplicates_to_stereo();
-    test_24bit_wav_is_rejected_in_phase_1();
+    test_open_read_24bit_wav();
+    test_open_seek_read_aiff();
     puts("audio_wav_decoder tests passed");
     return 0;
 }

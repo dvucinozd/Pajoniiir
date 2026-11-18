@@ -254,7 +254,11 @@ bool flx4_uac_parse_playback_formats(const uint8_t *config_desc,
         off += len;
     }
 
-    if (off != total_len) {
+    /* One leftover byte cannot be a descriptor header. Pioneer DDJ-SB3
+     * publishes a repeated audio-control prefix and then a single 0x09
+     * inside wTotalLength. Formats already walked stay valid. A header
+     * whose declared length runs past the buffer is rejected above. */
+    if (total_len - off > 1u) {
         memset(out, 0, sizeof(*out));
         return false;
     }

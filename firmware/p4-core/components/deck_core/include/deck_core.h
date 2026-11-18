@@ -221,6 +221,7 @@ bool deck_core_get_loaded_track(uint8_t deck,
                                 deck_loaded_track_summary_t *out);
 /* Increments after a successful local hot-cue edit or source restore. */
 uint32_t deck_core_hot_cue_revision(void);
+esp_err_t deck_core_get_memory_cue_error(uint8_t deck);
 
 /*
  * Drain controller-originated UI commands. ui_update() is the sole firmware

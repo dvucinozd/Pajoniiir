@@ -113,6 +113,9 @@ typedef enum {
     LED_BEAT_JUMP_PAD_8,
     LED_BEAT_JUMP_SHIFT_HELPER_7,
     LED_BEAT_JUMP_SHIFT_HELPER_8,
+    /* On while the deck is in VINYL jog mode. Published on mode changes and
+     * when a controller connects; CDJ mode sends it off. */
+    LED_VINYL,
     LED_REMOTE_COUNT,
 } led_id_t;
 
@@ -195,7 +198,10 @@ typedef enum {
     CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES,
     CTRL_DECK_EXT_ACTION_JOG_VINYL,
     CTRL_DECK_EXT_ACTION_JOG_CDJ,
-    CTRL_DECK_EXT_ACTION_MEMORY_STORE,
+    /* 10 is the published DDJ-SB3 action. Leave 11–14 reserved for
+     * early JC1060 candidate profiles. */
+    CTRL_DECK_EXT_ACTION_JOG_TOGGLE = 10,
+    CTRL_DECK_EXT_ACTION_MEMORY_STORE = 15,
     CTRL_DECK_EXT_ACTION_MEMORY_DELETE,
     CTRL_DECK_EXT_ACTION_MEMORY_PREV,
     CTRL_DECK_EXT_ACTION_MEMORY_NEXT,
@@ -389,6 +395,7 @@ typedef struct {
     uint8_t           seq;
     uint8_t           deck;     // CTRL_DECK_* for DDJ-FLX4 deck IDs
     uint8_t           control;  // low-nibble semantic control for deck IDs
+    uint32_t          expected_track_generation; // zero for unbound events
 } ctrl_event_t;
 
 // ─── Public API ───────────────────────────────────────────────────────────────

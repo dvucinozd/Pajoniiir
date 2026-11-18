@@ -11,6 +11,7 @@
 #include "controller_profile_manager.h"
 #include "controller_profile_runtime.h"
 #include "controller_runtime.h"
+#include "controller_usb_audio_stream.h"
 #include "controller_usb_host.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -175,6 +176,9 @@ static void local_profile_task(void *arg)
             !active || controller_profile_runtime_filter_requires_smart_cfx());
         audio_engine_set_native_headphones(
             active && controller_profile_runtime_native_headphones());
+        (void)controller_usb_audio_stream_set_wire_format(
+            active && controller_profile_runtime_uac_s16le() ?
+                CONTROLLER_UAC_WIRE_S16LE : CONTROLLER_UAC_WIRE_DESCRIPTOR);
 
         const bool builtin_flx4 = work.identity.vid == 0x2B73u &&
                                   work.identity.pid == 0x0045u;
@@ -232,6 +236,7 @@ static void local_connection_callback(bool connected,
     (void)atomic_fetch_add_explicit(&s_connection_epoch, 1u, memory_order_acq_rel);
     audio_engine_set_filter_requires_smart_cfx(true);
     audio_engine_set_native_headphones(false);
+    (void)controller_usb_audio_stream_set_wire_format(CONTROLLER_UAC_WIRE_DESCRIPTOR);
     set_semantic_connection(false);
     controller_runtime_set_builtin_flx4_enabled(false);
     controller_led_runtime_set_builtin_flx4_enabled(false);

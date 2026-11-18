@@ -1,38 +1,21 @@
 #include "audio_decoder.h"
+#include "audio_pcm_file.h"
 
 #include <stdbool.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "media_io_gate.h"
 
-#define WAV_READ_FRAMES 512u
+#define WAV_READ_BYTES 2048u
 
 typedef struct {
     FILE *fp;
-    long data_offset;
-    uint32_t data_size;
-    uint16_t block_align;
-    uint16_t channels;
-    uint16_t bits_per_sample;
+    audio_pcm_format_t format;
     uint64_t current_frame;
     uint64_t total_frames;
 } wav_decoder_impl_t;
-
-static uint16_t rd_u16le(const uint8_t *p)
-{
-    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-}
-
-static uint32_t rd_u32le(const uint8_t *p)
-{
-    return (uint32_t)p[0] |
-           ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) |
-           ((uint32_t)p[3] << 24);
-}
 
 static bool read_exact(FILE *fp, void *dst, size_t len)
 {
@@ -58,72 +41,29 @@ static long tell_file(FILE *fp)
     return pos;
 }
 
+static bool read_at(void *ctx, size_t offset, void *dst, size_t len)
+{
+    FILE *fp = ctx;
+    return offset <= LONG_MAX && seek_file(fp, (long)offset, SEEK_SET) &&
+           read_exact(fp, dst, len);
+}
+
 static esp_err_t wav_parse(audio_decoder_t *dec, wav_decoder_impl_t *w)
 {
-    uint8_t hdr[12];
-    if (!read_exact(w->fp, hdr, sizeof(hdr))) {
-        return ESP_FAIL;
-    }
-    if (audio_format_detect_header(hdr, sizeof(hdr)) != AUDIO_FORMAT_WAV) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    if (!seek_file(w->fp, 0, SEEK_END)) return ESP_FAIL;
+    const long file_size = tell_file(w->fp);
+    if (file_size < 0) return ESP_FAIL;
+    audio_pcm_format_t *format = &w->format;
+    const audio_pcm_result_t rc = audio_pcm_parse(read_at, w->fp, (size_t)file_size, format);
+    if (rc != AUDIO_PCM_OK) return rc == AUDIO_PCM_BAD_FILE ? ESP_FAIL : ESP_ERR_NOT_SUPPORTED;
 
-    bool have_fmt = false;
-    bool have_data = false;
-    uint16_t audio_format = 0;
-    uint32_t sample_rate = 0;
-
-    while (!have_data) {
-        uint8_t chunk[8];
-        if (!read_exact(w->fp, chunk, sizeof(chunk))) {
-            break;
-        }
-        uint32_t chunk_size = rd_u32le(chunk + 4);
-        long chunk_payload = tell_file(w->fp);
-        if (chunk_payload < 0) {
-            return ESP_FAIL;
-        }
-
-        if (memcmp(chunk, "fmt ", 4) == 0) {
-            uint8_t fmt[16];
-            if (chunk_size < sizeof(fmt) || !read_exact(w->fp, fmt, sizeof(fmt))) {
-                return ESP_FAIL;
-            }
-            audio_format = rd_u16le(fmt + 0);
-            w->channels = rd_u16le(fmt + 2);
-            sample_rate = rd_u32le(fmt + 4);
-            w->block_align = rd_u16le(fmt + 12);
-            w->bits_per_sample = rd_u16le(fmt + 14);
-            have_fmt = true;
-        } else if (memcmp(chunk, "data", 4) == 0) {
-            w->data_offset = chunk_payload;
-            w->data_size = chunk_size;
-            have_data = true;
-        }
-
-        long next = chunk_payload + (long)chunk_size + (long)(chunk_size & 1u);
-        if (!seek_file(w->fp, next, SEEK_SET)) {
-            return ESP_FAIL;
-        }
-    }
-
-    if (!have_fmt || !have_data || audio_format != 1) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    if ((w->channels != 1u && w->channels != 2u) || w->bits_per_sample != 16u) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    if (w->block_align != (uint16_t)(w->channels * 2u) || w->block_align == 0) {
-        return ESP_FAIL;
-    }
-
-    w->total_frames = w->data_size / w->block_align;
+    w->total_frames = format->data_size / format->block_align;
     dec->info.format = AUDIO_FORMAT_WAV;
-    dec->info.sample_rate = sample_rate;
-    dec->info.channels = (uint8_t)w->channels;
-    dec->info.bits_per_sample = (uint8_t)w->bits_per_sample;
+    dec->info.sample_rate = format->sample_rate;
+    dec->info.channels = (uint8_t)format->channels;
+    dec->info.bits_per_sample = (uint8_t)(format->bytes_per_sample * 8u);
     dec->info.total_frames = w->total_frames;
-    return seek_file(w->fp, w->data_offset, SEEK_SET) ? ESP_OK : ESP_FAIL;
+    return seek_file(w->fp, (long)format->data_offset, SEEK_SET) ? ESP_OK : ESP_FAIL;
 }
 
 static esp_err_t wav_read_pcm_s16(audio_decoder_t *dec,
@@ -132,37 +72,29 @@ static esp_err_t wav_read_pcm_s16(audio_decoder_t *dec,
                                   size_t *frames_read)
 {
     wav_decoder_impl_t *w = (wav_decoder_impl_t *)dec->impl;
-    uint8_t blk[WAV_READ_FRAMES * 4u];
+    uint8_t blk[WAV_READ_BYTES];
+    const size_t block_align = w->format.block_align;
+    const size_t max_batch = sizeof(blk) / block_align;
     size_t produced = 0;
 
     while (produced < frames_requested && w->current_frame < w->total_frames) {
         size_t remaining = frames_requested - produced;
-        size_t batch = remaining < WAV_READ_FRAMES ? remaining : WAV_READ_FRAMES;
+        size_t batch = remaining < max_batch ? remaining : max_batch;
         uint64_t frames_left = w->total_frames - w->current_frame;
         if ((uint64_t)batch > frames_left) {
             batch = (size_t)frames_left;
         }
 
-        size_t want = batch * w->block_align;
+        size_t want = batch * block_align;
         media_io_gate_begin();
         size_t got = fread(blk, 1, want, w->fp);
         media_io_gate_end();
-        size_t got_frames = got / w->block_align;
+        size_t got_frames = got / block_align;
         if (got_frames == 0) {
             break;
         }
 
-        for (size_t i = 0; i < got_frames; ++i) {
-            const uint8_t *p = blk + i * w->block_align;
-            if (w->channels == 1u) {
-                int16_t s = (int16_t)rd_u16le(p);
-                out[(produced + i) * 2u + 0u] = s;
-                out[(produced + i) * 2u + 1u] = s;
-            } else {
-                out[(produced + i) * 2u + 0u] = (int16_t)rd_u16le(p + 0);
-                out[(produced + i) * 2u + 1u] = (int16_t)rd_u16le(p + 2);
-            }
-        }
+        audio_pcm_to_s16(&w->format, blk, got_frames, out + produced * 2u);
         produced += got_frames;
         w->current_frame += got_frames;
     }
@@ -177,7 +109,7 @@ static esp_err_t wav_seek_frame(audio_decoder_t *dec, uint64_t frame_index)
     if (frame_index > w->total_frames) {
         frame_index = w->total_frames;
     }
-    uint64_t off64 = (uint64_t)w->data_offset + frame_index * (uint64_t)w->block_align;
+    uint64_t off64 = w->format.data_offset + frame_index * w->format.block_align;
     if (off64 > (uint64_t)LONG_MAX) {
         return ESP_ERR_NOT_SUPPORTED;
     }

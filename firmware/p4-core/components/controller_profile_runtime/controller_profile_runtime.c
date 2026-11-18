@@ -111,6 +111,14 @@ bool controller_profile_runtime_native_headphones(void)
     return native;
 }
 
+bool controller_profile_runtime_uac_s16le(void)
+{
+    RT_LOCK();
+    bool s16le = s_active && (s_profile.flags & CP_PF_UAC_S16LE);
+    RT_UNLOCK();
+    return s16le;
+}
+
 bool controller_profile_runtime_initialize(controller_profile_packet_cb_t cb, void *ctx)
 {
     bool ok = true;

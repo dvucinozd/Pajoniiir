@@ -95,8 +95,8 @@ interrupted swap during the next registry scan.
 }
 ```
 
-Numeric fields accept `"0xNN"` hex strings or plain integers. `audio` is
-informational; the compiled USB-audio flag indicates a capability, not arbitrary
+Numeric fields accept `"0xNN"` hex strings or plain integers. Apart from the
+optional `wire_format` described below, `audio` is informational; the compiled USB-audio flag indicates a capability, not arbitrary
 endpoint routing. Actual formats are descriptor-validated by the UAC runtime;
 the FLX4-qualified selection remains preserved. A profile cannot enable an
 unsupported format. The shared runtime now has an experimental HS UAC2 path
@@ -104,6 +104,55 @@ for four-channel asynchronous PCM, explicit 16.16 feedback, a programmable
 direct clock with validity control, and 16-in-16 or 24-in-32 samples at 48 kHz.
 Clock RANGE/CUR and validity are checked before priming. Other topologies are
 rejected. This software support does not qualify S2 headphone audio physically.
+
+### `audio.wire_format` (optional)
+
+Most controllers play exactly the format their USB audio descriptor
+advertises, so most profiles omit this field. Use it only for a controller
+whose firmware consumes a different sample layout from the one it advertises.
+
+| Value | Wire layout |
+| --- | --- |
+| `"descriptor"` (default) | Sample size from the selected alternate setting. A UAC1 3-byte subslot sends 24-bit little-endian samples, 12 bytes per 4-channel frame. |
+| `"s16le"` | 16-bit little-endian samples, 8 bytes per 4-channel frame, with packets sized for 16-bit (352 or 360 bytes per millisecond at 44.1 kHz). Alternate setting, sample rate and channel order are unchanged. |
+
+```json
+"audio": {
+  "enabled": true,
+  "headphone_channels": [3, 4],
+  "preferred_sample_rate": 44100,
+  "wire_format": "s16le"
+}
+```
+
+`"s16le"` requires `capabilities.usb_audio` and compiles to capability bit 6
+(`CP_PF_UAC_S16LE`) in an S3CP v4 binary. It applies only to UAC1 alternates
+with 3-byte subslots; UAC2 streams and alternates that are already 16-bit are
+unaffected. Any other value is a compile error. Web JSON equivalent:
+`audio.wireFormat`.
+
+The Pioneer DDJ-SB3 (`0x2B73:0x0019`) needs `"s16le"`. Its interface 1
+alternate 1 advertises 4 channels of 24-bit audio in 3-byte subslots at 44.1 or
+48 kHz, but the device reads the isochronous stream as 16-bit LE words, 4
+channels, 8 bytes per frame. With 24-bit packets it plays the wrong bytes as
+samples, at about two-thirds pitch, with audio mixed across channels. Padding
+16-bit samples out to the 24-bit packet length fixes the channel mapping, but
+the device plays the padding as silence, so the audio is still distorted. Only
+16-bit packets at the 16-bit length play correctly. Byte probes confirmed the
+mapping: only the second byte of each 2-byte word is loud, so samples are
+little-endian. The channel order is CH1 master L, CH2 master R, CH3 headphones
+L, CH4 headphones R.
+
+The USB audio stream starts as soon as the controller enumerates, before its
+profile resolves. Until the profile activates, audio uses `"descriptor"`; on
+activation `p4_local_controller` applies the profile's format to the running
+stream, starting with the next transfer, and resets it on disconnect. Any
+silence or audio queued before activation is sent in the descriptor format.
+`/api/status` reports the active format as `uac_format.wire_format`
+(`"descriptor"` or `"s16le"`).
+
+Firmware without this capability ignores bit 6 and sends 24-bit audio, so
+install firmware that supports it before uploading the SB3 profile.
 
 ### Input entry types
 
@@ -141,7 +190,7 @@ asserted by the `control_link_protocol` host test.
 | `deckN.play` `deckN.cue` `deckN.shift` `deckN.to_start` `deckN.sync` `deckN.tempo_range` `deckN.loop_in` `deckN.loop_out` `deckN.reloop_exit` `deckN.loop_halve` `deckN.loop_double` `deckN.beat_jump_back` `deckN.beat_jump_forward` `deckN.jog_touch` `deckN.jog_search_touch` `deckN.pfl` | BUTTON | 0/1 |
 | `deckN.pad_mode_hot_cue` `deckN.pad_mode_beat_loop` `deckN.pad_mode_beat_jump` `deckN.pad_mode_pad_fx1` `deckN.pad_mode_pad_fx2` | BUTTON | pad mode select |
 | `deckN.pad_action` | BUTTON | packed value; use `pad_bank` |
-| `deckN.ext_action` | BUTTON | packed value; use `ext_action` with action names `censor`, `sync_master`, `reloop_stop`, `loop_adjust_in`, `loop_adjust_out`, `quantize`, `sync_off`, `restore_source_cues`, `jog_vinyl`, `jog_cdj` |
+| `deckN.ext_action` | BUTTON | packed value; use `ext_action` with action names `censor`, `sync_master`, `reloop_stop`, `loop_adjust_in`, `loop_adjust_out`, `quantize`, `sync_off`, `restore_source_cues`, `jog_vinyl`, `jog_cdj`, `jog_toggle` |
 | `deckN.jog_scratch` `deckN.jog_bend` `deckN.jog_search` `deckN.loop_size` | ENCODER | signed delta; `loop_size` halves on a negative step and doubles on a positive step when a loop is active |
 | `deckN.tempo` | PITCH | 14-bit |
 | `mixer.ch1_volume` `mixer.ch2_volume` `mixer.crossfader` `mixer.ch1_trim` `mixer.ch2_trim` `mixer.ch1_eq_high` `mixer.ch2_eq_high` `mixer.ch1_eq_mid` `mixer.ch2_eq_mid` `mixer.ch1_eq_low` `mixer.ch2_eq_low` `mixer.ch1_filter` `mixer.ch2_filter` `mixer.headphone_mix` | PITCH | 14-bit |
@@ -157,7 +206,9 @@ asserted by the `control_link_protocol` host test.
 
 On v91 and the integrated runtime, `jog_vinyl` and `jog_cdj`
 explicitly select a mode on press; release is ignored by deck core. These are
-idempotent actions, shared with touch controls. They use existing S3CP v2
+idempotent actions, shared with touch controls. `jog_toggle` flips that mode
+on press and ignores release. The `vinyl` LED is on while the deck is in
+VINYL mode. They use existing S3CP v2
 NOTE_VALUE entries; scaled CC input requires at least v3. Existing
 FLX4 profiles and golden bytes are unchanged. The bare historical M2.4 image
 does not implement the new actions; use matching firmware. Assign MIDI addresses from
@@ -189,7 +240,7 @@ as independent outputs rather than silently copying Deck 1 to Deck 2.
 LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `pad_mode_*`, `sync`, `loop_in`, `loop_out`, `smart_cfx`, `smart_fader`,
 `beat_fx_on`, `master_cue`, `censor`, `cue_shift`, `loop_adjust_in`,
-`loop_adjust_out`, `track_load_deck1`, `track_load_deck2`, plus pad banks
+`loop_adjust_out`, `track_load_deck1`, `track_load_deck2`, `vinyl`, plus pad banks
 `hot_cue_pads`, `pad_fx1_pads`, `pad_fx2_pads`, `beat_jump_pads`,
 `beat_loop_pads`, `beat_jump_shift_helpers`.
 
@@ -255,7 +306,8 @@ shared golden bytes test both compilers. Public web deployment is separate.
 
 The compiler emits the oldest version that fully represents a profile: v2
 without extensions, v3 for scaled CC input, v4 for initial SysEx, NOTE_SELECT,
-nonzero output scaling or filter/native-headphone capabilities. v4 also supports scaled CC.
+nonzero output scaling, filter/native-headphone capabilities or
+`audio.wire_format: "s16le"`. v4 also supports scaled CC.
 The bare historical M2.4 image rejects v3/v4; v91 accepts them. When rolling
 back to older firmware, use a representable v2 JSON profile and recompile;
 never patch version bytes or silently discard required extensions.
@@ -289,7 +341,7 @@ bytes from offset 16 to the end of the file.
 | 12 | 4 | crc32 over bytes `[16, profile_size)` |
 | 16 | 2 | vid |
 | 18 | 2 | pid |
-| 20 | 4 | flags: bit0 LED_FEEDBACK, bit1 USB_AUDIO, bit2 JOG_TOUCH, bit3 PITCH_14BIT; v4 bit4 FILTER_ALWAYS |
+| 20 | 4 | flags: bit0 LED_FEEDBACK, bit1 USB_AUDIO, bit2 JOG_TOUCH, bit3 PITCH_14BIT; v4 bit4 FILTER_ALWAYS, bit5 NATIVE_HEADPHONES, bit6 UAC_S16LE |
 | 24 | 2 | input_count |
 | 26 | 2 | output_count |
 | 28 | 1 | pair_slot_count |
@@ -368,6 +420,8 @@ The P4-local runtime allocates per active profile:
   profiles.
 - Profile audio layout is capability metadata, not an arbitrary UAC routing
   description. Runtime descriptors and supported sink policies determine audio.
+  The only wire-level override is `audio.wire_format`; sample rate, alternate
+  setting and channel order still come from the descriptor.
 - LED blink is a value choice per entry, not a profile-runtime timer.
 
 ## Verification

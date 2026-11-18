@@ -74,8 +74,10 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
     out->decks = data[29];
     out->init_sysex_len = version >= 4 ? rd_u16(data + 30) : 0;
     if (out->init_sysex_len > CP_MAX_INIT_SYSEX ||
-        ((out->flags & CP_PF_NATIVE_HEADPHONES) && !(out->flags & CP_PF_USB_AUDIO)) ||
-        (version < 4 && (out->flags & (CP_PF_FILTER_ALWAYS | CP_PF_NATIVE_HEADPHONES)))) {
+        ((out->flags & (CP_PF_NATIVE_HEADPHONES | CP_PF_UAC_S16LE)) &&
+         !(out->flags & CP_PF_USB_AUDIO)) ||
+        (version < 4 && (out->flags & (CP_PF_FILTER_ALWAYS | CP_PF_NATIVE_HEADPHONES |
+                                       CP_PF_UAC_S16LE)))) {
         return CP_ERR_BOUNDS;
     }
 
@@ -104,6 +106,17 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         e->flags = rd_u16(p + 6);
         e->base_value = rd_i16(p + 8);
         e->press_mask = rd_u16(p + 10);
+        /* Migrate the two memory bindings shipped in the early local DDJ-400
+         * candidate. Match the exact device and MIDI notes so SB3's action
+         * 10 (VINYL) and custom DDJ-400 mappings keep their meaning. */
+        if (out->vid == 0x2B73 && out->pid == 0x0026 &&
+            e->raw_type == CP_IN_NOTE_VALUE && e->semantic_type == 0x01 &&
+            e->press_mask == 0x80 &&
+            ((e->match_status == 0x90 && e->semantic_id == 0x2C) ||
+             (e->match_status == 0x91 && e->semantic_id == 0x4C))) {
+            if (e->match_data1 == 0x3D && e->base_value == 10) e->base_value = 15;
+            if (e->match_data1 == 0x3E && e->base_value == 11) e->base_value = 16;
+        }
         for (int b = 0; b < 4; b++) {
             e->lut[b] = (int8_t)p[12 + b];
         }

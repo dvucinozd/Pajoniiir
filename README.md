@@ -440,6 +440,7 @@ It is a local software candidate; JC1060 hardware and SD warm-reset gates remain
 open, and published beta assets retain their original identity.
 
 - [Online user manual](https://docs.pajoniiir.eu/)
+- [JC4880 getting started](docs/GETTING_STARTED_JC4880.md)
 - [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)

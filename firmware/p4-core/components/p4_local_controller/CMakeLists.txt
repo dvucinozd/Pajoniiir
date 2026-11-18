@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS "p4_local_controller.c"
     INCLUDE_DIRS "include"
-    REQUIRES control_link usb_host_manager controller_usb_host
+    REQUIRES control_link usb_host_manager controller_usb_host controller_usb_audio
              controller_runtime controller_led_runtime
              controller_profile_runtime controller_profile_manager
              audio_engine board_adapter log freertos

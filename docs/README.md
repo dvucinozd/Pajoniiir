@@ -23,6 +23,7 @@ of a new long soak. Historical v91 evidence remains tied to v91.
 
 | Document | Purpose |
 | --- | --- |
+| [JC4880 getting started](GETTING_STARTED_JC4880.md) | Blank-board wired flash, PCM5102A/USB/power wiring, first startup and troubleshooting |
 | [User manual](index.html) | Board/controller selection, reference FLX4 operation, media, web/network and stable/beta maintenance |
 | [Project overview](PROJECT_OVERVIEW.md) | Capabilities, topology, published vs development scope |
 | [Startup checklist](STARTUP_CHECKLIST.md) | Normal operation, new-image gates and explicit NOT RUN variants |

@@ -266,12 +266,15 @@ static void test_warming_both_span_ends_makes_a_straddling_read_hit(void)
     CHECK(audio_compressed_cache_read(&cache, start, out, span) == span);
     CHECK(source.calls == calls_after_one_warm + 1u);   /* the second page */
 
-    /* Warming both ends leaves nothing for the read to fetch. */
+    /* The second page begins at 32 but the unaligned next offset, 56,
+     * is already past EOF. Warm the page anyway. */
     fill_source(&source);
+    source.size = start + span;
     CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
                                       source.size, memory_read_at, &source));
-    CHECK(audio_compressed_cache_prefetch(&cache, start));
-    CHECK(audio_compressed_cache_prefetch(&cache, start + span - 1u));
+    audio_compressed_cache_prefetch_pages(&cache, start, 2);
+    CHECK(source.calls == 2u);
+    CHECK(cache.last_backend_offset == 32u);
     uint32_t calls_after_both_warm = source.calls;
     CHECK(audio_compressed_cache_read(&cache, start, out, span) == span);
     CHECK(source.calls == calls_after_both_warm);       /* no backend read at all */

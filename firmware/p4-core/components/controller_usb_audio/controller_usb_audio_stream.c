@@ -113,6 +113,7 @@ static uint32_t s_target_rate = STREAM_RATE_HZ;
 static uint8_t s_sample_bits;
 static bool s_qualified_flx4 = true;
 static bool s_consumer_paced;
+static uint8_t s_wire_format = CONTROLLER_UAC_WIRE_DESCRIPTOR;
 static TickType_t s_control_started;
 static bool s_control_expired;
 static bool s_alt_zero_sent;
@@ -146,6 +147,23 @@ static void detach_idle_isoc(usb_transfer_t *transfer)
 bool controller_usb_audio_stream_consumer_paced(void)
 { return __atomic_load_n(&s_consumer_paced, __ATOMIC_ACQUIRE); }
 bool controller_usb_audio_stream_needs_recovery(void) { return s_control_expired; }
+
+esp_err_t controller_usb_audio_stream_set_wire_format(controller_uac_wire_format_t format)
+{
+    if (format != CONTROLLER_UAC_WIRE_DESCRIPTOR && format != CONTROLLER_UAC_WIRE_S16LE)
+        return ESP_ERR_INVALID_ARG;
+    __atomic_store_n(&s_wire_format, (uint8_t)format, __ATOMIC_RELEASE);
+    return ESP_OK;
+}
+
+/* Bytes per sample actually sent; differs from the descriptor only for S16LE. */
+static uint8_t wire_sample_bytes(void)
+{
+    if (!s_format.uac2 && s_format.bytes_per_sample == 3u &&
+        __atomic_load_n(&s_wire_format, __ATOMIC_ACQUIRE) == CONTROLLER_UAC_WIRE_S16LE)
+        return 2u;
+    return s_format.bytes_per_sample;
+}
 
 esp_err_t controller_usb_audio_stream_set_policy(bool qualified_flx4, bool consumer_paced,
                                                  bool high_speed)
@@ -313,6 +331,7 @@ static esp_err_t prepare_and_submit(usb_transfer_t *transfer)
         return ESP_ERR_INVALID_STATE;
     }
 
+    const uint8_t sample_bytes = wire_sample_bytes();
     size_t offset = 0u;
     for (int packet = 0; packet < transfer->num_isoc_packets; ++packet) {
         uint16_t frames;
@@ -321,23 +340,22 @@ static esp_err_t prepare_and_submit(usb_transfer_t *transfer)
             frames = (uint16_t)(s_feedback_phase >> 16);
             s_feedback_phase &= 0xffffu;
         } else frames = flx4_uac_packetizer_next_frames(&s_packetizer);
-        const size_t bytes =
-            (size_t)frames * STREAM_CHANNELS * s_format.bytes_per_sample;
+        const size_t bytes = (size_t)frames * STREAM_CHANNELS * sample_bytes;
         if (frames > STREAM_MAX_PACKET_FRAMES || bytes > s_format.max_packet_size ||
             offset + bytes > transfer->data_buffer_size) {
             return ESP_ERR_INVALID_SIZE;
         }
         int16_t pcm[STREAM_MAX_PACKET_FRAMES * STREAM_CHANNELS];
-        int16_t *samples = s_format.bytes_per_sample == 2u ?
+        int16_t *samples = sample_bytes == 2u ?
             (int16_t *)&transfer->data_buffer[offset] : pcm;
         portENTER_CRITICAL(&s_mux);
         (void)controller_audio_ring_read(&s_ring, samples, frames, true);
         portEXIT_CRITICAL(&s_mux);
-        if (s_format.uac2 && s_format.bytes_per_sample != 2u &&
+        if (s_format.uac2 && sample_bytes != 2u &&
             !controller_uac2_pack_pcm(&transfer->data_buffer[offset], bytes, pcm, frames,
                                       s_format.bytes_per_sample, s_format.bits_per_sample))
             return ESP_ERR_INVALID_SIZE;
-        if (!s_format.uac2 && s_format.bytes_per_sample == 3u &&
+        if (!s_format.uac2 && sample_bytes == 3u &&
             !controller_uac_pack_pcm(&transfer->data_buffer[offset], bytes, pcm, frames, 3u))
             return ESP_ERR_INVALID_SIZE;
         transfer->isoc_packet_desc[packet].num_bytes = (int)bytes;
@@ -408,9 +426,9 @@ static void isoc_callback(usb_transfer_t *transfer)
             __atomic_add_fetch(&s_packet_failures, 1u, __ATOMIC_RELAXED);
             const unsigned missing = !completed || actual < 0 || actual > wanted
                 ? (unsigned)wanted : (unsigned)(wanted - actual);
+            const unsigned frame_bytes = STREAM_CHANNELS * wire_sample_bytes();
             __atomic_add_fetch(&s_packet_lost_frames,
-                (missing + STREAM_CHANNELS * s_format.bytes_per_sample - 1u) /
-                    (STREAM_CHANNELS * s_format.bytes_per_sample), __ATOMIC_RELAXED);
+                (missing + frame_bytes - 1u) / frame_bytes, __ATOMIC_RELAXED);
         }
     }
     if (!s_stopping) {
@@ -1051,4 +1069,5 @@ void controller_usb_audio_stream_get_stats(
     out_stats->feedback_updates = __atomic_load_n(&s_feedback_updates, __ATOMIC_RELAXED);
     out_stats->feedback_invalid = __atomic_load_n(&s_feedback_invalid, __ATOMIC_RELAXED);
     out_stats->consumer_paced = controller_usb_audio_stream_consumer_paced();
+    out_stats->wire_format = __atomic_load_n(&s_wire_format, __ATOMIC_ACQUIRE);
 }

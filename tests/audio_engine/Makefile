@@ -39,6 +39,8 @@ AUDIO_SRC = ../../firmware/p4-core/components/audio_engine/audio_engine.c \
             ../../firmware/p4-core/components/audio_engine/audio_fw_runtime.c \
             ../../firmware/p4-core/components/audio_engine/audio_fw_task_context.c \
             ../../firmware/p4-core/components/audio_engine/audio_fw_task_plan.c \
+            ../../firmware/p4-core/components/audio_engine/audio_decim2.c \
+            ../../firmware/p4-core/components/audio_engine/audio_pcm_file.c \
             ../../firmware/p4-core/components/audio_engine/audio_smart_cfx.c
 
 SRCS    = test_audio_engine.c \

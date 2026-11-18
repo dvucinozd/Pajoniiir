@@ -44,6 +44,10 @@ audio_format_t audio_format_detect_header(const uint8_t *data, size_t len)
         memcmp(data + 8, "WAVE", 4) == 0) {
         return AUDIO_FORMAT_WAV;
     }
+    if (len >= 12 && memcmp(data, "FORM", 4) == 0 &&
+        (memcmp(data + 8, "AIFF", 4) == 0 || memcmp(data + 8, "AIFC", 4) == 0)) {
+        return AUDIO_FORMAT_WAV;
+    }
     if (len >= 4 && memcmp(data, "fLaC", 4) == 0) {
         return AUDIO_FORMAT_FLAC;
     }
@@ -62,7 +66,9 @@ audio_format_t audio_format_detect_path(const char *path)
     if (ends_with_ext(path, ".mp3")) {
         return AUDIO_FORMAT_MP3;
     }
-    if (ends_with_ext(path, ".wav") || ends_with_ext(path, ".wave")) {
+    if (ends_with_ext(path, ".wav") || ends_with_ext(path, ".wave") ||
+        ends_with_ext(path, ".aif") || ends_with_ext(path, ".aiff") ||
+        ends_with_ext(path, ".aifc")) {
         return AUDIO_FORMAT_WAV;
     }
     if (ends_with_ext(path, ".flac")) {

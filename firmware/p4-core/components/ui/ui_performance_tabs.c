@@ -65,7 +65,7 @@ static lv_obj_t *s_memory_title;
 static bool s_restore_held;
 static uint8_t s_memory_held_deck;
 static bool s_memory_held;
-static media_persistent_id_t s_memory_held_id;
+static uint32_t s_memory_held_generation;
 static uint8_t s_restore_deck;
 static bool s_display_valid;
 static uint8_t s_display_deck;
@@ -350,20 +350,19 @@ static void memory_action_event_cb(lv_event_t *event)
     lv_event_code_t code = lv_event_get_code(event);
     uint8_t action = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
     if (code == LV_EVENT_PRESSED) {
-        s_memory_held = s_config.actions.active_persistent_id &&
-            s_config.actions.active_persistent_id(&s_memory_held_id) && s_memory_held_id.valid;
         s_memory_held_deck = ui_performance_tabs_active_deck();
+        deck_loaded_track_summary_t track = {0};
+        s_memory_held = deck_core_get_loaded_track(s_memory_held_deck, &track) &&
+                        track.valid && track.persistent_id.valid;
+        s_memory_held_generation = track.generation;
     }
     bool restore = action == CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE;
-    media_persistent_id_t current = {0};
-    bool same_track = s_config.actions.active_persistent_id &&
-        s_config.actions.active_persistent_id(&current) &&
-        media_persistent_id_equal(&current, &s_memory_held_id);
     if (s_memory_held && s_memory_held_deck == ui_performance_tabs_active_deck() &&
-        same_track &&
         code == (restore ? LV_EVENT_LONG_PRESSED : LV_EVENT_CLICKED)) {
         s_memory_held = false;
-        if (s_config.actions.memory_action) s_config.actions.memory_action(s_memory_held_deck, action);
+        if (s_config.actions.memory_action) {
+            s_config.actions.memory_action(s_memory_held_deck, action, s_memory_held_generation);
+        }
     }
     if (code == LV_EVENT_PRESS_LOST || (restore && code == LV_EVENT_RELEASED)) s_memory_held = false;
 }
@@ -532,11 +531,12 @@ void ui_performance_tabs_update_hot_cues(void)
     if (s_memory_title) {
         memory_cue_bank_t bank = {0};
         esp_err_t memory_rc = deck_core_get_memory_cues(deck, &bank);
-        deck_state_t state = s_config.actions.active_state ? s_config.actions.active_state() : (deck_state_t){0};
-        const char *notice = memory_rc != ESP_OK ? " - NO BANK" :
-            state.memory_cue_error == ESP_ERR_NOT_FOUND ? " - CUE NOT FOUND" :
-            state.memory_cue_error == ESP_ERR_INVALID_SIZE ? " - BANK FULL" :
-            state.memory_cue_error != ESP_OK ? " - ACTION FAILED" : "";
+        esp_err_t action_rc = deck_core_get_memory_cue_error(deck);
+        const char *notice = memory_rc == ESP_ERR_NOT_FINISHED || action_rc == ESP_ERR_NOT_FINISHED ? " - PENDING" :
+            memory_rc != ESP_OK ? " - NO BANK" :
+            action_rc == ESP_ERR_NOT_FOUND ? " - CUE NOT FOUND" :
+            action_rc == ESP_ERR_INVALID_SIZE ? " - BANK FULL" :
+            action_rc != ESP_OK ? " - ACTION FAILED" : "";
         lv_label_set_text_fmt(s_memory_title, "D%u MEMORY CUES: %u/16%s%s",
             (unsigned)deck + 1u, (unsigned)bank.count,
             meta && meta->memory_cues_truncated ? " (SOURCE TRUNCATED)" : "", notice);

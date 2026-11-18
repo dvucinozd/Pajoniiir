@@ -135,6 +135,16 @@ static size_t s_test_ui_command_count;
 #if !defined(DECK_CORE_PC_TEST)
 static TaskHandle_t s_deck_task;
 static TaskHandle_t s_vu_task;
+static QueueHandle_t s_memory_queue;
+static portMUX_TYPE s_memory_mux = portMUX_INITIALIZER_UNLOCKED;
+static struct {
+    media_persistent_id_t id;
+    memory_cue_bank_t bank;
+    esp_err_t load_result;
+    uint32_t action_generation;
+    uint32_t action_serial;
+    esp_err_t action_result;
+} s_memory_cache[DECK_CORE_DECK_COUNT];
 /* Tracks whether the VU meters were last driven non-idle, so a single "all
  * zero" frame is emitted on the play->idle transition and then sending stops. */
 static bool s_vu_meters_active;
@@ -150,6 +160,10 @@ static void deck_core_cleanup_init_failure(void)
     if (s_deck_task) {
         vTaskDelete(s_deck_task);
         s_deck_task = NULL;
+    }
+    if (s_memory_queue) {
+        vQueueDelete(s_memory_queue);
+        s_memory_queue = NULL;
     }
 #endif
     if (s_ui_command_queue) {
@@ -787,6 +801,134 @@ static bool set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
 static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state);
 static uint32_t loaded_track_duration_ms(uint8_t deck, const deck_loaded_track_summary_t *loaded);
 
+typedef struct {
+    media_persistent_id_t id;
+    memory_cue_bank_t source;
+    hot_cue_store_slot_t cue;
+    esp_err_t source_result;
+    uint32_t action_serial;
+    uint8_t deck;
+    uint8_t action; /* Zero requests a cache fill. */
+} memory_request_t;
+
+static esp_err_t memory_source_bank(const deck_loaded_track_summary_t *summary,
+                                    const anlz_snapshot_t *snapshot, memory_cue_bank_t *bank)
+{
+    const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
+    if (!meta) return ESP_OK;
+    for (unsigned i = 0; i < meta->memory_cue_count && i < ANLZ_MAX_MEMORY_CUES; ++i) {
+        const anlz_cue_t *cue = &meta->memory_cues[i];
+        if (cue->type != ANLZ_CUE_SINGLE && cue->type != ANLZ_CUE_LOOP) continue;
+        hot_cue_store_slot_t slot = {
+            .pos_ms = cue->start_ms,
+            .end_ms = cue->type == ANLZ_CUE_LOOP ? cue->end_ms : 0,
+            .type = cue->type == ANLZ_CUE_LOOP ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE,
+        };
+        if (summary->duration_ms &&
+            (slot.pos_ms >= summary->duration_ms || slot.end_ms > summary->duration_ms)) continue;
+        esp_err_t rc = memory_cue_bank_put(bank, slot);
+        if (rc != ESP_OK) return rc;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t memory_apply_request(const memory_request_t *request,
+                                      memory_cue_bank_t *bank, esp_err_t *overlay_result)
+{
+    if (request->action == CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE) {
+        esp_err_t rc = memory_cue_store_restore(&request->id);
+        if (rc == ESP_OK) *overlay_result = ESP_ERR_NOT_FOUND;
+        return rc;
+    }
+    *overlay_result = memory_cue_store_load(&request->id, bank);
+    if (request->action == 0) return *overlay_result;
+    if (*overlay_result == ESP_ERR_NOT_FOUND) {
+        if (request->source_result != ESP_OK) return request->source_result;
+        *bank = request->source;
+    } else if (*overlay_result != ESP_OK) return *overlay_result;
+
+    esp_err_t rc = request->action == CTRL_DECK_EXT_ACTION_MEMORY_DELETE
+        ? memory_cue_bank_delete(bank, request->cue.pos_ms)
+        : memory_cue_bank_put(bank, request->cue);
+    if (rc == ESP_OK) rc = memory_cue_store_save(&request->id, bank);
+    if (rc == ESP_OK) *overlay_result = ESP_OK;
+    else *overlay_result = ESP_ERR_INVALID_STATE; /* Re-read after a failed write. */
+    return rc;
+}
+
+#if !defined(DECK_CORE_PC_TEST)
+static void memory_worker(void *arg)
+{
+    (void)arg;
+    memory_request_t request;
+    while (xQueueReceive(s_memory_queue, &request, portMAX_DELAY) == pdTRUE) {
+        memory_cue_bank_t bank = {0};
+        esp_err_t overlay_result = ESP_ERR_INVALID_STATE;
+        esp_err_t rc = memory_apply_request(&request, &bank, &overlay_result);
+        if (request.action && overlay_result == ESP_ERR_INVALID_STATE) {
+            overlay_result = memory_cue_store_load(&request.id, &bank);
+        }
+        portENTER_CRITICAL(&s_memory_mux);
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+            if (media_persistent_id_equal(&s_memory_cache[deck].id, &request.id)) {
+                s_memory_cache[deck].bank = bank;
+                s_memory_cache[deck].load_result = overlay_result;
+            }
+        }
+        if (request.action && s_memory_cache[request.deck].action_serial == request.action_serial) {
+            s_memory_cache[request.deck].action_result = rc;
+        }
+        portEXIT_CRITICAL(&s_memory_mux);
+        hot_cue_revision_advance();
+    }
+}
+
+static esp_err_t memory_cached_overlay(uint8_t deck, const media_persistent_id_t *id,
+                                       memory_cue_bank_t *bank)
+{
+    portENTER_CRITICAL(&s_memory_mux);
+    bool hit = media_persistent_id_equal(&s_memory_cache[deck].id, id);
+    esp_err_t rc = ESP_ERR_NOT_FINISHED;
+    if (hit) {
+        *bank = s_memory_cache[deck].bank;
+        rc = s_memory_cache[deck].load_result;
+    } else {
+        s_memory_cache[deck].id = *id;
+        s_memory_cache[deck].load_result = ESP_ERR_NOT_FINISHED;
+    }
+    portEXIT_CRITICAL(&s_memory_mux);
+    if (!hit) {
+        const memory_request_t request = {.id = *id, .deck = deck};
+        if (!s_memory_queue || xQueueSend(s_memory_queue, &request, 0) != pdTRUE) {
+            portENTER_CRITICAL(&s_memory_mux);
+            if (media_persistent_id_equal(&s_memory_cache[deck].id, id) &&
+                s_memory_cache[deck].load_result == ESP_ERR_NOT_FINISHED) {
+                s_memory_cache[deck].id.valid = false;
+            }
+            portEXIT_CRITICAL(&s_memory_mux);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return rc;
+}
+#endif
+
+esp_err_t deck_core_get_memory_cue_error(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return ESP_ERR_INVALID_ARG;
+#if defined(DECK_CORE_PC_TEST)
+    return deck_core_get_deck_state(deck).memory_cue_error;
+#else
+    deck_loaded_track_summary_t track = {0};
+    (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &track);
+    portENTER_CRITICAL(&s_memory_mux);
+    esp_err_t rc = track.generation == s_memory_cache[deck].action_generation
+        ? s_memory_cache[deck].action_result : ESP_OK;
+    portEXIT_CRITICAL(&s_memory_mux);
+    return rc;
+#endif
+}
+
 esp_err_t deck_core_get_memory_cues(uint8_t deck, memory_cue_bank_t *out)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !out) return ESP_ERR_INVALID_ARG;
@@ -798,40 +940,36 @@ esp_err_t deck_core_get_memory_cues(uint8_t deck, memory_cue_bank_t *out)
         return ESP_ERR_INVALID_STATE;
     }
     memory_cue_bank_t bank = {0};
+#if defined(DECK_CORE_PC_TEST)
     esp_err_t rc = memory_cue_store_load(&summary.persistent_id, &bank);
-    if (rc == ESP_ERR_NOT_FOUND) {
-        const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
-        rc = ESP_OK;
-        if (meta) for (unsigned i = 0; i < meta->memory_cue_count && i < ANLZ_MAX_MEMORY_CUES; ++i) {
-            const anlz_cue_t *cue = &meta->memory_cues[i];
-            hot_cue_store_slot_t slot = {.pos_ms = cue->start_ms,
-                .end_ms = cue->type == ANLZ_CUE_LOOP ? cue->end_ms : 0,
-                .type = cue->type == ANLZ_CUE_LOOP ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE};
-            if (cue->type != ANLZ_CUE_SINGLE && cue->type != ANLZ_CUE_LOOP) continue;
-            if (summary.duration_ms && (slot.pos_ms >= summary.duration_ms || slot.end_ms > summary.duration_ms)) continue;
-            rc = memory_cue_bank_put(&bank, slot);
-            if (rc != ESP_OK) break;
-        }
-    }
+#else
+    esp_err_t rc = memory_cached_overlay(deck, &summary.persistent_id, &bank);
+#endif
+    if (rc == ESP_ERR_NOT_FOUND) rc = memory_source_bank(&summary, snapshot, &bank);
     anlz_snapshot_release(snapshot);
-    media_persistent_id_t current = {0};
-    if (!loaded_track_identity_for_deck(deck, &current) ||
-        !media_persistent_id_equal(&current, &summary.persistent_id)) return ESP_ERR_INVALID_STATE;
+    deck_loaded_track_summary_t current = {0};
+    if (!deck_loaded_track_store_get(&s_loaded_tracks, deck, &current) ||
+        current.generation != summary.generation) return ESP_ERR_INVALID_STATE;
     if (rc == ESP_OK) *out = bank;
     return rc;
 }
 
-static esp_err_t memory_action(uint8_t deck, uint8_t action, deck_state_t *state)
+static esp_err_t memory_action(uint8_t deck, uint8_t action, uint32_t expected_generation,
+                               deck_state_t *state)
 {
-    media_persistent_id_t id = {0};
-    if (!state || !loaded_track_identity_for_deck(deck, &id)) return ESP_ERR_INVALID_STATE;
-    if (action == CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE) return memory_cue_store_restore(&id);
-    memory_cue_bank_t bank = {0};
-    esp_err_t rc = deck_core_get_memory_cues(deck, &bank);
-    if (rc != ESP_OK) return rc;
+    deck_loaded_track_summary_t summary = {0};
+    if (!deck_loaded_track_store_get(&s_loaded_tracks, deck, &summary) ||
+        !summary.persistent_id.valid ||
+        (expected_generation && expected_generation != summary.generation)) return ESP_ERR_INVALID_STATE;
     if (action == CTRL_DECK_EXT_ACTION_MEMORY_PREV || action == CTRL_DECK_EXT_ACTION_MEMORY_NEXT) {
         /* Recall never starts playback and never interrupts a playing deck. */
         if (state->playing || state->cue_held) return ESP_ERR_INVALID_STATE;
+        memory_cue_bank_t bank = {0};
+        esp_err_t rc = deck_core_get_memory_cues(deck, &bank);
+        /* Recall is tied to the current transport state and must be retried
+         * explicitly if the worker has not yet read this track's bank. */
+        if (rc == ESP_ERR_NOT_FINISHED) return ESP_ERR_INVALID_STATE;
+        if (rc != ESP_OK) return rc;
         uint32_t pos = current_deck_position_ms(deck, state);
         int at = -1;
         for (unsigned i = 0; i < bank.count; ++i) {
@@ -840,8 +978,6 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, deck_state_t *state
         }
         if (at < 0) return ESP_ERR_NOT_FOUND;
         const hot_cue_store_slot_t cue = bank.cues[at];
-        deck_loaded_track_summary_t summary = {0};
-        (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &summary);
         uint32_t duration = loaded_track_duration_ms(deck, &summary);
         if ((duration && cue.pos_ms >= duration) ||
             (cue.type == HOT_CUE_STORE_TYPE_LOOP && !audio_loop_range_valid(cue.pos_ms, cue.end_ms, duration)))
@@ -856,20 +992,37 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, deck_state_t *state
     }
     /* MEMORY stores the current CUE, or the complete active loop. It does not
      * move the transport. DELETE removes only that exact start coordinate. */
-    deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
-    uint32_t pos = loop.active ? loop.start_ms : state->cue_point_ms;
-    if (action == CTRL_DECK_EXT_ACTION_MEMORY_DELETE) rc = memory_cue_bank_delete(&bank, pos);
-    else {
-        deck_loaded_track_summary_t summary = {0};
-        (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &summary);
+    memory_request_t request = {.id = summary.persistent_id, .deck = deck, .action = action};
+    if (action != CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE) {
+        deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+        uint32_t pos = loop.active ? loop.start_ms : state->cue_point_ms;
         uint32_t duration = loaded_track_duration_ms(deck, &summary);
-        if (duration && (pos >= duration || (loop.active && loop.end_ms > duration)))
+        if (action == CTRL_DECK_EXT_ACTION_MEMORY_STORE && duration &&
+            (pos >= duration || (loop.active && loop.end_ms > duration)))
             return ESP_ERR_INVALID_ARG;
-        rc = memory_cue_bank_put(&bank, (hot_cue_store_slot_t){.pos_ms=pos,
+        request.cue = (hot_cue_store_slot_t){.pos_ms=pos,
             .end_ms=loop.active ? loop.end_ms : 0,
-            .type=loop.active ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE});
+            .type=loop.active ? HOT_CUE_STORE_TYPE_LOOP : HOT_CUE_STORE_TYPE_SINGLE};
+        deck_loaded_track_summary_t source_track = {0};
+        anlz_snapshot_t *snapshot = NULL;
+        if (!deck_loaded_track_store_acquire(&s_loaded_tracks, deck, &source_track, &snapshot) ||
+            source_track.generation != summary.generation) {
+            anlz_snapshot_release(snapshot);
+            return ESP_ERR_INVALID_STATE;
+        }
+        request.source_result = memory_source_bank(&summary, snapshot, &request.source);
+        anlz_snapshot_release(snapshot);
     }
-    return rc == ESP_OK ? memory_cue_store_save(&id, &bank) : rc;
+#if defined(DECK_CORE_PC_TEST)
+    memory_cue_bank_t bank = {0};
+    esp_err_t overlay_result;
+    return memory_apply_request(&request, &bank, &overlay_result);
+#else
+    portENTER_CRITICAL(&s_memory_mux);
+    request.action_serial = s_memory_cache[deck].action_serial;
+    portEXIT_CRITICAL(&s_memory_mux);
+    return xQueueSend(s_memory_queue, &request, 0) == pdTRUE ? ESP_ERR_NOT_FINISHED : ESP_ERR_NO_MEM;
+#endif
 }
 
 static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
@@ -1252,6 +1405,14 @@ static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state)
     deck_send_led(LED_LOOP_ADJUST_OUT,
                   state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_OUT ? 1u : 0u,
                   deck);
+}
+
+static void publish_jog_mode_led(uint8_t deck, const deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+    deck_send_led(LED_VINYL, state->jog_cdj_mode ? 0u : 1u, deck);
 }
 
 static void set_loop_adjust_mode(uint8_t deck,
@@ -1954,6 +2115,7 @@ static void on_state_event(const ctrl_event_t *ev)
             publish_flx4_led_snapshot(true);
             for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
                 publish_loop_adjust_leds(deck, &s_decks[deck]);
+                publish_jog_mode_led(deck, &s_decks[deck]);
             }
         }
         s_flx4_connection_state_valid = true;
@@ -2481,6 +2643,21 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
     }
 }
 
+static void set_jog_cdj_mode(uint8_t deck, deck_state_t *state, bool cdj)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+    if (state->jog_cdj_mode != cdj) {
+        /* Release the old audio owner before changing touch semantics. */
+        handle_jog_touch(deck, false, state);
+        state->jog_cdj_mode = cdj;
+        ESP_LOGI(TAG, "deck %u jog -> %s", (unsigned)deck + 1,
+                 cdj ? "CDJ" : "VINYL");
+    }
+    publish_jog_mode_led(deck, state);
+}
+
 static bool on_deck_extension_button(const ctrl_event_t *ev)
 {
     if (!ev || ev->type != CTRL_EV_BUTTON || !control_link_id_is_deck(ev->id)) {
@@ -2578,7 +2755,26 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         case CTRL_DECK_EXT_ACTION_MEMORY_PREV:
         case CTRL_DECK_EXT_ACTION_MEMORY_NEXT:
         case CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE: {
-            esp_err_t rc = memory_action(deck, action, state);
+            deck_loaded_track_summary_t track = {0};
+            (void)deck_loaded_track_store_get(&s_loaded_tracks, deck, &track);
+            if (ev->expected_track_generation && ev->expected_track_generation != track.generation) {
+                return true;
+            }
+#if !defined(DECK_CORE_PC_TEST)
+            portENTER_CRITICAL(&s_memory_mux);
+            ++s_memory_cache[deck].action_serial;
+            s_memory_cache[deck].action_generation = track.generation;
+            s_memory_cache[deck].action_result = ESP_ERR_NOT_FINISHED;
+            portEXIT_CRITICAL(&s_memory_mux);
+#endif
+            esp_err_t rc = memory_action(deck, action, track.generation, state);
+#if !defined(DECK_CORE_PC_TEST)
+            if (rc != ESP_ERR_NOT_FINISHED) {
+                portENTER_CRITICAL(&s_memory_mux);
+                s_memory_cache[deck].action_result = rc;
+                portEXIT_CRITICAL(&s_memory_mux);
+            }
+#endif
             state->memory_cue_error = rc;
             hot_cue_revision_advance();
             ESP_LOGI(TAG, "deck %u memory action %u: %s", (unsigned)deck + 1u,
@@ -2611,13 +2807,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             ESP_LOGI(TAG, "deck %u sync -> OFF", (unsigned)deck + 1);
             return true;
         case CTRL_DECK_EXT_ACTION_JOG_VINYL:
-        case CTRL_DECK_EXT_ACTION_JOG_CDJ: {
-            const bool cdj = action == CTRL_DECK_EXT_ACTION_JOG_CDJ;
-            if (state->jog_cdj_mode != cdj) {
-                /* Release the old audio owner before changing touch semantics. */
-                handle_jog_touch(deck, false, state);
-                state->jog_cdj_mode = cdj;
+        case CTRL_DECK_EXT_ACTION_JOG_CDJ:
+        case CTRL_DECK_EXT_ACTION_JOG_TOGGLE: {
+            bool cdj = action == CTRL_DECK_EXT_ACTION_JOG_CDJ;
+            if (action == CTRL_DECK_EXT_ACTION_JOG_TOGGLE) {
+                cdj = !state->jog_cdj_mode;
             }
+            set_jog_cdj_mode(deck, state, cdj);
             return true;
         }
         case CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES: {
@@ -3423,6 +3619,11 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
             return ESP_ERR_NO_MEM;
         }
     }
+    s_memory_queue = xQueueCreate(8, sizeof(memory_request_t));
+    if (!s_memory_queue || xTaskCreate(memory_worker, "memory_cues", 4096, NULL, 3, NULL) != pdPASS) {
+        deck_core_cleanup_init_failure();
+        return ESP_ERR_NO_MEM;
+    }
 #endif
 
     *ctrl_event_queue_out = s_queue;
@@ -3789,8 +3990,15 @@ esp_err_t deck_core_publish_loaded_track_session(uint8_t deck,
         .bpm = bpm,
         .anlz = anlz,
     };
-    return loaded_track_result_to_esp(deck_loaded_track_store_publish(
+    esp_err_t rc = loaded_track_result_to_esp(deck_loaded_track_store_publish(
         &s_loaded_tracks, deck, &payload));
+#if !defined(DECK_CORE_PC_TEST)
+    if (rc == ESP_OK && cue_id.valid) {
+        memory_cue_bank_t unused;
+        (void)memory_cached_overlay(deck, &cue_id, &unused);
+    }
+#endif
+    return rc;
 }
 
 esp_err_t deck_core_clear_loaded_track(uint8_t deck,

@@ -42,6 +42,26 @@ int main(void)
             assert(event.id == ids[command] && event.value == 0);
         }
     }
+
+    /* Recreate the four bindings from the earlier JC1060 binary profile. */
+    for (unsigned i = 0; i < profile.input_count; ++i) {
+        uint8_t *entry = blob + CP_HEADER_SIZE + i * CP_INPUT_ENTRY_SIZE;
+        if ((entry[0] == 0x90 || entry[0] == 0x91) &&
+            (entry[1] == 0x3d || entry[1] == 0x3e) &&
+            entry[8] == CTRL_DECK_EXT_ACTION_MEMORY_STORE + entry[1] - 0x3d) {
+            entry[8] = 10 + entry[1] - 0x3d;
+        }
+    }
+    uint32_t crc = cp_crc32(blob + 16, bytes - 16);
+    for (unsigned i = 0; i < 4; ++i) blob[12 + i] = (uint8_t)(crc >> (8 * i));
+    assert(cp_profile_parse(blob, bytes, &profile) == CP_OK);
+    cp_runtime_init(&runtime);
+    for (unsigned deck = 0; deck < 2; ++deck) {
+        assert(cp_runtime_process(&profile, &runtime, 0x90 + deck, 0x3d, 127, &event));
+        assert(event.value == CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_MEMORY_STORE, true));
+        assert(cp_runtime_process(&profile, &runtime, 0x90 + deck, 0x3e, 127, &event));
+        assert(event.value == CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_MEMORY_DELETE, true));
+    }
     blob[bytes - 1u] ^= 1u;
     assert(cp_profile_parse(blob, bytes, &profile) == CP_ERR_CRC);
     assert(controller_profile_meta_parse(blob, bytes, &meta) != ESP_OK);

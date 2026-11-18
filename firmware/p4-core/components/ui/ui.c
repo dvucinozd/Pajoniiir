@@ -400,11 +400,12 @@ static void ui_performance_set_jog_mode(uint8_t deck, bool cdj)
 #endif
 }
 
-static void ui_performance_memory_action(uint8_t deck, uint8_t action)
+static void ui_performance_memory_action(uint8_t deck, uint8_t action, uint32_t track_generation)
 {
     ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=deck,
         .id=ui_deck_control_id(deck, CTRL_ID_DECK1_EXT_ACTION, CTRL_ID_DECK2_EXT_ACTION),
-        .value=CTRL_DECK_EXT_VALUE(action, true)};
+        .value=CTRL_DECK_EXT_VALUE(action, true),
+        .expected_track_generation=track_generation};
 #ifdef WIN32
     deck_core_test_apply_event(&ev);
 #else

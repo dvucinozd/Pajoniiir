@@ -321,7 +321,7 @@ function Assert-DecodeWarmsCacheBeforeEngineLock {
     if ($audioEngineText -notmatch 'AE_WAV_DECODE_READ_BYTES\s+\(MINIMP3_MAX_SAMPLES_PER_FRAME\s*\*\s*4u\)' -or
         $audioEngineText -notmatch 'eng->format\s*!=\s*AUDIO_FORMAT_FLAC' -or
         $audioEngineText -notmatch 'page_count\s*=\s*fw->cache\.page_count' -or
-        $audioEngineText -notmatch 'page\s*<\s*page_count') {
+        $audioEngineText -notmatch 'audio_compressed_cache_prefetch_pages\(&fw->cache, start, page_count\)') {
         throw "decode cache warming must cover the exact PCM16 WAV read and the full bounded FLAC window"
     }
 }
@@ -2074,6 +2074,33 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_decim2"
+        Dir = "tests/audio_decim2"
+        Target = "test_audio_decim2.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99", "-O2",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-I../../firmware/p4-core/components/audio_engine",
+            "-o", "test_audio_decim2.exe",
+            "test_audio_decim2.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decim2.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_pcm_file"
+        Dir = "tests/audio_pcm_file"
+        Target = "test_audio_pcm_file.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/p4-core/components/audio_engine/include",
+            "-o", "test_audio_pcm_file.exe",
+            "test_audio_pcm_file.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_recorder_wav"
         Dir = "tests/audio_recorder_wav"
         Target = "test_audio_recorder_wav.exe"
@@ -2257,7 +2284,7 @@ $tests = @(
         Name = "audio_wav_decoder"
         Dir = "tests/audio_wav_decoder"
         Target = "test_audio_wav_decoder.exe"
-        Cleanup = @("test_stereo.wav", "test_mono.wav", "test_24bit.wav")
+        Cleanup = @("test_stereo.wav", "test_mono.wav", "test_24bit.wav", "test_pcm.aiff")
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST",
@@ -2265,11 +2292,12 @@ $tests = @(
             "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_audio_wav_decoder.exe",
             "test_audio_wav_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
             "../../firmware/p4-core/components/audio_engine/audio_format.c",
             "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
-            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c"
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c", "-lm"
         )
     },
     @{
@@ -2296,6 +2324,8 @@ $tests = @(
             "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_decim2.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
             "../../firmware/p4-core/components/audio_engine/audio_diag.c",
             "../../firmware/p4-core/components/audio_engine/audio_keylock.c",
             "../../firmware/p4-core/components/audio_engine/audio_censor.c",

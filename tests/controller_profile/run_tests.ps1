@@ -54,5 +54,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Hercules native profile build failed" }
     & $HerculesExe
     if ($LASTEXITCODE -ne 0) { throw "Hercules native profile test failed" }
+    $Sb3Exe = Join-Path $BuildDir "test_ddj_sb3.exe"
+    & gcc @Common -DCONTROLLER_PROFILE_MANAGER_PC_TEST -DCONTROLLER_PROFILE_RUNTIME_PC_TEST `
+        "-I$Manager/include" "-I$Runtime/include" test_ddj_sb3.c $ProfileSource `
+        (Join-Path $Manager "controller_profile_manager.c") `
+        (Join-Path $Runtime "controller_profile_runtime.c") -o $Sb3Exe
+    if ($LASTEXITCODE -ne 0) { throw "DDJ-SB3 profile build failed" }
+    & $Sb3Exe
+    if ($LASTEXITCODE -ne 0) { throw "DDJ-SB3 profile test failed" }
 } finally { Pop-Location }
 exit 0
