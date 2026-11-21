@@ -1,4 +1,4 @@
-#include "audio_keylock.h"
+#include "audio_keylock_selected.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -23,7 +23,7 @@ typedef struct {
 
 typedef struct {
     const char *name;
-    audio_keylock_t keylock;
+    audio_keylock_selected_t keylock;
     repeating_source_t source;
     float tempo_factor;
     float rate_ratio;
@@ -83,11 +83,15 @@ static bool read_repeating_source(void *ctx,
     return true;
 }
 
-static bool keylock_state_is_finite(const audio_keylock_t *state)
+static bool keylock_state_is_finite(const audio_keylock_selected_t *state)
 {
     return state &&
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+           isfinite(state->energy) &&
+#else
            isfinite(state->grain_a) &&
            isfinite(state->grain_b) &&
+#endif
            isfinite(state->logical_fraction) &&
            isfinite(state->tempo_factor) &&
            isfinite(state->rate_ratio);
@@ -123,7 +127,7 @@ static audio_mixer_frame_t render_deck(deck_soak_t *deck)
 {
     audio_mixer_frame_t frame = {0};
     uint32_t consumed = 0u;
-    bool ok = audio_keylock_next(&deck->keylock,
+    bool ok = audio_keylock_selected_next(&deck->keylock,
                                  read_repeating_source,
                                  &deck->source,
                                  &frame,
@@ -170,7 +174,7 @@ static void assert_deck_result(const deck_soak_t *deck,
 
     printf("%s frames=%llu consumed=%llu expected=%.0f drift=%.1f "
            "frequency=%.3fHz expected_frequency=%.3fHz error=%.3f%% "
-           "peak=%d max_jump=%d clicks=%llu clipped=%llu origin=%llu\n",
+           "peak=%d max_jump=%d clicks=%llu clipped=%llu\n",
            deck->name,
            (unsigned long long)output_frames,
            (unsigned long long)deck->consumed_total,
@@ -182,8 +186,7 @@ static void assert_deck_result(const deck_soak_t *deck,
            deck->peak,
            deck->max_jump,
            (unsigned long long)deck->click_count,
-           (unsigned long long)deck->clipped_samples,
-           (unsigned long long)deck->keylock.origin_seq);
+           (unsigned long long)deck->clipped_samples);
 
     assert(drift <= DRIFT_TOLERANCE_FRAMES);
     assert(frequency_error_percent <= FREQUENCY_TOLERANCE_PERCENT);
@@ -193,7 +196,11 @@ static void assert_deck_result(const deck_soak_t *deck,
     assert(deck->click_count == 0u);
     assert(deck->clipped_samples == 0u);
     assert(deck->play_seq == deck->consumed_total);
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+    assert(deck->keylock.last_candidates > 0u);
+#else
     assert(deck->keylock.origin_seq > 0u);
+#endif
     assert(keylock_state_is_finite(&deck->keylock));
 }
 
@@ -225,16 +232,16 @@ int main(int argc, char **argv)
         .expected_frequency_hz =
             (double)deck_2_cycles * deck_2_sample_rate / FIXTURE_FRAMES,
     };
-    audio_keylock_reset(&deck_1.keylock, 0u);
-    audio_keylock_reset(&deck_2.keylock, 0u);
+    audio_keylock_selected_reset(&deck_1.keylock, 0u);
+    audio_keylock_selected_reset(&deck_2.keylock, 0u);
 #ifdef M3_DSP_POLICY_TEST
     deck_1.keylock.antialias = deck_1.keylock.dense_correlation = true;
     deck_2.keylock.antialias = deck_2.keylock.dense_correlation = true;
 #endif
-    audio_keylock_configure(&deck_1.keylock,
+    audio_keylock_selected_configure(&deck_1.keylock,
                             deck_1.tempo_factor,
                             deck_1.rate_ratio);
-    audio_keylock_configure(&deck_2.keylock,
+    audio_keylock_selected_configure(&deck_2.keylock,
                             deck_2.tempo_factor,
                             deck_2.rate_ratio);
 

@@ -22,7 +22,7 @@ def block(marker):
     return source[start:end]
 
 code = r'''
-#include "audio_keylock.h"
+#include "audio_keylock_selected.h"
 #include "audio_resampler.h"
 #include "audio_pcm_timeline.h"
 #include <assert.h>
@@ -31,19 +31,21 @@ code = r'''
 #define AUDIO_ENGINE_DECK_COUNT 2u
 static int16_t pcm[192000*2];
 static audio_pcm_timeline_t s_pcm_timelines[2];
-static audio_keylock_t s_keylocks[2];
+static audio_keylock_selected_t s_keylocks[2];
 static uint32_t s_keylock_generation[2];
 static struct { bool timeline_preroll_pending; } s_engines[2];
 static bool s_start_waiting[2], s_start_seek_pending[2];
 static unsigned empty_reads, resets;
-void __real_audio_keylock_reset(audio_keylock_t *,uint64_t);
-void __wrap_audio_keylock_reset(audio_keylock_t *s,uint64_t seq) {
+void __real_audio_keylock_reset(audio_keylock_selected_t *,uint64_t);
+void __wrap_audio_keylock_reset(audio_keylock_selected_t *s,uint64_t seq) {
  ++resets;__real_audio_keylock_reset(s,seq);
 }
 static bool atomic_load_bool(const bool *p) { return *p; }
 static bool timeline_active(uint8_t d) { return s_pcm_timelines[d].capacity > 0; }
+#if !CONFIG_AUDIO_KEYLOCK_WSOLA2
 static struct { bool keylock_dense_correlation, audio_antialias; } board = {false,true};
 #define board_capabilities_get() (&board)
+#endif
 '''
 code += block("static bool keylock_timeline_read(") + "\n"
 code += block("static bool ae_keylock_render_cb(") + "\n"
@@ -111,8 +113,16 @@ exe = build / ("handoff.exe" if os.name == "nt" else "handoff")
 gcc = shutil.which("gcc")
 if not gcc:
     raise RuntimeError("gcc required")
-subprocess.run([gcc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-DCONFIG_AUDIO_ANTIALIAS_CACHE=1",
-                "-I" + str(component / "include"), str(c),
-                str(component / "audio_keylock.c"), str(component / "audio_pcm_timeline.c"),
-                str(component / "audio_resampler.c"), "-Wl,--wrap=audio_keylock_reset", "-lm", "-o", str(exe)], check=True)
-subprocess.run([str(exe)], check=True)
+for version2 in (False, True):
+    reset = "audio_keylock2_reset" if version2 else "audio_keylock_reset"
+    algorithm = "audio_keylock_wsola2.c" if version2 else "audio_keylock.c"
+    subprocess.run([gcc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    f"-DCONFIG_AUDIO_KEYLOCK_WSOLA2={int(version2)}",
+                    f"-DCONFIG_AUDIO_ANTIALIAS_CACHE={int(not version2)}",
+                    f"-D__wrap_audio_keylock_reset=__wrap_{reset}",
+                    f"-D__real_audio_keylock_reset=__real_{reset}",
+                    "-I" + str(component / "include"), str(c), str(component / algorithm),
+                    *([str(component / "wsola2_resampler.c")] if version2 else []),
+                    str(component / "audio_pcm_timeline.c"), str(component / "audio_resampler.c"),
+                    f"-Wl,--wrap={reset}", "-lm", "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)

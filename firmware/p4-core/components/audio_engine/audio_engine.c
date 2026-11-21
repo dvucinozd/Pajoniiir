@@ -37,7 +37,7 @@
 #include "audio_fw_task_context.h"
 #include "audio_fw_task_plan.h"
 #include "audio_censor.h"
-#include "audio_keylock.h"
+#include "audio_keylock_selected.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_output_sink.h"
@@ -1370,7 +1370,11 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
 #if AE_FW
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
-static audio_keylock_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+static EXT_RAM_BSS_ATTR audio_keylock_selected_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#else
+static audio_keylock_selected_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#endif
 static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_command_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_applied_epoch[AUDIO_ENGINE_DECK_COUNT];
@@ -1435,13 +1439,15 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
      * real playhead when source PCM becomes available again. */
     if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation ||
         s_keylocks[deck].logical_seq != play_seq) {
-        audio_keylock_reset(&s_keylocks[deck], play_seq);
+        audio_keylock_selected_reset(&s_keylocks[deck], play_seq);
+#if !CONFIG_AUDIO_KEYLOCK_WSOLA2
         s_keylocks[deck].dense_correlation = board_capabilities_get()->keylock_dense_correlation;
         s_keylocks[deck].antialias = board_capabilities_get()->audio_antialias;
+#endif
         s_keylock_generation[deck] = generation;
     }
-    audio_keylock_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
-    if (!audio_keylock_next(&s_keylocks[deck], keylock_timeline_read, ctx,
+    audio_keylock_selected_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
+    if (!audio_keylock_selected_next(&s_keylocks[deck], keylock_timeline_read, ctx,
                             out, out_consumed, &play_seq)) return false;
     return audio_pcm_timeline_set_playhead_output_owner(timeline, play_seq);
 }

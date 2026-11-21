@@ -1,6 +1,6 @@
 # Dual-deck Master Tempo host soak
 
-This deterministic host test runs two real `audio_keylock.c` instances
+This deterministic host test runs two instances of the selected Master Tempo algorithm
 simultaneously:
 
 - Deck 1: 48 kHz source, Master Tempo factor `1.15`;
@@ -19,7 +19,13 @@ Run the five-minute virtual soak from the repository root:
 
 ```powershell
 .\tests\audio_keylock_soak\run_audio_keylock_soak.ps1
+.\tests\audio_keylock_soak\run_audio_keylock_soak.ps1 -Wsola2
 ```
+
+The JC1060 option `CONFIG_AUDIO_KEYLOCK_WSOLA2` also selects a private
+16-tap sinc resampler in the Master Tempo path. Both are adapted from
+Kayrozen's `69d7fec5`. The `-Wsola2` run adds the donor's A/B chord,
+transient, 12 kHz tone, seek and tempo-change checks. Firmware defaults to v1.
 
 Choose another virtual duration when needed:
 
