@@ -3574,12 +3574,23 @@ static void test_memory_actions_preserve_transport_source_and_identity(void)
     meta.memory_cue_count=2;
     meta.memory_cues[0]=(anlz_cue_t){.type=ANLZ_CUE_SINGLE,.start_ms=1000};
     meta.memory_cues[1]=(anlz_cue_t){.type=ANLZ_CUE_LOOP,.start_ms=3000,.end_ms=4000};
-    publish_loaded_track(0,0xabcddc01u,120,&meta);
+    media_persistent_id_t id = persistent_id_for_key(0xabcddc01u);
+    audio_engine_stub_deck_loaded[0] = true;
+    audio_engine_stub_session_generation[0] = 7u;
+    assert(deck_core_publish_loaded_track_session(0, 1, 0xabcddc01u, &id,
+           120, 300000, &meta, 7) == ESP_OK);
     publish_loaded_track(1,0xabcddc02u,120,&meta);
     memory_cue_bank_t bank={0};
     assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);
     ctrl_event_t action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_NEXT,true);
     audio_engine_stub_deck_position_ms[0]=0;
+    audio_engine_stub_session_generation[0] = 8u;
+    deck_core_test_apply_event(&action);
+    assert(audio_engine_stub_deck_position_ms[0] == 0);
+    assert(!audio_engine_stub_loop_active[0]);
+    assert(deck_core_get_deck_state(0).cue_point_ms == 0);
+    assert(deck_core_get_deck_state(0).memory_cue_error == ESP_ERR_INVALID_STATE);
+    audio_engine_stub_session_generation[0] = 7u;
     deck_core_test_apply_event(&action);
     assert(audio_engine_stub_deck_position_ms[0]==1000 && !audio_engine_stub_deck_playing[0]);
     assert(deck_core_get_deck_state(0).cue_point_ms==1000);
@@ -3594,7 +3605,8 @@ static void test_memory_actions_preserve_transport_source_and_identity(void)
     assert(deck_core_get_loaded_track(0, &before_reload));
     action = deck_ext_action(0, CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE, true);
     action.expected_track_generation = before_reload.generation;
-    publish_loaded_track(0, 0xabcddc01u, 120, &meta);
+    assert(deck_core_publish_loaded_track_session(0, 1, 0xabcddc01u, &id,
+           120, 300000, &meta, 7) == ESP_OK);
     deck_core_test_apply_event(&action);
     assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==1);
     action=deck_ext_action(0,CTRL_DECK_EXT_ACTION_MEMORY_STORE,true);

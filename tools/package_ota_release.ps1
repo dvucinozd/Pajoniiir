@@ -8,7 +8,8 @@ param(
     [string]$KeyId = "rel-001",
     [switch]$DevelopmentCandidate,
     [switch]$S2HsDmaCandidate,
-    [switch]$SdColdPowerCandidate
+    [switch]$SdColdPowerCandidate,
+    [switch]$Wsola2Candidate
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,9 @@ if ($DevelopmentCandidate -and $Project -ne 'main-deck-m3') { throw 'Development
 if ($S2HsDmaCandidate -and (-not $DevelopmentCandidate -or $Project -ne 'main-deck-m3')) { throw 'S2HsDmaCandidate requires an M3 DevelopmentCandidate' }
 if ($SdColdPowerCandidate -and ($Project -ne 'main-deck-jc1060' -or $DevelopmentCandidate -or $S2HsDmaCandidate)) {
     throw 'SdColdPowerCandidate requires the separate JC1060 experiment build'
+}
+if ($Wsola2Candidate -and ($Project -ne 'main-deck-jc1060' -or $SdColdPowerCandidate)) {
+    throw 'Wsola2Candidate requires a separate JC1060 experiment build'
 }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if ($KeyId -ne "rel-001") {
@@ -65,6 +69,10 @@ function Read-TargetBuild {
     }
     if ($sdPowerEnabled -ne [bool]$SdColdPowerCandidate) {
         throw 'SD cold-power packaging requires matching explicit SdColdPowerCandidate admission'
+    }
+    $wsola2Enabled = $configText -match '(?m)^#define CONFIG_AUDIO_KEYLOCK_WSOLA2 1\r?$'
+    if ($wsola2Enabled -ne [bool]$Wsola2Candidate) {
+        throw 'WSOLA2 packaging requires matching explicit Wsola2Candidate admission'
     }
     if ($configText -match '(?m)^#define CONFIG_DDJ_OTA_(FORCE_ROLLBACK_TEST|STARTUP_TIMEOUT_TEST) 1\r?$') {
         throw "OTA fault-injection images cannot be packaged as a production release"
@@ -171,6 +179,7 @@ $directoryName = switch ($Project) {
     'main-deck-m3' { "pajoniiir-m3-$safeVersion" }
 }
 if ($SdColdPowerCandidate) { $directoryName += '-sd-cold-power' }
+if ($Wsola2Candidate) { $directoryName += '-wsola2' }
 $outputDir = Join-Path $resolvedOutputRoot $directoryName
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
@@ -191,11 +200,12 @@ Invoke-SigningTool @(
 $p4Bundle = Get-Item -LiteralPath $p4BundlePath
 
 $manifest = [ordered]@{
-    schema_version = 2
+    schema_version = 3
     release_version = $p4.Version
     source_sha = $sourceSha
     development_candidate = [bool]$DevelopmentCandidate
     experimental_sd_cold_power = [bool]$SdColdPowerCandidate
+    experimental_wsola2 = [bool]$Wsola2Candidate
     signing = [ordered]@{
         algorithm = "ecdsa-p256-sha256"
         key_id = $KeyId
