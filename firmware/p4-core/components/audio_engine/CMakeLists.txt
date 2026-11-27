@@ -9,3 +9,6 @@ idf_component_register(
     # audio_flac_decoder.c holds the one DR_FLAC_IMPLEMENTATION.
     # Firmware audio: decode task + PCM5102A I2S MAIN out via bsp_jc4880.
 )
+if(CONFIG_AUDIO_KEYLOCK_WSOLA2)
+    target_sources(${COMPONENT_LIB} PRIVATE audio_keylock_wsola2.c wsola2_resampler.c)
+endif()

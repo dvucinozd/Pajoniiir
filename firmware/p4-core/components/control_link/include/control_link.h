@@ -198,8 +198,14 @@ typedef enum {
     CTRL_DECK_EXT_ACTION_RESTORE_SOURCE_CUES,
     CTRL_DECK_EXT_ACTION_JOG_VINYL,
     CTRL_DECK_EXT_ACTION_JOG_CDJ,
-    /* Press flips VINYL/CDJ. Release is ignored, same as the absolute actions. */
-    CTRL_DECK_EXT_ACTION_JOG_TOGGLE,
+    /* 10 is the published DDJ-SB3 action. Leave 11–14 reserved for
+     * early JC1060 candidate profiles. */
+    CTRL_DECK_EXT_ACTION_JOG_TOGGLE = 10,
+    CTRL_DECK_EXT_ACTION_MEMORY_STORE = 15,
+    CTRL_DECK_EXT_ACTION_MEMORY_DELETE,
+    CTRL_DECK_EXT_ACTION_MEMORY_PREV,
+    CTRL_DECK_EXT_ACTION_MEMORY_NEXT,
+    CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE,
 } ctrl_deck_ext_action_t;
 
 #define CTRL_DECK_EXT_VALUE(action, pressed) \
@@ -389,6 +395,7 @@ typedef struct {
     uint8_t           seq;
     uint8_t           deck;     // CTRL_DECK_* for DDJ-FLX4 deck IDs
     uint8_t           control;  // low-nibble semantic control for deck IDs
+    uint32_t          expected_track_generation; // zero for unbound events
 } ctrl_event_t;
 
 // ─── Public API ───────────────────────────────────────────────────────────────

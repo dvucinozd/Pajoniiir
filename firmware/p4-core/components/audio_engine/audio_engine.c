@@ -37,7 +37,7 @@
 #include "audio_fw_task_context.h"
 #include "audio_fw_task_plan.h"
 #include "audio_censor.h"
-#include "audio_keylock.h"
+#include "audio_keylock_selected.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_output_sink.h"
@@ -1206,6 +1206,18 @@ static void lifecycle_deck_lock(uint8_t deck)
 #endif
 }
 
+static bool lifecycle_deck_try_lock(uint8_t deck)
+{
+#if AE_PC
+    return pthread_mutex_trylock(&s_lifecycle_mutex[deck]) == 0;
+#elif AE_FW
+    return s_lifecycle_mutex[deck] && xSemaphoreTake(s_lifecycle_mutex[deck], 0) == pdTRUE;
+#else
+    (void)deck;
+    return true;
+#endif
+}
+
 static void lifecycle_deck_unlock(uint8_t deck)
 {
 #if AE_PC
@@ -1370,7 +1382,11 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
 #if AE_FW
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
-static audio_keylock_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+static EXT_RAM_BSS_ATTR audio_keylock_selected_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#else
+static audio_keylock_selected_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+#endif
 static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_command_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_applied_epoch[AUDIO_ENGINE_DECK_COUNT];
@@ -1435,13 +1451,15 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
      * real playhead when source PCM becomes available again. */
     if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation ||
         s_keylocks[deck].logical_seq != play_seq) {
-        audio_keylock_reset(&s_keylocks[deck], play_seq);
+        audio_keylock_selected_reset(&s_keylocks[deck], play_seq);
+#if !CONFIG_AUDIO_KEYLOCK_WSOLA2
         s_keylocks[deck].dense_correlation = board_capabilities_get()->keylock_dense_correlation;
         s_keylocks[deck].antialias = board_capabilities_get()->audio_antialias;
+#endif
         s_keylock_generation[deck] = generation;
     }
-    audio_keylock_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
-    if (!audio_keylock_next(&s_keylocks[deck], keylock_timeline_read, ctx,
+    audio_keylock_selected_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
+    if (!audio_keylock_selected_next(&s_keylocks[deck], keylock_timeline_read, ctx,
                             out, out_consumed, &play_seq)) return false;
     return audio_pcm_timeline_set_playhead_output_owner(timeline, play_seq);
 }
@@ -1865,20 +1883,11 @@ static void ae_warm_cache_for_next_read(const audio_engine_state_t *eng,
         const size_t first_page_offset = start % fw->cache.page_size;
         page_count = (first_page_offset + span + fw->cache.page_size - 1u) /
                      fw->cache.page_size;
-        if (page_count > fw->cache.page_count) {
-            page_count = fw->cache.page_count;
-        }
     }
 
-    /* Adding one page size to the unaligned start advances to the next cache
-     * page each time. Capping at page_count is important: warming a full cache
-     * plus an unaligned end point would touch page_count + 1 pages and evict the
-     * first page before decode starts. */
-    for (size_t page = 0u; page < page_count; ++page) {
-        size_t offset = start + page * fw->cache.page_size;
-        if (offset < start) break; /* size_t overflow guard */
-        (void)audio_compressed_cache_prefetch(&fw->cache, offset);
-    }
+    /* Use page bases so the final partial page is still warmed when its
+     * unaligned offset would be past EOF. Cap the span to the cache capacity. */
+    audio_compressed_cache_prefetch_pages(&fw->cache, start, page_count);
 }
 
 /* Warming is a prediction, so it can miss: a seek retargets the cursor, and the
@@ -5755,17 +5764,51 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
     return audio_engine_request_user_seek(deck, position_ms);
 }
 
+esp_err_t audio_engine_deck_recall_memory(uint8_t deck, uint32_t session,
+                                          uint32_t position_ms, uint32_t loop_end_ms)
+{
+    if (!deck_is_valid(deck) || !session) return ESP_ERR_INVALID_ARG;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
+#endif
+    if (!lifecycle_deck_try_lock(deck)) return ESP_ERR_TIMEOUT;
+    audio_engine_state_t *eng = &s_engines[deck];
+    esp_err_t rc = ESP_ERR_INVALID_STATE;
+    if (s_lifecycle_session_generation[deck] == session && eng->loaded &&
+        eng->loaded_session_generation == session &&
+        !atomic_load_bool(&s_scratch_playing[deck]) &&
+        !atomic_load_bool(&s_deck_hold[deck])) {
+        if (loop_end_ms && !audio_loop_range_valid(position_ms, loop_end_ms, eng->duration_ms)) {
+            rc = ESP_ERR_INVALID_ARG;
+        } else {
+            rc = audio_engine_request_user_seek(deck, position_ms);
+            if (rc == ESP_OK && loop_end_ms) {
+                /* A recall already requested a seek to loop-in. The loop resize
+                 * path could otherwise request a second seek from the old head. */
+                AE_LOCK();
+#if AE_FW
+                ae_note_loop_change(eng, eng->loop_active &&
+                    (eng->loop_start_ms != position_ms || eng->loop_end_ms != loop_end_ms));
+#endif
+                eng->loop_start_ms = position_ms;
+                eng->loop_end_ms = loop_end_ms;
+                eng->loop_active = true;
+                AE_UNLOCK();
+            } else if (rc == ESP_OK) {
+                (void)audio_engine_deck_clear_loop(deck);
+            }
+        }
+    }
+    lifecycle_deck_unlock(deck);
+    return rc;
+}
+
 esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,
     bool seek,uint32_t position_ms,bool set_pitch,float pitch_percent)
 {
     if (!deck_is_valid(deck) || !session || !isfinite(pitch_percent) ||
         fabsf(pitch_percent)>20) return ESP_ERR_INVALID_ARG;
-#if AE_PC
-    if (pthread_mutex_trylock(&s_lifecycle_mutex[deck])!=0) return ESP_ERR_TIMEOUT;
-#elif AE_FW
-    if (!s_lifecycle_mutex[deck] || xSemaphoreTake(s_lifecycle_mutex[deck],0)!=pdTRUE)
-        return ESP_ERR_TIMEOUT;
-#endif
+    if (!lifecycle_deck_try_lock(deck)) return ESP_ERR_TIMEOUT;
     esp_err_t rc=ESP_ERR_INVALID_STATE;
     if (s_lifecycle_session_generation[deck]==session && s_engines[deck].loaded &&
         s_engines[deck].loaded_session_generation==session &&

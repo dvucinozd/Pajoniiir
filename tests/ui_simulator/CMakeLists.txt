@@ -153,7 +153,7 @@ foreach(layout IN ITEMS compact wide)
     target_compile_definitions(ui_product_${layout}_e2e PRIVATE ${runtime_definitions}
         UI_SIM_BOARD_POLICY=1 BOARD_CAPABILITIES_PC_TEST=1)
     if(layout STREQUAL "wide")
-        target_compile_definitions(ui_product_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600 UI_SIM_BOARD_JC1060=1)
+        target_compile_definitions(ui_product_${layout}_e2e PRIVATE DISPLAY_WIDTH=1024 DISPLAY_HEIGHT=600 UI_SIM_BOARD_JC1060=1 UI_SIM_BOARD_SETTINGS=1)
     endif()
     target_link_libraries(ui_product_${layout}_e2e PRIVATE lvgl m)
     add_executable(dj_ui_runtime_${layout}_e2e ${runtime_sources}

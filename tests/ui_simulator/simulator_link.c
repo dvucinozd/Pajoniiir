@@ -7,6 +7,8 @@
 #include "library.h"
 static dj_link_browse_status_t s_status;
 static bool s_current=true, s_incoming;
+static uint64_t s_epoch = 12;
+void ui_link_mock_new_epoch(void) { ++s_epoch; }
 static uint32_t s_ready_at;
 static uint32_t s_first;
 static bool s_waiting_command;
@@ -20,7 +22,7 @@ esp_err_t ui_link_mock_download(uint8_t peer,uint64_t epoch,uint8_t slot,
 {
     ++s_download_calls;
     if(!s_audio)return ESP_ERR_NOT_SUPPORTED;
-    if(s_cancel || !s_current || peer!=1 || epoch!=12 || slot!=DJLINK_SLOT_LAPTOP || !track || !track->rekordbox_id)
+    if(s_cancel || !s_current || peer!=1 || epoch!=s_epoch || slot!=DJLINK_SLOT_LAPTOP || !track || !track->rekordbox_id)
         return ESP_ERR_INVALID_STATE;
     memset(out,0,sizeof(*out));out->track_id=0x80000000u|track->rekordbox_id;
     out->duration_ms=245000;out->bpm=123;
@@ -40,12 +42,12 @@ bool dj_link_service_snapshot(dj_link_discovery_t *out)
 {
     memset(out,0,sizeof(*out)); out->phase=DJ_LINK_ACTIVE; out->numbers[0]=3; out->numbers[1]=4;
     if (s_current) out->peers[0]=(dj_link_peer_t){.present=true,.number=1,
-        .device_type=3,.ip=0xc0a80102,.source_epoch=12};
+        .device_type=3,.ip=0xc0a80102,.source_epoch=s_epoch};
     return true;
 }
 uint64_t dj_link_service_browse(uint8_t peer,uint64_t epoch,uint8_t slot,dj_link_db_menu_t menu,uint32_t id)
 {
-    if (!s_current || peer!=1 || epoch!=12 || slot!=DJLINK_SLOT_LAPTOP) return 0;
+    if (!s_current || peer!=1 || epoch!=s_epoch || slot!=DJLINK_SLOT_LAPTOP) return 0;
     s_status.request_id++; s_status.source_epoch=epoch; s_status.peer_number=peer;
     s_status.slot=slot; s_status.menu=(uint8_t)menu; s_status.menu_id=id;
     s_status.state=DJ_LINK_BROWSE_LOADING; s_status.count=s_status.received=0;

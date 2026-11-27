@@ -1,5 +1,14 @@
 # P4 risk register
 
+2026-11-03 JC1060 completion candidate: new local memory-bank persistence,
+ordinary LOAD LOCK controls, optional Wi-Fi and playlist/Link UI behavior need
+exact-image physical acceptance. Preserve current media/settings/recovery
+before installation. Ethernet remains required for pending-image validation;
+enabling Wi-Fi adds a readiness requirement. SD cold power is separately
+admitted and OFF in ordinary packages; its manifest cannot generate a public
+pull channel. Software tests and builds do not close these gates. See the
+[candidate record](JC1060_COMPLETION_20261103.md).
+
 Shared-core migration adds the following open gates, independent of earlier
 accepted release images:
 

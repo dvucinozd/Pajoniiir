@@ -333,14 +333,19 @@ void web_server_set_address_probe(web_server_address_probe_fn probe)
 
 bool web_server_is_running(void) { return s_web_server != NULL; }
 
+static uint32_t s_ap_ipv4;
+
+void web_server_set_ap_ipv4(uint32_t address)
+{
+    __atomic_store_n(&s_ap_ipv4, address, __ATOMIC_RELEASE);
+}
+
 static void current_ap_ipv4(char out[16])
 {
     snprintf(out, 16, "192.168.4.1");
-    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-    esp_netif_ip_info_t info = {0};
-    if (ap && esp_netif_is_netif_up(ap) &&
-        esp_netif_get_ip_info(ap, &info) == ESP_OK && info.ip.addr) {
-        (void)esp_ip4addr_ntoa(&info.ip, out, 16);
+    esp_ip4_addr_t ip = { .addr = __atomic_load_n(&s_ap_ipv4, __ATOMIC_ACQUIRE) };
+    if (ip.addr) {
+        (void)esp_ip4addr_ntoa(&ip, out, 16);
         return;
     }
     if (s_address_probe) (void)s_address_probe(out, 16u);
@@ -2569,6 +2574,18 @@ static esp_err_t api_control_handler(httpd_req_t *req)
         }
     } else if (strcmp(action, "cue") == 0) {
         queue_rc = deck_core_queue_remote_cue_tap((uint8_t)deck);
+    } else if (!strcmp(action, "memory_store") || !strcmp(action, "memory_delete") ||
+               !strcmp(action, "memory_prev") || !strcmp(action, "memory_next") ||
+               !strcmp(action, "memory_restore_source")) {
+        uint8_t kind = !strcmp(action, "memory_store") ? CTRL_DECK_EXT_ACTION_MEMORY_STORE :
+            !strcmp(action, "memory_delete") ? CTRL_DECK_EXT_ACTION_MEMORY_DELETE :
+            !strcmp(action, "memory_prev") ? CTRL_DECK_EXT_ACTION_MEMORY_PREV :
+            !strcmp(action, "memory_next") ? CTRL_DECK_EXT_ACTION_MEMORY_NEXT :
+            CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE;
+        ctrl_event_t ev = {.type=CTRL_EV_BUTTON, .deck=(uint8_t)deck,
+            .id=deck ? CTRL_ID_DECK2_EXT_ACTION : CTRL_ID_DECK1_EXT_ACTION,
+            .value=CTRL_DECK_EXT_VALUE(kind, true)};
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "pfl") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,

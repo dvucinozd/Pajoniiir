@@ -1,6 +1,27 @@
 # Documentation status
 
-Status: **current documentation authority, reconciled 2026-10-19**.
+Status: **current documentation authority, updated 2026-11-03**.
+
+The [JC1060 completion candidate](JC1060_COMPLETION_20261103.md) adds local
+memory cue/loop editing and recall, persistent ordinary-Settings LOAD LOCK,
+optional JC1060 WPA2 APSTA alongside Ethernet, touch playlist opening and Link
+source-return refresh. The operator now has a JC1060 and selected DDJ-FLX4 for
+qualification. JC8012 work is deferred. Software verification and exact package
+identities are recorded in that candidate record; physical installation,
+reconnect, SD, networking and rollback gates remain NOT RUN. Wi-Fi stays OFF
+on fresh JC1060 NVS; Link remains Ethernet-only/default OFF and SD cold power
+is a separate OFF-by-default experiment. Existing releases and installed-image
+acceptance are unchanged. GitHub Actions is not dispatched during development,
+following the operator's budget instruction. Earlier dated progress below
+retains its original image and policy scope.
+
+Final clean `8bc3b53a` passes full local host qualification (144 build/206 run
+steps, no optional SKIP), all nine UI presentations/145 exact hashes, all three
+ordinary IDF6.0.2 builds and the separately configured SD variant. Both JC1060
+signed packages, a 51-file signed delivery inventory and source recovery verify.
+The operator confirms COM3 but reserves the board for another agent and will
+announce availability. Device access and all physical gates remain NOT RUN;
+do not open/reset/probe it before release. No push, Actions or public update.
 
 PR54 is merged into `master` as `37d5bddb`; its reviewed head and merge both
 pass all thirteen migration jobs, including SD-power. Master also passes

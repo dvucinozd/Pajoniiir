@@ -7,12 +7,20 @@ param(
     [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
     [string]$KeyId = "rel-001",
     [switch]$DevelopmentCandidate,
-    [switch]$S2HsDmaCandidate
+    [switch]$S2HsDmaCandidate,
+    [switch]$SdColdPowerCandidate,
+    [switch]$Wsola2Candidate
 )
 
 $ErrorActionPreference = "Stop"
 if ($DevelopmentCandidate -and $Project -ne 'main-deck-m3') { throw 'DevelopmentCandidate is reserved for the M3 migration image' }
 if ($S2HsDmaCandidate -and (-not $DevelopmentCandidate -or $Project -ne 'main-deck-m3')) { throw 'S2HsDmaCandidate requires an M3 DevelopmentCandidate' }
+if ($SdColdPowerCandidate -and ($Project -ne 'main-deck-jc1060' -or $DevelopmentCandidate -or $S2HsDmaCandidate)) {
+    throw 'SdColdPowerCandidate requires the separate JC1060 experiment build'
+}
+if ($Wsola2Candidate -and ($Project -ne 'main-deck-jc1060' -or $SdColdPowerCandidate)) {
+    throw 'Wsola2Candidate requires a separate JC1060 experiment build'
+}
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if ($KeyId -ne "rel-001") {
     throw "Firmware currently trusts only OTA signing key ID 'rel-001'"
@@ -55,6 +63,17 @@ function Read-TargetBuild {
     $configPath = Join-Path $buildDir "config/sdkconfig.h"
     if (-not (Test-Path -LiteralPath $configPath)) { throw "Missing build configuration: $configPath" }
     $configText = Get-Content -LiteralPath $configPath -Raw
+    $sdPowerEnabled = $configText -match '(?m)^#define CONFIG_PAJONIIIR_SD_COLD_POWER_EXPERIMENT 1\r?$'
+    if ($SdColdPowerCandidate -and $ExpectedProject -ne 'main-deck-jc1060') {
+        throw 'SD cold-power candidate is JC1060-only'
+    }
+    if ($sdPowerEnabled -ne [bool]$SdColdPowerCandidate) {
+        throw 'SD cold-power packaging requires matching explicit SdColdPowerCandidate admission'
+    }
+    $wsola2Enabled = $configText -match '(?m)^#define CONFIG_AUDIO_KEYLOCK_WSOLA2 1\r?$'
+    if ($wsola2Enabled -ne [bool]$Wsola2Candidate) {
+        throw 'WSOLA2 packaging requires matching explicit Wsola2Candidate admission'
+    }
     if ($configText -match '(?m)^#define CONFIG_DDJ_OTA_(FORCE_ROLLBACK_TEST|STARTUP_TIMEOUT_TEST) 1\r?$') {
         throw "OTA fault-injection images cannot be packaged as a production release"
     }
@@ -145,6 +164,7 @@ $p4 = Read-TargetBuild `
     -SlotSize 0x400000
 $boardCheckArgs = @('--build', (Join-Path $RepoRoot "firmware/$Project/$BuildName"), '--project', $Project)
 if ($S2HsDmaCandidate) { $boardCheckArgs += '--experimental-s2' }
+if ($SdColdPowerCandidate) { $boardCheckArgs += '--experimental-sd-power' }
 & $Python (Join-Path $PSScriptRoot 'check_board_build.py') @boardCheckArgs
 if ($LASTEXITCODE -ne 0) { throw 'Board build verification failed before packaging' }
 if ($p4.SourceVersion -ne $p4.Version) {
@@ -158,6 +178,8 @@ $directoryName = switch ($Project) {
     'main-deck-jc1060' { "pajoniiir-jc1060-$safeVersion" }
     'main-deck-m3' { "pajoniiir-m3-$safeVersion" }
 }
+if ($SdColdPowerCandidate) { $directoryName += '-sd-cold-power' }
+if ($Wsola2Candidate) { $directoryName += '-wsola2' }
 $outputDir = Join-Path $resolvedOutputRoot $directoryName
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
@@ -178,10 +200,12 @@ Invoke-SigningTool @(
 $p4Bundle = Get-Item -LiteralPath $p4BundlePath
 
 $manifest = [ordered]@{
-    schema_version = 2
+    schema_version = 3
     release_version = $p4.Version
     source_sha = $sourceSha
     development_candidate = [bool]$DevelopmentCandidate
+    experimental_sd_cold_power = [bool]$SdColdPowerCandidate
+    experimental_wsola2 = [bool]$Wsola2Candidate
     signing = [ordered]@{
         algorithm = "ecdsa-p256-sha256"
         key_id = $KeyId

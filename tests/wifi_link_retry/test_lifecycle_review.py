@@ -6,20 +6,21 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 source = (ROOT/'firmware/p4-core/components/wifi_link/wifi_link.c').read_text(encoding='utf-8')
-def function(signature):
-    start = source.index(signature)
-    end = source.index('{', start) + 1
+def function(signature, text=source):
+    start = text.index(signature)
+    end = text.index('{', start) + 1
     depth = 1
     while depth:
-        depth += (source[end] == '{') - (source[end] == '}')
+        depth += (text[end] == '{') - (text[end] == '}')
         end += 1
-    return source[start:end]
+    return text[start:end]
 
 code = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include "wifi_link_control.h"
 #include "wifi_link_retry.h"
@@ -76,11 +77,52 @@ static void status_publish(int mode,int error,bool active) { (void)mode;(void)er
 static int start_under_lease(void) { ++start_calls; if(start_calls<=4)return ESP_ERR_NO_MEM;s_active=true;return ESP_OK; }
 static int wifi_link_stop(void) { ++stop_calls;s_active=false;s_desired=true;return ESP_OK; }
 static void stop_under_lease(void) { s_active=false; }
+static struct board_caps { bool ethernet; } caps;
+static const struct board_caps *board_capabilities_get(void) { return &caps; }
+static unsigned dns_stops, web_stops;
+static void dns_server_stop(void) { ++dns_stops; }
+static void web_server_stop(void) { ++web_stops; }
+typedef struct { uint32_t addr; } esp_ip4_addr_t;
+static uint32_t s_ap_ipv4;
+static int fake_netif, *s_ap_netif = &fake_netif;
+static unsigned destroyed;
+static bool (*s_address_probe)(char*, size_t);
+static void current_ap_ipv4(char out[16]);
+static bool ethernet_address(char *out, size_t length) {
+    snprintf(out, length, "10.0.0.44");
+    return true;
+}
+static void esp_ip4addr_ntoa(const esp_ip4_addr_t *ip, char *out, size_t length) {
+    snprintf(out, length, "192.168.4.%u", (unsigned)ip->addr);
+}
+static void esp_netif_destroy_default_wifi(int *netif) {
+    char address[16];
+    assert(netif == &fake_netif);
+    current_ap_ipv4(address);
+    assert(!strcmp(address, "10.0.0.44")); /* HTTP during destruction */
+    ++destroyed;
+}
 '''
+web = (ROOT/'firmware/p4-core/components/web_server/web_server.c').read_text(encoding='utf-8')
+code += function('void web_server_set_ap_ipv4(', web)
+code += function('static void current_ap_ipv4(', web)
+code += function('static void stop_ap_netif(void)')
+code += function('static void stop_ap_services(void)')
 code += function('esp_err_t wifi_link_probe_start(void)')
 code += function('static void wifi_link_worker(void *arg)')
 code += r'''
 int main(void) {
+    char address[16];
+    s_address_probe = ethernet_address;
+    web_server_set_ap_ipv4(9);
+    current_ap_ipv4(address);
+    assert(!strcmp(address, "192.168.4.9"));
+    stop_ap_netif();
+    assert(!s_ap_netif && destroyed == 1);
+    caps.ethernet=true;stop_ap_services();
+    assert(dns_stops==1 && web_stops==0);
+    caps.ethernet=false;stop_ap_services();
+    assert(dns_stops==2 && web_stops==1);
     s_active=true; stop_during_acquire=true;
     assert(wifi_link_probe_start()==ESP_ERR_INVALID_STATE);
     assert(!owner && !s_probe_running && !spawn_count && releases==1);

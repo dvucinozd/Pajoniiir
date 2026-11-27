@@ -8,6 +8,8 @@ SRCS    = test_audio_wav_decoder.c \
           ../../firmware/p4-core/components/audio_engine/audio_format.c \
           ../../firmware/p4-core/components/audio_engine/audio_decoder.c \
           ../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c \
+          ../../firmware/p4-core/components/audio_engine/audio_pcm_file.c \
+          ../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c \
           ../../firmware/p4-core/components/media_io_gate/media_io_gate.c
 
 TARGET  = test_audio_wav_decoder
@@ -17,10 +19,10 @@ TARGET  = test_audio_wav_decoder
 all: $(TARGET)
 
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 test: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) test_audio_wav_decoder.exe test_stereo.wav test_mono.wav test_24bit.wav
+	rm -f $(TARGET) test_audio_wav_decoder.exe test_stereo.wav test_mono.wav test_24bit.wav test_pcm.aiff

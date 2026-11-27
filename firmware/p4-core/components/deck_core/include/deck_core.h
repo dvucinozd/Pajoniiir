@@ -53,6 +53,7 @@ typedef struct {
     bool          censor_active;
     bool          master_tempo;
     bool          controller_connected;
+    esp_err_t     memory_cue_error; // last memory action; published with actor state
     deck_net_sync_status_t network_sync;
     uint8_t       network_player;
     float         network_phase_error;
@@ -127,6 +128,10 @@ deck_state_t deck_core_get_deck_control_state(uint8_t deck);
  * Both UI admission and the asynchronous worker recheck this verdict. */
 void deck_core_set_load_lock(bool on);
 bool deck_core_get_load_lock(void);
+/* On-demand source/local memory bank; never call from the audio callback or
+ * per-frame render path. Local edits replace the source bank until restore. */
+struct memory_cue_bank;
+esp_err_t deck_core_get_memory_cues(uint8_t deck, struct memory_cue_bank *out);
 bool deck_core_load_allowed(uint8_t deck);
 /* Reserve replacement against semantic transport events. 0 means refused;
  * release the returned token only after publishing/retiring the loaded track. */
@@ -216,6 +221,7 @@ bool deck_core_get_loaded_track(uint8_t deck,
                                 deck_loaded_track_summary_t *out);
 /* Increments after a successful local hot-cue edit or source restore. */
 uint32_t deck_core_hot_cue_revision(void);
+esp_err_t deck_core_get_memory_cue_error(uint8_t deck);
 
 /*
  * Drain controller-originated UI commands. ui_update() is the sole firmware

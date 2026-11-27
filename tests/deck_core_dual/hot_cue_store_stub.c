@@ -2,6 +2,9 @@
 #include <stdbool.h>
 #include <string.h>
 
+#define MEMORY_CUE_STORE_STANDALONE_TEST
+#include "../../firmware/p4-core/components/hot_cue_store/memory_cue_store.c"
+
 typedef struct {
     media_persistent_id_t id;
     hot_cue_store_blob_t blob;

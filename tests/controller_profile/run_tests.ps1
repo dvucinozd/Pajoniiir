@@ -34,8 +34,10 @@ try {
     & $FullExe
     if ($LASTEXITCODE -ne 0) { throw "S2 full profile test failed" }
     $Ddj400Exe = Join-Path $BuildDir "test_ddj400.exe"
-    & gcc @Common -DCONTROLLER_PROFILE_MANAGER_PC_TEST "-I$Manager/include" test_ddj400.c $ProfileSource `
-        (Join-Path $Manager "controller_profile_manager.c") -o $Ddj400Exe
+    & gcc "-I$(Join-Path $RepoRoot 'tests/support/stubs')" @Common `
+        -DCONTROLLER_PROFILE_MANAGER_PC_TEST "-I$Manager/include" test_ddj400.c $ProfileSource `
+        (Join-Path $Manager "controller_profile_manager.c") `
+        (Join-Path $Components "control_link/control_link_local.c") -o $Ddj400Exe
     if ($LASTEXITCODE -ne 0) { throw "DDJ-400 profile build failed" }
     & $Ddj400Exe
     if ($LASTEXITCODE -ne 0) { throw "DDJ-400 profile test failed" }

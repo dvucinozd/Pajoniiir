@@ -1,5 +1,23 @@
 # P4 operation and release checklist
 
+For the [2026-11-03 JC1060 candidate](JC1060_COMPLETION_20261103.md), the local
+operator owns the test board and will use DDJ-FLX4. Confirm device identity,
+partition/security state and recovery backups before installation. Test the
+ordinary image first, then the separately identified SD cold-power candidate;
+keep the latter out of public pull channels. New memory-bank edits are local
+NVS overrides; HOLD SOURCE restores imported memory cues, while the existing
+HOLD RESTORE button restores Hot Cues. Memory PREV/NEXT require a stopped deck.
+LOAD LOCK defaults ON and persists. JC1060 Wi-Fi defaults OFF; enable its own
+Settings switch without changing Ethernet DJ LINK. Ethernet management remains
+required for pending-image acceptance; saved enabled Wi-Fi must also become
+ready. Wi-Fi OFF must retain Ethernet HTTP. Physical gates are NOT RUN until
+recorded on this exact image; JC8012 is deferred and S2 stays operator-closed.
+
+Current hold point: clean `8bc3b53a` is locally built/qualified/signed; COM3 is
+confirmed but in another agent's use. Wait for the operator's availability
+announcement before any serial/API/reset/backup/flash action. Start with the
+[physical identity/recovery checklist](JC1060_TEST_CHECKLIST_20261103.md).
+
 The [JC8012 source audit](reviews/2026-10-19-jc8012-source-audit.md) closes PR54's
 merge/CI record, not a new hardware gate. A published Apache-2.0 panel candidate
 is sequence-equivalent to the donor; it is still inactive. Do not bundle the

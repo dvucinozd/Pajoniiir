@@ -238,6 +238,20 @@ static unsigned s_link_depth;
 static lv_obj_t *s_label_source_button;
 static lv_obj_t *s_label_link_hint;
 static uint32_t s_link_hint_until;
+static uint32_t s_link_probe_tick;
+static bool s_link_reconnect_pending;
+static dj_link_discovery_t *s_link_discovery;
+static dj_link_discovery_t *ui_library_link_discovery(void)
+{
+    if (!s_link_discovery) {
+#ifndef WIN32
+        s_link_discovery = heap_caps_calloc(1, sizeof(*s_link_discovery), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+        s_link_discovery = calloc(1, sizeof(*s_link_discovery));
+#endif
+    }
+    return s_link_discovery && dj_link_service_snapshot(s_link_discovery) ? s_link_discovery : NULL;
+}
 static void ui_library_source_event_cb(lv_event_t *event);
 static bool ui_library_link_request(dj_link_db_menu_t menu, uint32_t id, int selection)
 {
@@ -1909,6 +1923,16 @@ static void library_table_event_cb(lv_event_t *e)
 
     ui_library_page_t page = ui_library_current_page();
     int new_idx = ui_library_page_absolute_index(&page, (int)row);
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        /* VALUE_CHANGED selects rows for touch/keyboard; an explicit click
+         * also opens folder/playlist nodes, including the already-selected
+         * first row. Track clicks still only select, never load a deck. */
+        if (new_idx >= 0 && new_idx < ui_library_media_count()) {
+            s_selected_track_idx = new_idx;
+            (void)ui_library_browse_open_selected();
+        }
+        return;
+    }
     if (new_idx >= 0 && new_idx < ui_library_media_count() &&
         new_idx != s_selected_track_idx) {
         s_selected_track_idx = new_idx;
@@ -2073,6 +2097,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_library_table, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(s_library_table, library_table_draw_part_begin_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
     lv_obj_add_flag(s_library_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
 
@@ -2561,9 +2586,37 @@ void ui_library_update(const ui_frame_context_t *ctx)
         lv_label_set_text(s_label_link_hint,""); s_link_hint_until=0;
     }
     if (s_link_source) {
+        /* Re-discovery can assign a new source epoch. Never reuse old rows or
+         * resume an old download against that new identity. Reopen the root
+         * listing only; retain the playing decks and the local catalog. */
+        uint32_t now = lv_tick_get();
+        if (!s_link_probe_tick || (uint32_t)(now - s_link_probe_tick) >= 1000u) {
+            s_link_probe_tick = now ? now : 1u;
+            dj_link_discovery_t *discovery = ui_library_link_discovery();
+            if (discovery) {
+                const dj_link_peer_t *found = NULL;
+                for (unsigned i = 0; i < DJ_LINK_PEERS; ++i)
+                    if (discovery->peers[i].present && discovery->peers[i].number == s_link_peer)
+                        found = &discovery->peers[i];
+                if (!found) s_link_reconnect_pending = true;
+                else if (s_link_reconnect_pending || found->source_epoch != s_link_epoch) {
+#ifndef WIN32
+                    if (s_remote_load_active) ui_library_invalidate_track_load();
+#endif
+                    uint64_t previous = s_link_epoch;
+                    s_link_epoch = found->source_epoch;
+                    if (ui_library_link_request(DJ_LINK_DB_MENU_ALL_TRACKS, 0, 0)) {
+                        s_link_depth = 0;
+                        s_link_reconnect_pending = false;
+                        ui_library_populate_rows();
+                    } else s_link_epoch = previous;
+                }
+            }
+        }
         uint32_t first=(uint32_t)(s_selected_track_idx/UI_LIBRARY_PAGE_ROWS)*UI_LIBRARY_PAGE_ROWS;
         dj_link_browse_status_t status;
         if (dj_link_service_page(s_link_request,first,&status,s_link_rows) && status.request_id==s_link_request) {
+            if (status.state == DJ_LINK_BROWSE_UNAVAILABLE) s_link_reconnect_pending = true;
             bool changed=status.revision!=s_link_status.revision || status.state!=s_link_status.state || first!=s_link_first;
             s_link_status=status; s_link_first=first;
             if (status.state==DJ_LINK_BROWSE_READY && s_selected_track_idx>=(int)status.count)
@@ -2798,15 +2851,8 @@ void ui_library_cycle_source(void)
 #endif
     /* Explicitly cycle LOCAL -> peer USB/SD or rekordbox -> LOCAL. Keep local
      * selection/navigation untouched while browsing another source. */
-    static dj_link_discovery_t *peers;
+    dj_link_discovery_t *peers = ui_library_link_discovery();
     if (!peers) {
-#ifndef WIN32
-        peers=heap_caps_calloc(1,sizeof(*peers),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-#else
-        peers=calloc(1,sizeof(*peers));
-#endif
-    }
-    if (!peers || !dj_link_service_snapshot(peers)) {
         ui_library_status_hold("LINK SERVICE UNAVAILABLE",COL_AMBER,1400); return;
     }
     bool advance=!s_link_source;
@@ -2826,6 +2872,7 @@ void ui_library_cycle_source(void)
                 s_link_local_generation=library_generation();
             }
             s_link_source=true; s_link_peer=p->number; s_link_slot=slot;
+            s_link_reconnect_pending=false; s_link_probe_tick=lv_tick_get();
             s_link_epoch=p->source_epoch; s_link_request=request; s_link_depth=0;
             s_selected_track_idx=0; s_link_first=0;
             memset(&s_link_status,0,sizeof(s_link_status)); memset(s_link_rows,0,sizeof(s_link_rows));

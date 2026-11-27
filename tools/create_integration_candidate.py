@@ -81,7 +81,7 @@ def verify_release_manifest(release, public, project, version, image, bundle):
     payload = manifest.read_bytes()
     _raw_verify(_load_public(public), signature.read_bytes(), payload)
     info = json.loads(payload.decode("utf-8-sig"))
-    if info["schema_version"] != 2 or info["release_version"] != version or len(info["targets"]) != 1:
+    if info["schema_version"] not in (2, 3) or info["release_version"] != version or len(info["targets"]) != 1:
         raise ValueError("wrong release manifest")
     target = info["targets"][0]
     expected = {"target": "p4", "project": project, "file": image["file"],

@@ -37,6 +37,8 @@ typedef struct {
     int      has_stored_schema_version;
     uint8_t  stored_dj_link;
     int      has_stored_dj_link;
+    uint8_t  stored_load_lock;
+    int      has_stored_load_lock;
     /* Injection: non-zero makes the next set_u8 fail. */
     int      fail_next_set;
     uint8_t  blob[512];
@@ -78,6 +80,10 @@ static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *key, uint8_t
         g_test_nvs.fail_next_set = 0;
         return ESP_FAIL;
     }
+    if (key && !strcmp(key, "load_lock")) {
+        g_test_nvs.stored_load_lock = value;
+        g_test_nvs.has_stored_load_lock = 1;
+    }
     if (key && strcmp(key, "backlight") == 0) {
         g_test_nvs.stored_backlight = value;
         g_test_nvs.has_stored_backlight = 1;
@@ -100,6 +106,10 @@ static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *key, uint8_t
 static inline esp_err_t nvs_get_u8(nvs_handle_t handle, const char *key, uint8_t *out)
 {
     (void)handle;
+    if (key && out && !strcmp(key, "load_lock") && g_test_nvs.has_stored_load_lock) {
+        *out = g_test_nvs.stored_load_lock;
+        return ESP_OK;
+    }
     if (key && out && strcmp(key, "dj_link") == 0 && g_test_nvs.has_stored_dj_link) {
         *out = g_test_nvs.stored_dj_link;
         return ESP_OK;

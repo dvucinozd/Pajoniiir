@@ -49,13 +49,21 @@ static audio_pcm_result_t finish(audio_pcm_format_t *f, uint16_t bits, size_t fi
     return AUDIO_PCM_OK;
 }
 
+static bool next_chunk(size_t payload, uint32_t size, size_t file_size, size_t *pos)
+{
+    const size_t remaining = file_size - payload;
+    if (size > remaining || (size & 1u) > remaining - size) return false;
+    *pos = payload + size + (size & 1u);
+    return true;
+}
+
 static audio_pcm_result_t parse_wave(audio_pcm_read_fn read, void *ctx, size_t file_size,
                                      audio_pcm_format_t *f)
 {
     bool have_fmt = false, have_data = false;
     uint16_t bits = 0u;
     size_t pos = 12u;
-    while (pos + 8u <= file_size && !have_data) {
+    while (file_size - pos >= 8u && !have_data) {
         uint8_t chunk[8];
         if (!read(ctx, pos, chunk, sizeof(chunk))) return AUDIO_PCM_BAD_FILE;
         const uint32_t size = rd32le(chunk + 4);
@@ -63,7 +71,7 @@ static audio_pcm_result_t parse_wave(audio_pcm_read_fn read, void *ctx, size_t f
         if (memcmp(chunk, "fmt ", 4) == 0) {
             uint8_t fmt[40];
             const size_t want = size < sizeof(fmt) ? size : sizeof(fmt);
-            if (size < 16u || payload + want > file_size || !read(ctx, payload, fmt, want)) {
+            if (size < 16u || want > file_size - payload || !read(ctx, payload, fmt, want)) {
                 return AUDIO_PCM_BAD_FILE;
             }
             uint16_t tag = rd16le(fmt);
@@ -85,7 +93,7 @@ static audio_pcm_result_t parse_wave(audio_pcm_read_fn read, void *ctx, size_t f
             f->data_size = size;
             have_data = true;
         }
-        pos = payload + (size_t)size + (size_t)(size & 1u);
+        if (!have_data && !next_chunk(payload, size, file_size, &pos)) return AUDIO_PCM_BAD_FILE;
     }
     if (!have_fmt || !have_data) return AUDIO_PCM_BAD_FILE;
     return finish(f, bits, file_size);
@@ -99,7 +107,7 @@ static audio_pcm_result_t parse_aiff(audio_pcm_read_fn read, void *ctx, size_t f
     f->aiff = true;
     f->big_endian = true;
     size_t pos = 12u;
-    while (pos + 8u <= file_size && !(have_comm && have_ssnd)) {
+    while (file_size - pos >= 8u && !(have_comm && have_ssnd)) {
         uint8_t chunk[8];
         if (!read(ctx, pos, chunk, sizeof(chunk))) return AUDIO_PCM_BAD_FILE;
         const uint32_t size = rd32be(chunk + 4);
@@ -107,7 +115,7 @@ static audio_pcm_result_t parse_aiff(audio_pcm_read_fn read, void *ctx, size_t f
         if (memcmp(chunk, "COMM", 4) == 0) {
             uint8_t comm[22];
             const size_t want = aifc ? 22u : 18u;
-            if (size < want || payload + want > file_size || !read(ctx, payload, comm, want)) {
+            if (size < want || want > file_size - payload || !read(ctx, payload, comm, want)) {
                 return AUDIO_PCM_BAD_FILE;
             }
             f->channels = rd16be(comm);
@@ -123,16 +131,17 @@ static audio_pcm_result_t parse_aiff(audio_pcm_read_fn read, void *ctx, size_t f
             have_comm = true;
         } else if (memcmp(chunk, "SSND", 4) == 0) {
             uint8_t head[8];
-            if (size < 8u || payload + 8u > file_size || !read(ctx, payload, head, 8u)) {
+            if (size < 8u || file_size - payload < 8u || !read(ctx, payload, head, 8u)) {
                 return AUDIO_PCM_BAD_FILE;
             }
             const uint32_t offset = rd32be(head);
-            if (offset > size - 8u) return AUDIO_PCM_BAD_FILE;
+            if (offset > size - 8u || offset > file_size - payload - 8u) return AUDIO_PCM_BAD_FILE;
             f->data_offset = payload + 8u + offset;
             f->data_size = size - 8u - offset;
             have_ssnd = true;
         }
-        pos = payload + (size_t)size + (size_t)(size & 1u);
+        if (!(have_comm && have_ssnd) && !next_chunk(payload, size, file_size, &pos))
+            return AUDIO_PCM_BAD_FILE;
     }
     if (!have_comm || !have_ssnd) return AUDIO_PCM_BAD_FILE;
     return finish(f, bits, file_size);

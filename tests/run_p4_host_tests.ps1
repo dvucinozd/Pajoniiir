@@ -321,7 +321,7 @@ function Assert-DecodeWarmsCacheBeforeEngineLock {
     if ($audioEngineText -notmatch 'AE_WAV_DECODE_READ_BYTES\s+\(MINIMP3_MAX_SAMPLES_PER_FRAME\s*\*\s*4u\)' -or
         $audioEngineText -notmatch 'eng->format\s*!=\s*AUDIO_FORMAT_FLAC' -or
         $audioEngineText -notmatch 'page_count\s*=\s*fw->cache\.page_count' -or
-        $audioEngineText -notmatch 'page\s*<\s*page_count') {
+        $audioEngineText -notmatch 'audio_compressed_cache_prefetch_pages\(&fw->cache, start, page_count\)') {
         throw "decode cache warming must cover the exact PCM16 WAV read and the full bounded FLAC window"
     }
 }
@@ -2284,7 +2284,7 @@ $tests = @(
         Name = "audio_wav_decoder"
         Dir = "tests/audio_wav_decoder"
         Target = "test_audio_wav_decoder.exe"
-        Cleanup = @("test_stereo.wav", "test_mono.wav", "test_24bit.wav")
+        Cleanup = @("test_stereo.wav", "test_mono.wav", "test_24bit.wav", "test_pcm.aiff")
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST",
@@ -2292,11 +2292,12 @@ $tests = @(
             "-I../../firmware/p4-core/components/media_io_gate/include",
             "-o", "test_audio_wav_decoder.exe",
             "test_audio_wav_decoder.c",
+            "../../firmware/p4-core/components/audio_engine/audio_pcm_file.c",
             "../../firmware/p4-core/components/audio_engine/audio_format.c",
             "../../firmware/p4-core/components/audio_engine/audio_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/p4-core/components/audio_engine/audio_flac_decoder.c",
-            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c"
+            "../../firmware/p4-core/components/media_io_gate/media_io_gate.c", "-lm"
         )
     },
     @{
@@ -2800,6 +2801,7 @@ $tests = @(
             "-I../../firmware/p4-core/components/media_identity/include",
             "-o", "test_hot_cue_store_nvs.exe", "test_hot_cue_store_nvs.c",
             "../../firmware/p4-core/components/hot_cue_store/hot_cue_store.c",
+            "../../firmware/p4-core/components/hot_cue_store/memory_cue_store.c",
             "../../firmware/p4-core/components/media_identity/media_identity.c"
         )
     },
@@ -4256,6 +4258,8 @@ Invoke-Step -Name "run linked startup capture initialization contract" -WorkingD
     -Executable $pythonSource -Arguments @("tests/restart_diagnostics/test_startup_elf_contract.py")
 Invoke-Step -Name "run production remote load progress and cancellation retirement" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/ui_library/test_remote_progress.py")
+Invoke-Step -Name "run production web memory action queue mapping" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/web_api_helpers/test_memory_events.py")
 Invoke-Step -Name "run production paired RGB565 fill regression" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/ui_framebuffer_pair/test_backend_fill.py")
 Invoke-Step -Name "run production controller profile rescan regression" -WorkingDirectory $RepoRoot `

@@ -89,6 +89,7 @@ static void ota_write_unlock(void)
     .cue_mode      = 0,                          \
     .master_trim_preset = 0,                     \
     .wifi_remote   = APP_SETTINGS_DEFAULT_WIFI,  \
+    .load_lock     = 1,                         \
 }
 
 static app_settings_t s_cfg = {
@@ -98,6 +99,7 @@ static app_settings_t s_cfg = {
     .cue_mode      = 0,
     .master_trim_preset = 0,
     .wifi_remote   = APP_SETTINGS_DEFAULT_WIFI,
+    .load_lock     = 1,
 };
 
 static char s_ota_ssid[APP_SETTINGS_OTA_SSID_CAP];
@@ -275,6 +277,7 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(handle, "master_trim", &value) == ESP_OK && value <= 2) next.master_trim_preset = value;
         if (nvs_get_u8(handle, "wifi_rem", &value) == ESP_OK && value <= 1) next.wifi_remote = value;
         if (nvs_get_u8(handle, "dj_link", &value) == ESP_OK && value <= 1) next.dj_link = value;
+        if (nvs_get_u8(handle, "load_lock", &value) == ESP_OK && value <= 1) next.load_lock = value;
         bool ota_blob_valid = false;
         bool migrate_legacy_ota = load_ota_config(handle, ota_ssid, ota_pass, ota_url, &ota_blob_valid);
         if (migrate_legacy_ota) {
@@ -347,6 +350,7 @@ DEFINE_U8_SETTER(app_settings_set_cue_mode, cue_mode, "cue_mode", if (value > 1)
 DEFINE_U8_SETTER(app_settings_set_master_trim_preset, master_trim_preset, "master_trim", if (value > 2) value = 0)
 DEFINE_U8_SETTER(app_settings_set_wifi_remote, wifi_remote, "wifi_rem", value = value ? 1 : 0)
 DEFINE_U8_SETTER(app_settings_set_dj_link, dj_link, "dj_link", value = value ? 1 : 0)
+DEFINE_U8_SETTER(app_settings_set_load_lock, load_lock, "load_lock", value = value ? 1 : 0)
 
 /* ── Backlight: live now, persisted once the slider settles ──────────────── *
  *

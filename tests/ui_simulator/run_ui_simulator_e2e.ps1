@@ -120,6 +120,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'UI simulator E2E scenario failed.'
     }
+    if ($Presentation -eq 'product-wide') {
+        & $Executable ($OutputDir -replace '\\','/') '--jc1060-controls'
+        if ($LASTEXITCODE -ne 0) { throw 'JC1060 control scenario failed.' }
+    }
 } finally {
     $env:PATH = $OldPath
 }
@@ -155,6 +159,7 @@ if ($Presentation -eq 'link-wide') {
 if ($Presentation -eq 'product-m3') {
     $Captures += @('overview_zoom_0','overview_zoom_1','overview_zoom_2','overview_zoom_3','overview_zoom_4')
 }
+if ($Presentation -eq 'product-wide') { $Captures += @('completion_memory','completion_settings') }
 foreach ($name in $Captures) {
     $path = Join-Path $OutputDir "$name.ppm"
     if (-not (Test-Path -LiteralPath $path)) {

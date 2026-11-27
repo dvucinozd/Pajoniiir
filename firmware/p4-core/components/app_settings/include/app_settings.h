@@ -19,6 +19,7 @@ typedef struct {
     uint8_t master_trim_preset; // 0 = 0 dB, 1 = -3 dB, 2 = -6 dB
     uint8_t wifi_remote;    // 0 = Wi-Fi remote off (default), 1 = on (SoftAP + web UI)
     uint8_t dj_link;        // 0 = off (default), 1 = JC1060 Ethernet Link enabled
+    uint8_t load_lock;      // 1 = reject replacement of playing decks (default)
 } app_settings_t;
 
 #define APP_SETTINGS_AUDIO_OUT_SPEAKER 0u
@@ -48,6 +49,7 @@ void app_settings_set_cue_mode(uint8_t mode);
 void app_settings_set_master_trim_preset(uint8_t preset);
 void app_settings_set_wifi_remote(uint8_t on);
 void app_settings_set_dj_link(uint8_t on);
+void app_settings_set_load_lock(uint8_t on);
 
 /* ── Pull-OTA service network ─────────────────────────────────────────────
  *

@@ -151,6 +151,8 @@ EXT_ACTIONS = {
     "loop_adjust_out": 4, "quantize": 5, "sync_off": 6,
     "restore_source_cues": 7, "jog_vinyl": 8, "jog_cdj": 9,
     "jog_toggle": 10,
+    "memory_store": 15, "memory_delete": 16, "memory_prev": 17,
+    "memory_next": 18, "memory_restore_source": 19,
 }
 
 # control_link.h LED ids

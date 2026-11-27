@@ -1,4 +1,7 @@
 #include "ui_performance_tabs.h"
+#ifndef UI_PERFORMANCE_TABS_HOST_TEST
+#include "memory_cue_store.h"
+#endif
 
 #include <limits.h>
 #include <stddef.h>
@@ -60,6 +63,9 @@ static lv_obj_t *s_memory_panel;
 static lv_obj_t *s_memory_text;
 static lv_obj_t *s_memory_title;
 static bool s_restore_held;
+static uint8_t s_memory_held_deck;
+static bool s_memory_held;
+static uint32_t s_memory_held_generation;
 static uint8_t s_restore_deck;
 static bool s_display_valid;
 static uint8_t s_display_deck;
@@ -74,6 +80,7 @@ void ui_performance_tabs_cancel_holds(void)
         s_pad_held[i] = false;
     }
     s_restore_held = false;
+    s_memory_held = false;
     s_delete_mode = false;
     if (s_delete_label) lv_label_set_text(s_delete_label, "DELETE: OFF");
     if (s_memory_panel) lv_obj_add_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
@@ -338,6 +345,28 @@ static void memory_event_cb(lv_event_t *event)
     ui_performance_tabs_update_hot_cues();
 }
 
+static void memory_action_event_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    uint8_t action = (uint8_t)(uintptr_t)lv_event_get_user_data(event);
+    if (code == LV_EVENT_PRESSED) {
+        s_memory_held_deck = ui_performance_tabs_active_deck();
+        deck_loaded_track_summary_t track = {0};
+        s_memory_held = deck_core_get_loaded_track(s_memory_held_deck, &track) &&
+                        track.valid && track.persistent_id.valid;
+        s_memory_held_generation = track.generation;
+    }
+    bool restore = action == CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE;
+    if (s_memory_held && s_memory_held_deck == ui_performance_tabs_active_deck() &&
+        code == (restore ? LV_EVENT_LONG_PRESSED : LV_EVENT_CLICKED)) {
+        s_memory_held = false;
+        if (s_config.actions.memory_action) {
+            s_config.actions.memory_action(s_memory_held_deck, action, s_memory_held_generation);
+        }
+    }
+    if (code == LV_EVENT_PRESS_LOST || (restore && code == LV_EVENT_RELEASED)) s_memory_held = false;
+}
+
 static lv_obj_t *ui_performance_tabs_create_screen(lv_obj_t *parent)
 {
     lv_obj_t *screen = lv_obj_create(parent);
@@ -452,14 +481,32 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
     s_jog_mode_deck = CTRL_DECK_NONE;
     ui_performance_tabs_update_jog_mode();
     s_memory_panel = lv_obj_create(screen);
-    lv_obj_set_size(s_memory_panel, s_config.hor_res - 60, s_config.content_h - 100);
+    lv_obj_set_size(s_memory_panel, s_config.hor_res - 60, s_config.content_h - 132);
     lv_obj_set_pos(s_memory_panel, 30, 48);
     lv_obj_set_style_bg_color(s_memory_panel, COL_PANEL_DK, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_memory_panel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_memory_panel, 16, 0);
+    lv_obj_set_scroll_dir(s_memory_panel, LV_DIR_VER);
     s_memory_title = ui_performance_tabs_value_label(s_memory_panel, "MEMORY CUES", COL_AMBER,
                                                      &lv_font_montserrat_16, 0, 0);
     s_memory_text = ui_performance_tabs_value_label(s_memory_panel, "", COL_TEXT,
-                                                   &lv_font_montserrat_14, 0, 30);
+                                                   &lv_font_montserrat_14, 0, 76);
+    const char *memory_labels[] = {"PREV", "NEXT", "STORE", "DELETE", "HOLD SOURCE"};
+    const uint8_t memory_actions[] = {CTRL_DECK_EXT_ACTION_MEMORY_PREV,
+        CTRL_DECK_EXT_ACTION_MEMORY_NEXT, CTRL_DECK_EXT_ACTION_MEMORY_STORE,
+        CTRL_DECK_EXT_ACTION_MEMORY_DELETE, CTRL_DECK_EXT_ACTION_MEMORY_RESTORE_SOURCE};
+    int memory_w = (s_config.hor_res - 118) / 5;
+    for (unsigned i = 0; i < 5; ++i) {
+        lv_obj_t *button = lv_button_create(s_memory_panel);
+        lv_obj_set_pos(button, (memory_w + 6) * (int)i, 30);
+        lv_obj_set_size(button, memory_w, 32);
+        lv_obj_add_event_cb(button, memory_action_event_cb, LV_EVENT_ALL,
+                           (void *)(uintptr_t)memory_actions[i]);
+        lv_obj_t *label = lv_label_create(button);
+        lv_label_set_text(label, memory_labels[i]);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+        lv_obj_center(label);
+    }
     lv_obj_set_style_text_line_space(s_memory_text, 6, LV_PART_MAIN);
     lv_obj_add_flag(s_memory_panel, LV_OBJ_FLAG_HIDDEN);
     return screen;
@@ -482,16 +529,24 @@ void ui_performance_tabs_update_hot_cues(void)
         return;
     }
     if (s_memory_title) {
-        lv_label_set_text_fmt(s_memory_title, "D%u MEMORY CUES: %u%s",
-            (unsigned)deck + 1u, meta ? meta->memory_cue_count : 0u,
-            meta && meta->memory_cues_truncated ? " (TRUNCATED)" : "");
+        memory_cue_bank_t bank = {0};
+        esp_err_t memory_rc = deck_core_get_memory_cues(deck, &bank);
+        esp_err_t action_rc = deck_core_get_memory_cue_error(deck);
+        const char *notice = memory_rc == ESP_ERR_NOT_FINISHED || action_rc == ESP_ERR_NOT_FINISHED ? " - PENDING" :
+            memory_rc != ESP_OK ? " - NO BANK" :
+            action_rc == ESP_ERR_NOT_FOUND ? " - CUE NOT FOUND" :
+            action_rc == ESP_ERR_INVALID_SIZE ? " - BANK FULL" :
+            action_rc != ESP_OK ? " - ACTION FAILED" : "";
+        lv_label_set_text_fmt(s_memory_title, "D%u MEMORY CUES: %u/16%s%s",
+            (unsigned)deck + 1u, (unsigned)bank.count,
+            meta && meta->memory_cues_truncated ? " (SOURCE TRUNCATED)" : "", notice);
         char text[1024] = {0};
         size_t used = 0;
         for (uint8_t i = 0; i < ANLZ_MAX_MEMORY_CUES; ++i) {
-            if (meta && i < meta->memory_cue_count) {
-                const anlz_cue_t *cue = &meta->memory_cues[i];
+            if (i < bank.count) {
+                const hot_cue_store_slot_t *cue = &bank.cues[i];
                 char start[16], end[16];
-                ui_performance_tabs_format_time(start, sizeof start, cue->start_ms);
+                ui_performance_tabs_format_time(start, sizeof start, cue->pos_ms);
                 ui_performance_tabs_format_time(end, sizeof end, cue->end_ms);
                 int written = snprintf(text + used, sizeof text - used, "%02u  %s  %s%s%s\n",
                     (unsigned)i + 1u, start, cue->type == ANLZ_CUE_LOOP ? "LOOP " : "CUE",

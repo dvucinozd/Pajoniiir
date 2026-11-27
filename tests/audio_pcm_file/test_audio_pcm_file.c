@@ -128,6 +128,14 @@ int main(void)
     memcpy(s_file, "ID3\4\0\0\0\0\0\0\0\0", 12);
     s_len = 12;
     assert(audio_pcm_parse(rd, NULL, s_len, &f) == AUDIO_PCM_NOT_PCM);
+
+    /* Reject non-audio chunks that extend beyond the available bytes. */
+    s_len = 0;
+    put("RIFF", 4); le32(12); put("WAVELIST", 8); le32(UINT32_MAX);
+    assert(audio_pcm_parse(rd, NULL, s_len, &f) == AUDIO_PCM_BAD_FILE);
+    s_len = 0;
+    put("FORM", 4); be32(12); put("AIFFANNO", 8); be32(UINT32_MAX);
+    assert(audio_pcm_parse(rd, NULL, s_len, &f) == AUDIO_PCM_BAD_FILE);
     puts("audio_pcm_file tests passed");
     return 0;
 }

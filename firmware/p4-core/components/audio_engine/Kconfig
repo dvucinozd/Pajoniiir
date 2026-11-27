@@ -1,4 +1,13 @@
 menu "Audio engine"
+config AUDIO_KEYLOCK_WSOLA2
+    bool "Use experimental WSOLA2 for Master Tempo"
+    depends on PAJONIIIR_BOARD_JC1060
+    select SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
+    default n
+    help
+        Select the longer-grain correlation search on both decks for
+        listening and output-deadline comparison on JC1060.
+
 config AUDIO_ANTIALIAS_CACHE
     bool
     default y if PAJONIIIR_BOARD_M3

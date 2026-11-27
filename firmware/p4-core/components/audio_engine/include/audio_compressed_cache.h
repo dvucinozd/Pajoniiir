@@ -49,4 +49,7 @@ size_t audio_compressed_cache_read(audio_compressed_cache_t *cache,
                                    size_t bytes);
 bool audio_compressed_cache_prefetch(audio_compressed_cache_t *cache,
                                      size_t offset);
+/* Warm consecutive pages starting with the one containing start. */
+void audio_compressed_cache_prefetch_pages(audio_compressed_cache_t *cache,
+                                           size_t start, size_t page_count);
 size_t audio_compressed_cache_capacity(const audio_compressed_cache_t *cache);

@@ -1,5 +1,21 @@
 # P4 post-release development plan
 
+2026-11-03 [JC1060 completion](JC1060_COMPLETION_20261103.md): JC8012 is deferred.
+The operator has a JC1060 and will qualify it with DDJ-FLX4 after the complete
+software candidate is prepared. Scope includes memory cue editing/recall,
+persistent LOAD LOCK, optional Wi-Fi alongside Ethernet, playlist touch and
+Link source-return behavior. Run local host/UI and all-three-board builds;
+keep SD cold power separately admitted and OFF in ordinary images. Then qualify
+USB MAIN reconnect without LOAD, SD reset behavior, Ethernet/Wi-Fi and signed
+OTA/readiness/rollback on the exact candidate. Real Link peers and long timing
+remain separate physical gates. No intermediate Actions runs or public update.
+The later entry supersedes older next-action/Wi-Fi-policy statements below.
+
+The final local qualification and separate signed packages are complete on
+clean `8bc3b53a`. Next action is held for the operator to release COM3 from
+another agent; then follow [identity/recovery section 0](JC1060_TEST_CHECKLIST_20261103.md).
+Do not access the board while held. Hosted CI remains NOT RUN by budget choice.
+
 2026-10-19 [JC8012 source audit](reviews/2026-10-19-jc8012-source-audit.md):
 PR54 is merged, with green thirteen-job migration CI on head and master.
 A pinned published Apache-2.0 panel candidate matches all 204 donor commands;

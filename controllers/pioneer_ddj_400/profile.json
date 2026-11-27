@@ -895,6 +895,22 @@
       "event": "system.master_cue",
       "status": "0x96",
       "data1": "0x78"
+    },
+    {
+      "type": "ext_action", "deck": 1, "action": "memory_store",
+      "status": "0x90", "data1": "0x3D"
+    },
+    {
+      "type": "ext_action", "deck": 2, "action": "memory_store",
+      "status": "0x91", "data1": "0x3D"
+    },
+    {
+      "type": "ext_action", "deck": 1, "action": "memory_delete",
+      "status": "0x90", "data1": "0x3E"
+    },
+    {
+      "type": "ext_action", "deck": 2, "action": "memory_delete",
+      "status": "0x91", "data1": "0x3E"
     }
   ],
   "outputs": [
@@ -1169,38 +1185,5 @@
     ],
     "preferred_sample_rate": 48000
   },
-  "omitted_inputs": [
-    {
-      "type": "ext_action",
-      "deck": 1,
-      "action": "memory_delete",
-      "status": "0x90",
-      "data1": "0x3E",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 2,
-      "action": "memory_delete",
-      "status": "0x91",
-      "data1": "0x3E",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 1,
-      "action": "memory_store",
-      "status": "0x90",
-      "data1": "0x3D",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    },
-    {
-      "type": "ext_action",
-      "deck": 2,
-      "action": "memory_store",
-      "status": "0x91",
-      "data1": "0x3D",
-      "reason": "No current P4 semantic action; retained for review, not exported"
-    }
-  ]
+  "omitted_inputs": []
 }

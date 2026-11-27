@@ -115,6 +115,8 @@ static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
+static lv_obj_t *s_label_wifi_ap;
+static lv_obj_t *s_label_load_lock;
 static lv_obj_t *s_label_main_sink;
 
 static void main_sink_event_cb(lv_event_t *event)
@@ -364,6 +366,34 @@ static void wifi_remote_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "%s: %s", ethernet ? "Ethernet Link" : "Wi-Fi remote", on ? "on" : "off");
 }
 
+static void load_lock_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
+    app_settings_set_load_lock(on);
+    on = app_settings_get().load_lock != 0;
+#endif
+    deck_core_set_load_lock(on);
+    if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+    lv_label_set_text(s_label_load_lock, on ? "LOAD LOCK ON" : "LOAD LOCK OFF");
+}
+
+static void wifi_ap_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
+    app_settings_set_wifi_remote(on);
+    on = app_settings_get().wifi_remote != 0;
+#endif
+    if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+    if (s_wifi_toggle_cb) s_wifi_toggle_cb(on);
+    if (s_label_wifi_ap) lv_label_set_text(s_label_wifi_ap, on ? "WI-FI: ON" : "WI-FI: OFF");
+}
+
 #if !defined(WIN32) && CONFIG_AUDIO_RECORDER_ENABLED
 static void ui_settings_update_recording_label(void)
 {
@@ -564,6 +594,8 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     s_label_main_sink = ui_settings_value_label(sink,
 #ifndef WIN32
         audio_engine_get_main_sink() == AUDIO_MAIN_SINK_USB ? "MAIN: USB" :
+#elif defined(UI_SIM_BOARD_SETTINGS)
+        !board_capabilities_get()->pcm5102a ? "MAIN: USB" :
 #endif
         "MAIN: PCM5102A", COL_GREEN, &lv_font_montserrat_12, 0, 0);
     lv_obj_center(s_label_main_sink);
@@ -573,17 +605,15 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             &lv_font_montserrat_12,
                             16,
                             62);
-    ui_settings_value_label(output_section,
-#if defined(CONFIG_BSP_ES8311_MONITOR) && CONFIG_BSP_ES8311_MONITOR
-                            "LOCAL: ES8311 monitor",
-                            COL_TEXT_DIM,
-#else
-                            "LOCAL: disabled",
-                            COL_TEXT_DIM,
-#endif
-                            &lv_font_montserrat_12,
-                            176,
-                            62);
+    lv_obj_t *load_lock = lv_switch_create(output_section);
+    ui_settings_style_wireless_switch(load_lock, COL_GREEN);
+    lv_obj_set_size(load_lock, 36, 18);
+    lv_obj_set_pos(load_lock, 176, 60);
+    if (deck_core_get_load_lock()) lv_obj_add_state(load_lock, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(load_lock, load_lock_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    s_label_load_lock = ui_settings_value_label(output_section,
+        deck_core_get_load_lock() ? "LOAD LOCK ON" : "LOAD LOCK OFF",
+        COL_TEXT, &lv_font_montserrat_12, 220, 62);
 
 #if CONFIG_AUDIO_RECORDER_ENABLED
     /* Compact section that fits the gap between OUTPUT and the full-width
@@ -674,11 +704,17 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #endif
 
     bool ethernet = s_config.hor_res == 1024;
-#ifndef WIN32
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
     ethernet = board_capabilities_get()->ethernet;
 #endif
+    bool both_links = false;
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
+    both_links = ethernet && board_capabilities_get()->wifi;
+#endif
+    s_label_wifi_ap = NULL;
     lv_obj_t *wifi_section = ui_settings_section(screen, s_config.hor_res / 2 + 10, 240,
-                                                s_config.hor_res / 2 - 40, 82,
+                                                s_config.hor_res / 2 - 40, both_links ? 112 : 82,
+                                                both_links ? "ETHERNET / DJ LINK / WI-FI" :
                                                 ethernet ? "ETHERNET / DJ LINK" : "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
     ui_settings_style_wireless_switch(sw_wifi, COL_GREEN);
@@ -695,6 +731,19 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                   96, 41);
     if (ethernet) {
         lv_label_set_text(s_label_wifi_remote, wifi_remote_init ? "DJ LINK: ON" : "DJ LINK: OFF");
+    }
+    if (both_links) {
+        bool on = false;
+#if !defined(WIN32) || defined(UI_SIM_BOARD_SETTINGS)
+        on = app_settings_get().wifi_remote != 0;
+#endif
+        lv_obj_t *ap = lv_switch_create(wifi_section);
+        ui_settings_style_wireless_switch(ap, COL_GREEN);
+        lv_obj_set_pos(ap, 16, 72);
+        if (on) lv_obj_add_state(ap, LV_STATE_CHECKED);
+        lv_obj_add_event_cb(ap, wifi_ap_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+        s_label_wifi_ap = ui_settings_value_label(wifi_section,
+            on ? "WI-FI: ON" : "WI-FI: OFF", COL_TEXT, &lv_font_montserrat_14, 96, 75);
     }
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, s_config.hor_res - 60, 64, "MIXER STATUS");

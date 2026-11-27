@@ -5,6 +5,7 @@ not a hardware deadline or the cause of a captured output stall.
 """
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 
@@ -22,7 +23,7 @@ def block(marker):
     return source[start:end]
 
 code = r'''
-#include "audio_keylock.h"
+#include "audio_keylock_selected.h"
 #include "audio_resampler.h"
 #include "audio_pcm_timeline.h"
 #include <assert.h>
@@ -31,23 +32,66 @@ code = r'''
 #define AUDIO_ENGINE_DECK_COUNT 2u
 static int16_t pcm[192000*2];
 static audio_pcm_timeline_t s_pcm_timelines[2];
-static audio_keylock_t s_keylocks[2];
+static audio_keylock_selected_t s_keylocks[2];
 static uint32_t s_keylock_generation[2];
 static struct { bool timeline_preroll_pending; } s_engines[2];
 static bool s_start_waiting[2], s_start_seek_pending[2];
 static unsigned empty_reads, resets;
-void __real_audio_keylock_reset(audio_keylock_t *,uint64_t);
-void __wrap_audio_keylock_reset(audio_keylock_t *s,uint64_t seq) {
+void __real_audio_keylock_reset(audio_keylock_selected_t *,uint64_t);
+void __wrap_audio_keylock_reset(audio_keylock_selected_t *s,uint64_t seq) {
  ++resets;__real_audio_keylock_reset(s,seq);
 }
 static bool atomic_load_bool(const bool *p) { return *p; }
 static bool timeline_active(uint8_t d) { return s_pcm_timelines[d].capacity > 0; }
+#if !CONFIG_AUDIO_KEYLOCK_WSOLA2
 static struct { bool keylock_dense_correlation, audio_antialias; } board = {false,true};
 #define board_capabilities_get() (&board)
+#endif
 '''
 code += block("static bool keylock_timeline_read(") + "\n"
 code += block("static bool ae_keylock_render_cb(") + "\n"
+for macro in ("AE_TIMELINE_SECONDS", "AE_TIMELINE_FORWARD_MS",
+              "AE_TIMELINE_MAX_RATE", "AE_TIMELINE_CAPACITY_FRAMES"):
+    code += re.search(rf"^#define {macro}\s+[^\n]+", source, re.MULTILINE).group() + "\n"
 code += r'''
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+static int16_t retained_pcm[2][AE_TIMELINE_CAPACITY_FRAMES * 2u];
+
+static void test_wsola2_timeline_retention(void)
+{
+ for (unsigned scenario = 0; scenario < 2; ++scenario) {
+  const unsigned reset_start = resets;
+  const unsigned rates[] = {48000, 44100};
+  unsigned targets[2];
+  for (uint8_t deck = 0; deck < 2; ++deck) {
+   const unsigned rate = rates[deck ^ scenario];
+   targets[deck] = rate * AE_TIMELINE_FORWARD_MS / 1000;
+   audio_pcm_timeline_init(&s_pcm_timelines[deck], retained_pcm[deck],
+                           AE_TIMELINE_CAPACITY_FRAMES);
+   for (unsigned n = 0; n < targets[deck]; ++n)
+    assert(audio_pcm_timeline_push(&s_pcm_timelines[deck], n % 1301, n % 973));
+   s_keylocks[deck].initialized = false;
+  }
+  for (unsigned n = 0; n < AE_TIMELINE_CAPACITY_FRAMES * 3u; ++n) {
+   for (uint8_t deck = 0; deck < 2; ++deck) {
+    const float speed = deck == 0u ? 0.5f : 2.0f;
+    const float ratio = rates[deck ^ scenario] / 48000.0f;
+    audio_mixer_frame_t sample;
+    uint32_t consumed;
+    audio_pcm_timeline_t *timeline = &s_pcm_timelines[deck];
+    assert(ae_keylock_render_cb(&deck, speed, ratio, &sample, &consumed));
+    while (audio_pcm_timeline_future_frames(timeline) < targets[deck])
+     assert(audio_pcm_timeline_push(timeline, n % 1301, n % 973));
+   }
+  }
+  assert(resets == reset_start + 2u);
+  for (uint8_t deck = 0; deck < 2; ++deck)
+   assert(audio_pcm_timeline_oldest_seq(&s_pcm_timelines[deck]) > 0u);
+ }
+ puts("PASS WSOLA2 retained PCM across full timeline wrap and eviction");
+}
+#endif
+
 static bool pop_frame(void *ctx,audio_mixer_frame_t *out) {
  uint8_t d=*(uint8_t *)ctx; bool ok=audio_pcm_timeline_pop(&s_pcm_timelines[d],out);
  if(!ok)++empty_reads;
@@ -100,6 +144,9 @@ int main(void) {
  assert(max_resets<=4u); /* never turn a source gap into a full DSP reset per frame */
  printf("max_handoff_resets_per_1024_frames=%u\n",max_resets);
  puts("PASS production MT handoff: 224 same-generation future-withdrawal/fallback cases, both decks/rates/pitch signs; consumer never rewinds, actual seeks remain authoritative");
+#if CONFIG_AUDIO_KEYLOCK_WSOLA2
+ test_wsola2_timeline_retention();
+#endif
  return 0;
 }
 '''
@@ -111,8 +158,16 @@ exe = build / ("handoff.exe" if os.name == "nt" else "handoff")
 gcc = shutil.which("gcc")
 if not gcc:
     raise RuntimeError("gcc required")
-subprocess.run([gcc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-DCONFIG_AUDIO_ANTIALIAS_CACHE=1",
-                "-I" + str(component / "include"), str(c),
-                str(component / "audio_keylock.c"), str(component / "audio_pcm_timeline.c"),
-                str(component / "audio_resampler.c"), "-Wl,--wrap=audio_keylock_reset", "-lm", "-o", str(exe)], check=True)
-subprocess.run([str(exe)], check=True)
+for version2 in (False, True):
+    reset = "audio_keylock2_reset" if version2 else "audio_keylock_reset"
+    algorithm = "audio_keylock_wsola2.c" if version2 else "audio_keylock.c"
+    subprocess.run([gcc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                    f"-DCONFIG_AUDIO_KEYLOCK_WSOLA2={int(version2)}",
+                    f"-DCONFIG_AUDIO_ANTIALIAS_CACHE={int(not version2)}",
+                    f"-D__wrap_audio_keylock_reset=__wrap_{reset}",
+                    f"-D__real_audio_keylock_reset=__real_{reset}",
+                    "-I" + str(component / "include"), str(c), str(component / algorithm),
+                    *([str(component / "wsola2_resampler.c")] if version2 else []),
+                    str(component / "audio_pcm_timeline.c"), str(component / "audio_resampler.c"),
+                    f"-Wl,--wrap={reset}", "-lm", "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
