@@ -320,8 +320,27 @@ void audio_keylock2_configure(audio_keylock2_t *s, float tempo, float ratio)
         /* Entering or changing the rate conversion: start it clean. */
         wsola2_resampler_reset(&s->resampler);
     }
+    const bool tempo_changed = next_tempo != s->tempo_factor;
     s->tempo_factor = next_tempo;
     s->rate_ratio = next_ratio;
+
+    if (tempo_changed && s->initialized && s->hop_pos != 0u) {
+        const uint64_t nominal = predict_next_boundary(s);
+        if (nominal == s->nominal) return;
+        const uint64_t distance = s->next_grain > nominal
+            ? s->next_grain - nominal : nominal - s->next_grain;
+        if (s->stage == KL2_STAGE_DONE && !s->search_failed &&
+            distance <= AUDIO_KEYLOCK2_SEEK) {
+            s->nominal = nominal;
+        } else if (AUDIO_KEYLOCK2_HOP - s->hop_pos >= KL2_SEARCH_FRAMES) {
+            search_begin(s);
+        } else {
+            /* Finish this hop on time. A later hop can search around its own
+             * boundary with the full budget. */
+            s->nominal = nominal;
+            search_fail(s);
+        }
+    }
 }
 
 bool audio_keylock2_next(audio_keylock2_t *s, audio_keylock_read_fn read, void *ctx,
