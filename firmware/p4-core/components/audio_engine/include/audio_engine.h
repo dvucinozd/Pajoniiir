@@ -103,6 +103,10 @@ esp_err_t audio_engine_deck_stop_session(uint8_t deck,
                                          uint32_t expected_session_generation);
 uint32_t audio_engine_deck_session_generation(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
+/* A paused memory recall seeks and updates the loop within the loaded session.
+ * A zero loop_end_ms clears the current loop. */
+esp_err_t audio_engine_deck_recall_memory(uint8_t deck, uint32_t session,
+                                          uint32_t position_ms, uint32_t loop_end_ms);
 /* Network controller mutation: no lifecycle wait, rejects replaced sessions
  * and scratch/hold. A caller must explicitly re-align after rejection. */
 esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,

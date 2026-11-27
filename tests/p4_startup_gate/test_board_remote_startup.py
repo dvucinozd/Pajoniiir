@@ -37,11 +37,12 @@ prelude=r'''
 typedef int esp_err_t;
 typedef struct {bool required;int (*start)(void);bool (*ready)(void);} p4_app_network_provider_t;
 typedef bool (*web_server_address_probe_fn)(char*,size_t);
-typedef struct {uint32_t addr;} ip_addr_t;
+typedef struct {uint32_t addr;} ip_addr_t, esp_ip4_addr_t;
 typedef struct {ip_addr_t ip;} esp_netif_ip_info_t;
 typedef struct {bool up;ip_addr_t ip;} esp_netif_t;
-static esp_netif_t eth,ap;
-static bool have_eth,have_ap,web_running,wifi_ready,pending;
+static esp_netif_t eth;
+static uint32_t s_ap_ipv4;
+static bool have_eth,web_running,wifi_ready,pending;
 static unsigned marked,rejected,restarts,starts,critical;
 static int start_result;
 static uint64_t now;
@@ -49,7 +50,6 @@ static web_server_address_probe_fn s_address_probe;
 static esp_netif_t *board_ethernet_netif(void) {return have_eth?&eth:NULL;}
 static bool esp_netif_is_netif_up(esp_netif_t *n) {return n->up;}
 static int esp_netif_get_ip_info(esp_netif_t *n,esp_netif_ip_info_t *ip) {ip->ip=n->ip;return ESP_OK;}
-static esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key) {assert(!strcmp(key,"WIFI_AP_DEF"));return have_ap?&ap:NULL;}
 static const char *esp_ip4addr_ntoa(const ip_addr_t *ip,char *out,size_t n) {
  snprintf(out,n,"%u.%u.%u.%u",ip->addr>>24,(ip->addr>>16)&255,(ip->addr>>8)&255,ip->addr&255);return out;
 }
@@ -72,11 +72,12 @@ static void esp_restart(void) {++restarts;}
 static int firmware_health_mark_ready(void) {++marked;return ESP_OK;}
 '''
 code=prelude+function(jc,'static bool remote_address(')+'\n'+function(jc,'static esp_err_t remote_start(')+'\n'+function(jc,'static bool remote_ready(')+'\n'
+code+=function(web,'void web_server_set_ap_ipv4(')+'\n'
 code+=function(web,'static void current_ap_ipv4(')+'\n'
 code+=function(web,'static bool current_host_allowed(')+'\n'
 code+='static void startup(const p4_app_network_provider_t *provider,bool boot_network_required) { const uint64_t boot_started_us=now;\n'+tail
 code+=r'''
-static void reset(void) {pending=true;marked=rejected=restarts=starts=critical=0;now=1000;wifi_ready=false;start_result=0;web_running=false;s_address_probe=NULL;have_eth=true;have_ap=false;eth.up=true;eth.ip.addr=0xc0a86453;}
+static void reset(void) {pending=true;marked=rejected=restarts=starts=critical=0;now=1000;wifi_ready=false;start_result=0;web_running=false;s_address_probe=NULL;have_eth=true;web_server_set_ap_ipv4(0);eth.up=true;eth.ip.addr=0xc0a86453;}
 int main(void) {
  const p4_app_network_provider_t provider={true,remote_start,remote_ready};char address[16];
  reset();startup(&provider,false);assert(starts==1 && marked==1 && !rejected);
@@ -91,7 +92,7 @@ int main(void) {
  reset();wifi_ready=true;startup(NULL,true);assert(marked==1 && !rejected);
  reset();pending=false;start_result=ESP_FAIL;startup(&provider,false);assert(!rejected && marked==1); /* accepted/factory image */
  reset();const p4_app_network_provider_t optional={false,remote_start,remote_ready};start_result=ESP_FAIL;startup(&optional,false);assert(marked==1 && !rejected);
- reset();have_ap=true;ap.up=true;ap.ip.addr=0xc0a80701;
+ reset();web_server_set_ap_ipv4(0xc0a80701);
  current_ap_ipv4(address);assert(!strcmp(address,"192.168.7.1"));
  startup(&provider,false);
  assert(current_host_allowed("192.168.7.1:80"));
@@ -103,7 +104,7 @@ int main(void) {
  assert(!current_host_allowed("pajoniiir.local.evil"));
  eth.up=false;assert(!current_host_allowed("192.168.100.83"));
  assert(current_host_allowed("192.168.7.1"));
- eth.up=true;ap.up=false;current_ap_ipv4(address);assert(!strcmp(address,"192.168.100.83"));
+ eth.up=true;web_server_set_ap_ipv4(0);current_ap_ipv4(address);assert(!strcmp(address,"192.168.100.83"));
  assert(!current_host_allowed("192.168.7.1"));
  puts("PASS production board remote startup before health acceptance: Ethernet HTTP/DHCP/down/failure/timeouts, Wi-Fi and optional/factory policy");
 }

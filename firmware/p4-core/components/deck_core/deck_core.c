@@ -798,6 +798,7 @@ static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
 }
 
 static bool set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
+static void remember_last_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
 static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state);
 static uint32_t loaded_track_duration_ms(uint8_t deck, const deck_loaded_track_summary_t *loaded);
 
@@ -982,12 +983,18 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, uint32_t expected_g
         if ((duration && cue.pos_ms >= duration) ||
             (cue.type == HOT_CUE_STORE_TYPE_LOOP && !audio_loop_range_valid(cue.pos_ms, cue.end_ms, duration)))
             return ESP_ERR_INVALID_ARG;
-        rc = audio_engine_deck_seek(deck, cue.pos_ms);
+        const uint32_t loop_end = cue.type == HOT_CUE_STORE_TYPE_LOOP ? cue.end_ms : 0u;
+        rc = audio_engine_deck_recall_memory(deck, summary.audio_session_generation,
+                                            cue.pos_ms, loop_end);
         if (rc != ESP_OK) return rc;
         state->position_ms = state->cue_point_ms = cue.pos_ms;
-        if (cue.type == HOT_CUE_STORE_TYPE_LOOP) {
-            if (!set_deck_loop(deck, cue.pos_ms, cue.end_ms)) return ESP_ERR_INVALID_ARG;
-        } else (void)audio_engine_deck_clear_loop(deck);
+        if (loop_end) {
+            remember_last_loop(deck, cue.pos_ms, loop_end);
+        } else {
+            state->loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+            publish_loop_adjust_leds(deck, state);
+        }
+        publish_flx4_led_snapshot(false);
         return ESP_OK;
     }
     /* MEMORY stores the current CUE, or the complete active loop. It does not

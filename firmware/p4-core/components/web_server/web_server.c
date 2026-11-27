@@ -333,14 +333,19 @@ void web_server_set_address_probe(web_server_address_probe_fn probe)
 
 bool web_server_is_running(void) { return s_web_server != NULL; }
 
+static uint32_t s_ap_ipv4;
+
+void web_server_set_ap_ipv4(uint32_t address)
+{
+    __atomic_store_n(&s_ap_ipv4, address, __ATOMIC_RELEASE);
+}
+
 static void current_ap_ipv4(char out[16])
 {
     snprintf(out, 16, "192.168.4.1");
-    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-    esp_netif_ip_info_t info = {0};
-    if (ap && esp_netif_is_netif_up(ap) &&
-        esp_netif_get_ip_info(ap, &info) == ESP_OK && info.ip.addr) {
-        (void)esp_ip4addr_ntoa(&info.ip, out, 16);
+    esp_ip4_addr_t ip = { .addr = __atomic_load_n(&s_ap_ipv4, __ATOMIC_ACQUIRE) };
+    if (ip.addr) {
+        (void)esp_ip4addr_ntoa(&ip, out, 16);
         return;
     }
     if (s_address_probe) (void)s_address_probe(out, 16u);

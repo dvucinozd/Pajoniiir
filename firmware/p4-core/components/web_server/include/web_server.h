@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 /*
  * Wi-Fi connectivity-probe hooks.
@@ -30,6 +31,7 @@ void web_server_set_probe_hooks(web_server_probe_start_fn start,
 #include <stddef.h>
 typedef bool (*web_server_address_probe_fn)(char *out, size_t size);
 void web_server_set_address_probe(web_server_address_probe_fn probe);
+void web_server_set_ap_ipv4(uint32_t address);
 bool web_server_is_running(void);
 
 esp_err_t web_server_start(void);

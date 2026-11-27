@@ -1206,6 +1206,18 @@ static void lifecycle_deck_lock(uint8_t deck)
 #endif
 }
 
+static bool lifecycle_deck_try_lock(uint8_t deck)
+{
+#if AE_PC
+    return pthread_mutex_trylock(&s_lifecycle_mutex[deck]) == 0;
+#elif AE_FW
+    return s_lifecycle_mutex[deck] && xSemaphoreTake(s_lifecycle_mutex[deck], 0) == pdTRUE;
+#else
+    (void)deck;
+    return true;
+#endif
+}
+
 static void lifecycle_deck_unlock(uint8_t deck)
 {
 #if AE_PC
@@ -5752,17 +5764,51 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
     return audio_engine_request_user_seek(deck, position_ms);
 }
 
+esp_err_t audio_engine_deck_recall_memory(uint8_t deck, uint32_t session,
+                                          uint32_t position_ms, uint32_t loop_end_ms)
+{
+    if (!deck_is_valid(deck) || !session) return ESP_ERR_INVALID_ARG;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
+#endif
+    if (!lifecycle_deck_try_lock(deck)) return ESP_ERR_TIMEOUT;
+    audio_engine_state_t *eng = &s_engines[deck];
+    esp_err_t rc = ESP_ERR_INVALID_STATE;
+    if (s_lifecycle_session_generation[deck] == session && eng->loaded &&
+        eng->loaded_session_generation == session &&
+        !atomic_load_bool(&s_scratch_playing[deck]) &&
+        !atomic_load_bool(&s_deck_hold[deck])) {
+        if (loop_end_ms && !audio_loop_range_valid(position_ms, loop_end_ms, eng->duration_ms)) {
+            rc = ESP_ERR_INVALID_ARG;
+        } else {
+            rc = audio_engine_request_user_seek(deck, position_ms);
+            if (rc == ESP_OK && loop_end_ms) {
+                /* A recall already requested a seek to loop-in. The loop resize
+                 * path could otherwise request a second seek from the old head. */
+                AE_LOCK();
+#if AE_FW
+                ae_note_loop_change(eng, eng->loop_active &&
+                    (eng->loop_start_ms != position_ms || eng->loop_end_ms != loop_end_ms));
+#endif
+                eng->loop_start_ms = position_ms;
+                eng->loop_end_ms = loop_end_ms;
+                eng->loop_active = true;
+                AE_UNLOCK();
+            } else if (rc == ESP_OK) {
+                (void)audio_engine_deck_clear_loop(deck);
+            }
+        }
+    }
+    lifecycle_deck_unlock(deck);
+    return rc;
+}
+
 esp_err_t audio_engine_deck_apply_network(uint8_t deck,uint32_t session,
     bool seek,uint32_t position_ms,bool set_pitch,float pitch_percent)
 {
     if (!deck_is_valid(deck) || !session || !isfinite(pitch_percent) ||
         fabsf(pitch_percent)>20) return ESP_ERR_INVALID_ARG;
-#if AE_PC
-    if (pthread_mutex_trylock(&s_lifecycle_mutex[deck])!=0) return ESP_ERR_TIMEOUT;
-#elif AE_FW
-    if (!s_lifecycle_mutex[deck] || xSemaphoreTake(s_lifecycle_mutex[deck],0)!=pdTRUE)
-        return ESP_ERR_TIMEOUT;
-#endif
+    if (!lifecycle_deck_try_lock(deck)) return ESP_ERR_TIMEOUT;
     esp_err_t rc=ESP_ERR_INVALID_STATE;
     if (s_lifecycle_session_generation[deck]==session && s_engines[deck].loaded &&
         s_engines[deck].loaded_session_generation==session &&

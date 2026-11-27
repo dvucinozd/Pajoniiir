@@ -539,6 +539,40 @@ static void test_five_minute_drift(void)
     s_src_limit = SRC_FRAMES;
 }
 
+static bool read_silence(void *ctx, uint64_t sequence, audio_mixer_frame_t *frame)
+{
+    (void)ctx;
+    (void)sequence;
+    *frame = (audio_mixer_frame_t){0};
+    return true;
+}
+
+static void test_mid_hop_retargets_next_grain(void)
+{
+    const unsigned offsets[] = {1u, 384u, 768u, 1280u};
+    for (unsigned direction = 0; direction < 2; ++direction) {
+        const float start = direction ? 2.0f : 0.5f;
+        const float target = direction ? 0.5f : 2.0f;
+        for (unsigned i = 0; i < sizeof(offsets) / sizeof(offsets[0]); ++i) {
+            audio_keylock2_t keylock = {0};
+            audio_keylock2_reset(&keylock, 0);
+            audio_keylock2_configure(&keylock, start, 1.0f);
+            for (unsigned n = 0; n < AUDIO_KEYLOCK2_HOP; ++n) {
+                if (n == offsets[i]) audio_keylock2_configure(&keylock, target, 1.0f);
+                audio_mixer_frame_t frame;
+                assert(audio_keylock2_next(&keylock, read_silence, NULL, &frame, NULL, NULL));
+                assert(frame.left == 0 && frame.right == 0);
+            }
+            const uint64_t projected = (uint64_t)(offsets[i] * start +
+                (AUDIO_KEYLOCK2_HOP - offsets[i]) * target + 0.5f);
+            const uint64_t distance = keylock.grain_in > projected
+                ? keylock.grain_in - projected : projected - keylock.grain_in;
+            assert(keylock.nominal == projected);
+            assert(distance <= AUDIO_KEYLOCK2_SEEK);
+        }
+    }
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -548,6 +582,7 @@ int main(void)
     test_end_of_source_returns_false();
     test_reset_mid_stream_restarts_exactly();
     test_tempo_moves_do_not_click();
+    test_mid_hop_retargets_next_grain();
     test_five_minute_drift();
     test_ab_against_v1();
     puts("audio_keylock_wsola2_jc1060 tests passed");

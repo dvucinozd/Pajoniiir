@@ -23,13 +23,6 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
     throw "No such release directory: $ReleaseDir"
 }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$candidateManifest = Join-Path $ReleaseDir 'manifest.json'
-if (Test-Path -LiteralPath $candidateManifest) {
-    $candidate = Get-Content -LiteralPath $candidateManifest -Raw | ConvertFrom-Json
-    if ($candidate.experimental_sd_cold_power) {
-        throw 'Experimental SD cold-power candidates cannot generate a public pull channel'
-    }
-}
 if (-not $BaseUrl) {
     $BaseUrl = switch ($Project) {
         'main-deck-p4' { 'https://ota.pajoniiir.eu' }
@@ -91,6 +84,34 @@ $bytes = [System.IO.File]::ReadAllBytes($bundle)
 $sha = [System.BitConverter]::ToString(
     [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
 ).Replace("-", "").ToLowerInvariant()
+
+$candidateManifest = Join-Path $ReleaseDir 'manifest.json'
+$manifestSignature = Join-Path $ReleaseDir 'manifest.sig'
+if (-not (Test-Path -LiteralPath $candidateManifest -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $manifestSignature -PathType Leaf)) {
+    throw 'Publication requires manifest.json and its signature'
+}
+& $Python $SigningTool verify-file --public-key $PublicKeyPath `
+    --input $candidateManifest --signature $manifestSignature | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Publication manifest signature verification failed' }
+$candidate = Get-Content -LiteralPath $candidateManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+$eligibilityFlags = @('development_candidate', 'experimental_sd_cold_power')
+if ($candidate.schema_version -eq 3) {
+    $eligibilityFlags += 'experimental_wsola2'
+} elseif ($candidate.schema_version -ne 2 -or $Project -eq 'main-deck-jc1060') {
+    throw 'Publication manifest schema does not declare the experiment status required for this project'
+}
+foreach ($flag in $eligibilityFlags) {
+    if ($candidate.$flag -isnot [bool]) { throw "Publication manifest has no boolean $flag" }
+    if ($candidate.$flag) { throw "Candidate ($flag) cannot generate a public pull channel" }
+}
+$targets = @($candidate.targets | Where-Object {
+    $_.target -ceq 'p4' -and $_.project -ceq $Project -and $_.ota_bundle -ceq $bundleFile
+})
+if ($targets.Count -ne 1 -or $candidate.release_version -cne $version -or
+    $targets[0].bundle_size -ne $bytes.Length -or $targets[0].bundle_sha256 -cne $sha) {
+    throw 'Publication manifest does not match the verified OTA bundle'
+}
 
 $doc = [ordered]@{
     schema_version = 1

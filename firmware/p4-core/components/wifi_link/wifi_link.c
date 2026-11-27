@@ -324,6 +324,7 @@ static esp_err_t start_web_ap(void)
         ESP_LOGE(TAG, "AP DHCP server did not become ready (state=%d)", (int)dhcp);
         return ESP_ERR_TIMEOUT;
     }
+    web_server_set_ap_ipv4(ip_info.ip.addr);
     ESP_LOGI(TAG, "web AP started: ssid=%s", board_capabilities_get()->softap_ssid);
     return ESP_OK;
 }
@@ -421,6 +422,7 @@ static void stop_wifi_stack(void)
 
 static void stop_ap_netif(void)
 {
+    web_server_set_ap_ipv4(0);
     if (!s_ap_netif) return;
     esp_netif_destroy_default_wifi(s_ap_netif);
     s_ap_netif = NULL;
