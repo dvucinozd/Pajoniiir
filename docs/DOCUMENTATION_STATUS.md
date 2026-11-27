@@ -1,27 +1,27 @@
 # Documentation status
 
-Status: **current documentation authority, updated 2026-11-03**.
+Status: **current documentation authority, updated 2026-11-27**.
 
 The [JC1060 completion candidate](JC1060_COMPLETION_20261103.md) adds local
 memory cue/loop editing and recall, persistent ordinary-Settings LOAD LOCK,
 optional JC1060 WPA2 APSTA alongside Ethernet, touch playlist opening and Link
-source-return refresh. The operator now has a JC1060 and selected DDJ-FLX4 for
-qualification. JC8012 work is deferred. Software verification and exact package
-identities are recorded in that candidate record; physical installation,
-reconnect, SD, networking and rollback gates remain NOT RUN. Wi-Fi stays OFF
-on fresh JC1060 NVS; Link remains Ethernet-only/default OFF and SD cold power
-is a separate OFF-by-default experiment. Existing releases and installed-image
-acceptance are unchanged. GitHub Actions is not dispatched during development,
-following the operator's budget instruction. Earlier dated progress below
-retains its original image and policy scope.
+source-return refresh. The work entered `master` in
+[PR #60](https://github.com/dvucinozd/Pajoniiir/pull/60) at `33e6a86d`.
+The merge tree matches `a28c2ea1`, which passed all 13 jobs in
+[ESP-IDF migration CI](https://github.com/dvucinozd/Pajoniiir/actions/runs/46022168980),
+and `1f364512`, which produced both signed
+[Master Tempo A/B packages](JC1060_COMPLETION_20261103.md#2026-11-27-merge-and-signed-ab-packages).
+The paired builds use standard Master Tempo and experimental WSOLA2.
+Wi-Fi defaults OFF on fresh JC1060 NVS, DJ LINK is Ethernet-only and defaults
+OFF, and SD cold power has its own experimental firmware.
 
-Final clean `8bc3b53a` passes full local host qualification (144 build/206 run
-steps, no optional SKIP), all nine UI presentations/145 exact hashes, all three
-ordinary IDF6.0.2 builds and the separately configured SD variant. Both JC1060
-signed packages, a 51-file signed delivery inventory and source recovery verify.
-The operator confirms COM3 but reserves the board for another agent and will
-announce availability. Device access and all physical gates remain NOT RUN;
-do not open/reset/probe it before release. No push, Actions or public update.
+The next gate is local JC1060/DDJ-FLX4 qualification. COM3 is reserved until
+the operator announces availability. Start with
+[identity and recovery](JC1060_TEST_CHECKLIST_20261103.md#0-identify-and-preserve-recovery).
+Physical installation, Master Tempo listening and timing, reconnect, SD,
+networking and rollback remain NOT RUN. JC8012 is deferred. The 2026-11-03
+package and local qualification record is retained as historical evidence
+for `8bc3b53a`.
 
 PR54 is merged into `master` as `37d5bddb`; its reviewed head and merge both
 pass all thirteen migration jobs, including SD-power. Master also passes

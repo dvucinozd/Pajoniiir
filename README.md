@@ -94,6 +94,12 @@ JC1060, DDJ-400 and Ethernet Pro DJ Link are implemented as development
 configurations. Their physical qualification is still pending. Recording and
 SD storage experiments remain disabled in regular builds.
 
+The JC1060 completion work is merged into `master` in
+[PR #60](https://github.com/dvucinozd/Pajoniiir/pull/60). Local signed builds
+are ready for a DDJ-FLX4 comparison of standard Master Tempo and experimental
+WSOLA2. See the [JC1060 qualification record](docs/JC1060_COMPLETION_20261103.md#2026-11-27-merge-and-signed-ab-packages)
+for package identities, CI and the remaining hardware checks.
+
 The [JC1060/DDJ-400 contributor review](docs/reviews/2026-10-14-jc1060-contributor-review.md)
 records Kayrosen's scoped tests on a separate branch, including long Observe
 and listening evidence. Integration repairs and failed storage/reconnect gates

@@ -154,7 +154,15 @@ https://ota.pajoniiir.eu/latest.json
 https://ota.pajoniiir.eu/<version>/main-deck-p4.ddjota
 ```
 
-Generate and verify the channel document with:
+The release directory must contain the selected `.ddjota`, `manifest.json`
+and `manifest.sig` from the same packaging run. The channel generator verifies
+both signatures and matches the bundle project, version, size and SHA-256
+to the signed release manifest. JC1060 publication requires schema 3 and
+rejects experimental WSOLA2 and SD cold-power packages. Use
+`-Wsola2Candidate` or `-SdColdPowerCandidate` with the corresponding build
+configuration when packaging a local JC1060 experiment.
+
+Generate and verify the channel document with the publisher:
 
 ```powershell
 .\tools\publish_ota_release.ps1 `

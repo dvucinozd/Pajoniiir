@@ -1,11 +1,14 @@
 # JC1060 / DDJ-FLX4 candidate: physical checklist
 
-Status: NOT RUN. Populate the adjacent identity manifest from the sealed build.
-The ordinary and SD cold-power images are different configurations, even when
-their source/version is identical. No old donor/beta result qualifies either.
+Status: **NOT RUN**. Use the
+[signed ordinary and WSOLA2 pair](JC1060_COMPLETION_20261103.md#2026-11-27-merge-and-signed-ab-packages)
+from `1f364512`. Record each flashed image's source, bundle SHA-256, ELF SHA-256
+and configuration. Both packages report the same version. SD cold power is a
+separate configuration with its own package and evidence.
 
 ## 0. Identify and preserve recovery
 
+- Begin when the operator confirms COM3 is free.
 - Record exact board/panel/silicon, flash size, PSRAM, controller VID/PID,
   current firmware/version/ELF/slot, partition table and security state.
 - Preserve and verify independent full-flash backups plus relevant NVS,
@@ -56,6 +59,19 @@ their source/version is identical. No old donor/beta result qualifies either.
 - Measure strict before/after counters. Missing telemetry is unavailable, not
   zero. Report output-late count/max/clusters separately; do not weaken gates.
 
+### Master Tempo A/B for issue #50
+
+- Complete the ordinary image smoke above first. Use the same DDJ-FLX4,
+  tracks, excerpts, levels and tempo offsets on both images. Include 44.1 kHz
+  and 48 kHz material and listen through the MT toggle and a tempo change.
+- Run each image with MT enabled on both decks. Capture output-late count,
+  maximum and clusters before and after, plus listening notes on audible
+  distortion and dropouts. Bind each result to its ELF and bundle hashes.
+- Record the comparison against
+  [issue #50](https://github.com/dvucinozd/Pajoniiir/issues/50). Return to the
+  ordinary image for the remaining checklist unless the operator chooses a
+  different candidate after reviewing the results.
+
 ## 4. Wi-Fi alongside Ethernet
 
 - Fresh/default JC1060 Wi-Fi is OFF. Enable its separate Settings switch:
@@ -73,7 +89,9 @@ their source/version is identical. No old donor/beta result qualifies either.
 ## 5. Separate SD cold-power candidate
 
 - Stop decks; identify card, slot-0 pins and LDO rail ownership. Verify the
-  separate signed SD package and its new ELF/configuration before installation.
+  separate signed SD package and its ELF/configuration before installation.
+  Prepare a paired SD variant from the source selected for this test. The
+  A/B packages in the current kit both have SD cold power disabled.
 - Same card: at least 10 warm resets and 10 true cold boots; retain every mount
   result and read/write verification. Test no card and mount failure behavior.
 - Verify USB and requested Hosted/Wi-Fi continuity; no global SDMMC reset.
