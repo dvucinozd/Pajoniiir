@@ -401,6 +401,57 @@ static void memory_button(const char *text, bool hold)
     lv_obj_send_event(button,LV_EVENT_RELEASED,NULL);
     pump(64);
 }
+
+static void memory_action_after_track_replacement(const char *label_text, bool hold)
+{
+    const uint8_t deck = CTRL_DECK_2;
+    lv_obj_t *label = find_visible_label(lv_screen_active(), label_text);
+    deck_loaded_track_summary_t previous = {0};
+    if (!label || !deck_core_get_loaded_track(deck, &previous)) {
+        fail("missing memory button or loaded track");
+        return;
+    }
+    lv_obj_t *button = lv_obj_get_parent(label);
+    lv_obj_send_event(button, LV_EVENT_PRESSED, NULL);
+    /* Publish another track without changing the catalog generation. */
+    media_persistent_id_t replacement = previous.persistent_id;
+    replacement.bytes[0] ^= 0x80u;
+    anlz_metadata_t meta = {.memory_cue_count = 2, .memory_cues = {
+        {.type = ANLZ_CUE_SINGLE, .start_ms = 1000},
+        {.type = ANLZ_CUE_SINGLE, .start_ms = 2000}
+    }};
+    uint32_t session = ++audio_engine_stub_session_generation[deck];
+    if (deck_core_publish_loaded_track_session(deck, previous.media_generation,
+            previous.track_key ^ 0x80u, &replacement, 120, 300000, &meta, session) != ESP_OK) {
+        fail("could not publish replacement track");
+        return;
+    }
+    extern void ui_simulator_deck_set_position(uint32_t);
+    ui_simulator_deck_set_position(0);
+    ctrl_event_t action = {.type = CTRL_EV_BUTTON, .deck = deck,
+        .id = CTRL_ID_DECK2_EXT_ACTION,
+        .value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_MEMORY_NEXT, true)};
+    deck_core_test_apply_event(&action);
+    if (deck_core_get_deck_state(deck).cue_point_ms != 1000) {
+        fail("could not select a cue on replacement track");
+        return;
+    }
+    if (hold) {
+        action.value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_MEMORY_DELETE, true);
+        deck_core_test_apply_event(&action);
+    }
+    const unsigned expected_count = hold ? 1 : 2;
+    memory_cue_bank_t bank = {0};
+    if (deck_core_get_memory_cues(deck, &bank) != ESP_OK || bank.count != expected_count) {
+        fail("replacement memory bank fixture has the wrong cue count");
+        return;
+    }
+    lv_obj_send_event(button, hold ? LV_EVENT_LONG_PRESSED : LV_EVENT_CLICKED, NULL);
+    lv_obj_send_event(button, LV_EVENT_RELEASED, NULL);
+    pump(64);
+    if (deck_core_get_memory_cues(deck, &bank) != ESP_OK || bank.count != expected_count)
+        fail("held memory action modified the replacement bank");
+}
 static void settings_switch(const char *text, bool on)
 {
     lv_obj_t *label=find_visible_label(lv_screen_active(),text), *sw=NULL;
@@ -449,7 +500,10 @@ static int completion_controls_scenario(const char *output)
     if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=16) fail("touch memory store failed");
     memory_button("DELETE",false);memory_button("HOLD SOURCE",true);
     if (deck_core_get_memory_cues(1,&bank)!=ESP_OK || bank.count!=16) fail("held restore did not restore imported memory bank");
-    save_ppm(output,"completion_memory");click_label("MEMORY");click_label("SETTINGS");
+    save_ppm(output,"completion_memory");
+    memory_action_after_track_replacement("DELETE", false);
+    memory_action_after_track_replacement("HOLD SOURCE", true);
+    click_label("MEMORY");click_label("SETTINGS");
     settings_switch("LOAD LOCK ON",false);
     if (deck_core_get_load_lock() || app_settings_get().load_lock) fail("LOAD LOCK switch did not update actor and settings");
     settings_switch("LOAD LOCK OFF",true);

@@ -88,14 +88,14 @@ static void test_open_read_seek_stereo_wav(void)
     audio_decoder_close(&dec);
 }
 
-static void test_mono_wav_duplicates_to_stereo(void)
+static void test_mono_wav_duplicates_to_stereo(unsigned bits)
 {
     const int16_t samples[] = { 123, -456 };
-    write_wav("test_mono.wav", 1, 16, samples, 2);
+    write_wav("test_mono.wav", 1, bits, samples, 2);
 
     audio_decoder_t dec;
     assert(audio_decoder_open(&dec, "test_mono.wav") == ESP_OK);
-    assert(dec.info.channels == 1);
+    assert(dec.info.channels == 1 && dec.info.bits_per_sample == bits);
 
     int16_t out[4] = { 0 };
     size_t frames_read = 0;
@@ -147,7 +147,8 @@ static void test_open_seek_read_aiff(void)
 int main(void)
 {
     test_open_read_seek_stereo_wav();
-    test_mono_wav_duplicates_to_stereo();
+    test_mono_wav_duplicates_to_stereo(16);
+    test_mono_wav_duplicates_to_stereo(24);
     test_open_read_24bit_wav();
     test_open_seek_read_aiff();
     puts("audio_wav_decoder tests passed");

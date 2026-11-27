@@ -990,8 +990,11 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, uint32_t expected_g
         state->position_ms = state->cue_point_ms = cue.pos_ms;
         if (loop_end) {
             remember_last_loop(deck, cue.pos_ms, loop_end);
-            publish_flx4_led_snapshot(false);
+        } else {
+            state->loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+            publish_loop_adjust_leds(deck, state);
         }
+        publish_flx4_led_snapshot(false);
         return ESP_OK;
     }
     /* MEMORY stores the current CUE, or the complete active loop. It does not
