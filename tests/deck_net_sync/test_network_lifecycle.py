@@ -9,12 +9,15 @@ import sys
 
 root = Path(__file__).resolve().parents[2]
 source = (root / 'firmware/p4-core/components/audio_engine/audio_engine.c').read_text(encoding='utf-8')
-start = source.index('esp_err_t audio_engine_deck_apply_network(')
-opening = source.index('{', start)
-end, depth = opening + 1, 1
-while depth:
-    depth += (source[end] == '{') - (source[end] == '}')
-    end += 1
+def function(signature):
+    start = source.index(signature)
+    opening = source.index('{', start)
+    end, depth = opening + 1, 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end]
+
 code = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -47,7 +50,8 @@ static void audio_engine_set_pitch_percent_for_deck(uint8_t d,float p) {
     assert(!tokens[d] && p==2.4f);++pitches;
 }
 '''
-code += source[start:end]
+code += function('static bool lifecycle_deck_try_lock(') + '\n'
+code += function('esp_err_t audio_engine_deck_apply_network(')
 code += r'''
 int main(void) {
     assert(audio_engine_deck_apply_network(0,10,true,1234,true,2.4f)==ESP_OK);
