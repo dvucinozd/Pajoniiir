@@ -22,8 +22,10 @@ CUE/LOOP CALL notes 90/51, 90/53, 91/51 and 91/53 map to the corresponding
 deck's loop halve/double. Shared loop admission refuses ranges beyond the
 known track length. Notes 90/3D and 91/3D store the current CUE or active loop;
 90/3E and 91/3E delete that exact start coordinate. These new semantic actions
-require the 2026-11-03 matching firmware, newer than published beta2. Local
-memory banks contain up to 16 ordered points/loops keyed by full media identity.
+use IDs `15/16` and require the current firmware ABI (for example,
+`1f364512` or the JC1060 work merged in PR #60). The November 3 local
+candidate `8bc3b53a` pairs with its original profile, which used `10/11`.
+Local memory banks contain up to 16 ordered points/loops keyed by full media identity.
 The Hot Cues MEMORY panel provides stopped-only PREV/NEXT, STORE, DELETE and
 HOLD SOURCE (restore imported memory cues). Source Rekordbox files are unchanged.
 

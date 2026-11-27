@@ -3637,6 +3637,12 @@ static void test_memory_actions_preserve_transport_source_and_identity(void)
     action.control = 0;
     deck_core_test_apply_event(&action);
     assert(audio_engine_stub_deck_seek_count[0]==seeks && deck_core_get_deck_state(0).memory_cue_error==ESP_ERR_INVALID_STATE);
+    assert(deck_core_test_get_deck_state(0).playing);
+    audio_engine_stub_deck_playing[0] = false; /* Audio output drains EOF before the actor sees it. */
+    deck_core_test_apply_event(&action);
+    assert(audio_engine_stub_deck_seek_count[0] == seeks + 1);
+    assert(audio_engine_stub_deck_position_ms[0] == 1000 && !audio_engine_stub_deck_playing[0]);
+    assert(!deck_core_test_get_deck_state(0).playing);
     deck_core_reset_deck(0); /* Local edits survive deck reset/reload. */
     publish_loaded_track(0,0xabcddc01u,120,&meta);
     assert(deck_core_get_memory_cues(0,&bank)==ESP_OK && bank.count==2);

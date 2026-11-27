@@ -31,6 +31,23 @@ static int s_track_load_lock;
 static ui_load_gate_t s_track_load_gate;
 #define gate s_track_load_gate
 static bool s_remote_load_active, disabled, s_dj_ready;
+static bool cancel_at_replacement_token;
+static unsigned deck_replacements;
+static void simulate_peer_reconnect(void);
+static unsigned deck_core_begin_track_replacement(unsigned deck)
+{
+    assert(deck == 1);
+    if (cancel_at_replacement_token) simulate_peer_reconnect();
+    return 7;
+}
+#define ESP_OK 0
+#define ESP_ERR_INVALID_STATE 1
+typedef struct { unsigned replacement_token; int rc; } replacement_result_t;
+static void ui_track_load_set_status(replacement_result_t *result, const char *status, const char *fallback)
+{
+    assert(result->rc == ESP_ERR_INVALID_STATE);
+    assert(!strcmp(status, fallback));
+}
 static unsigned s_download_total, s_download_done, s_active_tab, s_library_load_request_deck;
 static int label;
 static int *s_label_indicator_status = &label;
@@ -50,6 +67,18 @@ int main(void) {
     assert(!ui_load_gate_is_current(&gate, old));
     ui_library_retire_stale_load(old);
     assert(!disabled && !gate.busy && !s_remote_load_active);
+    assert(ui_load_gate_try_begin(&gate,&old));s_remote_load_active=true;
+    cancel_at_replacement_token=true;
+    assert(simulate_worker_replacement(old)==ESP_ERR_INVALID_STATE && deck_replacements==0);
+    ui_library_retire_stale_load(old);
+    assert(ui_load_gate_try_begin(&gate,&old));s_remote_load_active=true;
+    cancel_at_replacement_token=false;
+    assert(simulate_worker_replacement(old)==ESP_OK && deck_replacements==1);
+    simulate_peer_reconnect();
+    assert(ui_load_gate_is_current(&gate, old)); /* Completion may publish. */
+    ui_library_invalidate_track_load();
+    assert(!ui_load_gate_is_current(&gate, old)); /* Physical media invalidation still wins. */
+    ui_library_retire_stale_load(old);
     assert(ui_load_gate_try_begin(&gate,&current));disabled=true;s_remote_load_active=true;
     ui_library_retire_stale_load(old);
     assert(disabled && gate.busy && s_remote_load_active);
@@ -74,17 +103,38 @@ update = source[source.index('void ui_library_update('):source.index('bool ui_li
 assert update.rindex('ui_library_update_remote_progress();') > update.rindex('dj_ui_library_set_progress(')
 reconnect = update.split('else if (s_link_reconnect_pending || found->source_epoch != s_link_epoch) {', 1)[1]
 reconnect = reconnect.split('uint64_t previous', 1)[0]
+worker = source.split('static void ui_track_load_worker(void *arg)\n{', 1)[1]
+replacement = worker.split('} else if (!ui_library_track_load_is_current(req.load_id))', 1)[1]
+replacement = replacement.split('        if (remote) result->generation=', 1)[0]
 with tempfile.TemporaryDirectory(prefix='p4-ui-remote-') as tmp:
     path=Path(tmp); c=path/'test.c'; exe=path/'test.exe'
     functions = (
         'static void ui_library_finish_track_load_id(uint32_t load_id)',
         'static bool ui_library_track_load_busy(void)',
         'static void ui_library_invalidate_track_load(void)',
+        'static bool ui_library_track_load_is_current(uint32_t load_id)',
+        'static void ui_library_cancel_remote_load(void)',
+        'static bool ui_library_commit_remote_replacement(uint32_t load_id)',
         'static void ui_library_retire_stale_load(uint32_t load_id)',
         'static void ui_library_update_remote_progress(void)',
     )
+    replacement_test = '''
+static int simulate_worker_replacement(uint32_t load_id)
+{
+    const struct { uint32_t load_id; unsigned deck; } req = {load_id, 1};
+    replacement_result_t result_storage = {0};
+    replacement_result_t *result = &result_storage;
+    const bool remote = true;
+    if (result->rc != ESP_OK) {
+    } else if (!ui_library_track_load_is_current(req.load_id))''' + replacement + '''
+        ++deck_replacements;
+    }
+    return result->rc;
+}
+'''
     c.write_text(prelude + '\n'.join(map(function, functions)) +
-                 '\nstatic void simulate_peer_reconnect(void) {\n' + reconnect + '}\n' + cases)
+                 '\nstatic void simulate_peer_reconnect(void) {\n' + reconnect + '}\n' +
+                 replacement_test + cases)
     subprocess.run([shutil.which('gcc') or 'gcc','-std=c11','-Wall','-Wextra','-Werror',
         '-I'+str(root/'firmware/p4-core/components/ui/include'),str(c),
         str(root/'firmware/p4-core/components/ui/ui_load_gate.c'),'-o',str(exe)],check=True)

@@ -964,7 +964,7 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, uint32_t expected_g
         (expected_generation && expected_generation != summary.generation)) return ESP_ERR_INVALID_STATE;
     if (action == CTRL_DECK_EXT_ACTION_MEMORY_PREV || action == CTRL_DECK_EXT_ACTION_MEMORY_NEXT) {
         /* Recall never starts playback and never interrupts a playing deck. */
-        if (state->playing || state->cue_held) return ESP_ERR_INVALID_STATE;
+        if (audio_engine_deck_is_playing(deck) || state->cue_held) return ESP_ERR_INVALID_STATE;
         memory_cue_bank_t bank = {0};
         esp_err_t rc = deck_core_get_memory_cues(deck, &bank);
         /* Recall is tied to the current transport state and must be retried
@@ -987,6 +987,7 @@ static esp_err_t memory_action(uint8_t deck, uint8_t action, uint32_t expected_g
         rc = audio_engine_deck_recall_memory(deck, summary.audio_session_generation,
                                             cue.pos_ms, loop_end);
         if (rc != ESP_OK) return rc;
+        state->playing = false;
         state->position_ms = state->cue_point_ms = cue.pos_ms;
         if (loop_end) {
             remember_last_loop(deck, cue.pos_ms, loop_end);

@@ -166,8 +166,9 @@ class OtaSigningTests(unittest.TestCase):
                   "image_elf_sha256": "00" * 32,
                   "ota_bundle": bundle["file"], "size": image["size"], "sha256": image["sha256"],
                   "bundle_size": bundle["size"], "bundle_sha256": bundle["sha256"]}
-        def write(target):
-            payload = json.dumps({"schema_version": 2, "release_version": "M2.4", "targets": [target]}).encode()
+        def write(target, **fields):
+            payload = json.dumps({"schema_version": 2, "release_version": "M2.4",
+                                  "targets": [target], "development_candidate": False} | fields).encode()
             (root / "manifest.json").write_bytes(payload)
             (root / "manifest.sig").write_bytes(ota_signing._raw_sign(self.private, payload))
         write(target)
@@ -181,6 +182,25 @@ class OtaSigningTests(unittest.TestCase):
         write(target | {"image_elf_sha256": "d" * 64})
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.verify_release_manifest(root, self.public_path, "main-deck-p4", "M2.4", image, bundle)
+
+        flags = {"schema_version": 3, "experimental_sd_cold_power": False, "experimental_wsola2": False}
+        write(target, **flags)
+        candidate.verify_release_manifest(
+            root, self.public_path, "main-deck-p4", "M2.4", image, bundle, ordinary_only=True)
+        for flag in ("development_candidate", "experimental_sd_cold_power", "experimental_wsola2"):
+            with self.subTest(flag=flag), self.assertRaisesRegex(ValueError, flag):
+                write(target, **(flags | {flag: True}))
+                candidate.verify_release_manifest(
+                    root, self.public_path, "main-deck-p4", "M2.4", image, bundle, ordinary_only=True)
+        write(target, schema_version=3, experimental_sd_cold_power=False)
+        with self.assertRaisesRegex(ValueError, "experimental_wsola2"):
+            candidate.verify_release_manifest(
+                root, self.public_path, "main-deck-p4", "M2.4", image, bundle, ordinary_only=True)
+
+    def test_ordinary_build_rejects_wsola2_config(self):
+        candidate.verify_ordinary_build_config("#define CONFIG_PAJONIIIR_BOARD_JC1060 1\n")
+        with self.assertRaisesRegex(ValueError, "WSOLA2"):
+            candidate.verify_ordinary_build_config("#define CONFIG_AUDIO_KEYLOCK_WSOLA2 1\n")
 
 
 if __name__ == "__main__":

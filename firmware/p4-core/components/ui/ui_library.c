@@ -487,6 +487,23 @@ static void ui_library_invalidate_track_load(void)
 #endif
 }
 
+#if !defined(WIN32) && defined(CONFIG_PAJONIIIR_DJ_LINK_SERVICE)
+static void ui_library_cancel_remote_load(void)
+{
+    portENTER_CRITICAL(&s_track_load_lock);
+    if (s_remote_load_active) ui_load_gate_cancel_remote(&s_track_load_gate);
+    portEXIT_CRITICAL(&s_track_load_lock);
+}
+
+static bool ui_library_commit_remote_replacement(uint32_t load_id)
+{
+    portENTER_CRITICAL(&s_track_load_lock);
+    const bool committed = ui_load_gate_commit_remote_replacement(&s_track_load_gate, load_id);
+    portEXIT_CRITICAL(&s_track_load_lock);
+    return committed;
+}
+#endif
+
 #define s_style_screen_bg (*s_library_config.styles.screen_bg)
 #define s_style_btn_primary (*s_library_config.styles.btn_primary)
 #define s_style_btn_secondary (*s_library_config.styles.btn_secondary)
@@ -1293,6 +1310,11 @@ static void ui_track_load_worker(void *arg)
          * deck, audio session and loaded-track snapshot in that case. */
         result->rc = ESP_ERR_INVALID_STATE;
         ui_track_load_set_status(result, "LOAD LOCK", "LOAD LOCK");
+#ifdef CONFIG_PAJONIIIR_DJ_LINK_SERVICE
+    } else if (remote && !ui_library_commit_remote_replacement(req.load_id)) {
+        result->rc = ESP_ERR_INVALID_STATE;
+        ui_track_load_set_status(result, "LOAD CANCELLED", "LOAD CANCELLED");
+#endif
     } else {
         if (remote) result->generation=media_catalog_generation();
         if (req.deck == CTRL_DECK_1) {
@@ -2601,7 +2623,7 @@ void ui_library_update(const ui_frame_context_t *ctx)
                 if (!found) s_link_reconnect_pending = true;
                 else if (s_link_reconnect_pending || found->source_epoch != s_link_epoch) {
 #ifndef WIN32
-                    if (s_remote_load_active) ui_library_invalidate_track_load();
+                    ui_library_cancel_remote_load();
 #endif
                     uint64_t previous = s_link_epoch;
                     s_link_epoch = found->source_epoch;
@@ -2847,7 +2869,7 @@ void ui_library_cycle_source(void)
 {
 #ifdef UI_LIBRARY_LINK
 #ifndef WIN32
-    if (s_remote_load_active) ui_library_invalidate_track_load();
+    ui_library_cancel_remote_load();
 #endif
     /* Explicitly cycle LOCAL -> peer USB/SD or rekordbox -> LOCAL. Keep local
      * selection/navigation untouched while browsing another source. */

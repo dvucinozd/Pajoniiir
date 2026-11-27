@@ -4252,6 +4252,8 @@ Invoke-Step -Name "run production status memory JSON regression" -WorkingDirecto
     -Executable $pythonSource -Arguments @("tests/audio_engine_memory/test_memory_status_json.py")
 Invoke-Step -Name "run production MT fallback consumer-clock handoff" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/audio_fw_runtime/test_keylock_handoff.py")
+Invoke-Step -Name "run firmware memory recall seek publication regression" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/audio_fw_runtime/test_memory_recall.py")
 Invoke-Step -Name "run production board remote startup readiness regression" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/p4_startup_gate/test_board_remote_startup.py")
 Invoke-Step -Name "run linked startup capture initialization contract" -WorkingDirectory $RepoRoot `

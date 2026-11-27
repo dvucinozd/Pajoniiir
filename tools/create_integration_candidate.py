@@ -76,13 +76,20 @@ def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
 
 
-def verify_release_manifest(release, public, project, version, image, bundle):
+def verify_release_manifest(release, public, project, version, image, bundle, *, ordinary_only=False):
     manifest, signature = release / "manifest.json", release / "manifest.sig"
     payload = manifest.read_bytes()
     _raw_verify(_load_public(public), signature.read_bytes(), payload)
     info = json.loads(payload.decode("utf-8-sig"))
     if info["schema_version"] not in (2, 3) or info["release_version"] != version or len(info["targets"]) != 1:
         raise ValueError("wrong release manifest")
+    if ordinary_only:
+        required = ["development_candidate"]
+        experiments = ("experimental_sd_cold_power", "experimental_wsola2")
+        required.extend(flag for flag in experiments if info["schema_version"] == 3 or flag in info)
+        for flag in required:
+            if info.get(flag) is not False:
+                raise ValueError(f"ordinary candidate requires {flag}=false in the release manifest")
     target = info["targets"][0]
     expected = {"target": "p4", "project": project, "file": image["file"],
                 "image_elf_sha256": (release / image["file"]).read_bytes()[176:208].hex(),
@@ -91,6 +98,16 @@ def verify_release_manifest(release, public, project, version, image, bundle):
     if any(target.get(k) != v for k, v in expected.items()):
         raise ValueError("signed release manifest artifact mismatch")
     return record(manifest), record(signature)
+
+
+def verify_ordinary_build_config(config):
+    if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
+           for flag in ("FORCE_ROLLBACK_TEST", "STARTUP_TIMEOUT_TEST")):
+        raise ValueError("OTA fault-injection image is not an ordinary candidate")
+    if "#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1" in config:
+        raise ValueError("preview is not an ordinary candidate")
+    if "#define CONFIG_AUDIO_KEYLOCK_WSOLA2 1" in config:
+        raise ValueError("WSOLA2 is not an ordinary candidate")
 
 
 def main():
@@ -124,11 +141,7 @@ def main():
         ci_summary[gate] = verify_ci(extra, commit, jobs, workflow)
     verify_board(build, args.project)
     config = (build / "config/sdkconfig.h").read_text()
-    if any(f"#define CONFIG_DDJ_OTA_{flag} 1" in config
-           for flag in ("FORCE_ROLLBACK_TEST", "STARTUP_TIMEOUT_TEST")):
-        raise ValueError("OTA fault-injection image is not an ordinary candidate")
-    if "#define CONFIG_PAJONIIIR_DJ_OVERVIEW 1" in config:
-        raise ValueError("preview is not an ordinary candidate")
+    verify_ordinary_build_config(config)
     desc = json.loads((build / "project_description.json").read_text())
     if Path(desc["project_path"]).resolve() != root / "firmware" / args.project:
         raise ValueError("build belongs to another source checkout")
@@ -140,7 +153,8 @@ def main():
     idf = (build / image["file"]).read_bytes()[144:176].split(b"\0", 1)[0].decode()
     if idf != "v6.0.2":
         raise ValueError("candidate requires ESP-IDF v6.0.2")
-    manifest, signature = verify_release_manifest(release, args.public_key, args.project, version, image, bundle)
+    manifest, signature = verify_release_manifest(
+        release, args.public_key, args.project, version, image, bundle, ordinary_only=True)
     signed_source = json.loads((release / "manifest.json").read_text(encoding="utf-8-sig"))
     if signed_source.get("source_sha") != commit:
         raise ValueError("signed release manifest has another source SHA")

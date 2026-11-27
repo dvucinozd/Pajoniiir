@@ -20,6 +20,7 @@ bool ui_load_gate_try_begin(ui_load_gate_t *gate, uint32_t *load_id)
     gate->active_id = gate->next_id;
     gate->busy = true;
     gate->cancelled = false;
+    gate->remote_replacement_committed = false;
     if (load_id) *load_id = gate->active_id;
     return true;
 }
@@ -37,6 +38,7 @@ bool ui_load_gate_finish(ui_load_gate_t *gate, uint32_t load_id)
     }
     gate->busy = false;
     gate->cancelled = false;
+    gate->remote_replacement_committed = false;
     return true;
 }
 
@@ -44,4 +46,16 @@ void ui_load_gate_invalidate(ui_load_gate_t *gate)
 {
     if (!gate) return;
     if (gate->busy) gate->cancelled = true;
+}
+
+void ui_load_gate_cancel_remote(ui_load_gate_t *gate)
+{
+    if (gate && !gate->remote_replacement_committed) ui_load_gate_invalidate(gate);
+}
+
+bool ui_load_gate_commit_remote_replacement(ui_load_gate_t *gate, uint32_t load_id)
+{
+    if (!ui_load_gate_is_current(gate, load_id)) return false;
+    gate->remote_replacement_committed = true;
+    return true;
 }

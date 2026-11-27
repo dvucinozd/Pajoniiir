@@ -95,11 +95,14 @@ if (-not (Test-Path -LiteralPath $candidateManifest -PathType Leaf) -or
     --input $candidateManifest --signature $manifestSignature | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Publication manifest signature verification failed' }
 $candidate = Get-Content -LiteralPath $candidateManifest -Raw -Encoding UTF8 | ConvertFrom-Json
-$eligibilityFlags = @('development_candidate', 'experimental_sd_cold_power')
+$eligibilityFlags = @('development_candidate')
+$experimentFlags = @('experimental_sd_cold_power', 'experimental_wsola2')
 if ($candidate.schema_version -eq 3) {
-    $eligibilityFlags += 'experimental_wsola2'
+    $eligibilityFlags += $experimentFlags
 } elseif ($candidate.schema_version -ne 2 -or $Project -eq 'main-deck-jc1060') {
     throw 'Publication manifest schema does not declare the experiment status required for this project'
+} else {
+    $eligibilityFlags += @($experimentFlags | Where-Object { $candidate.PSObject.Properties[$_] })
 }
 foreach ($flag in $eligibilityFlags) {
     if ($candidate.$flag -isnot [bool]) { throw "Publication manifest has no boolean $flag" }

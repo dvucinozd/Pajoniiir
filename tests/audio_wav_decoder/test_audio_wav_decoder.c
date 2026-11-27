@@ -124,21 +124,25 @@ static void test_open_read_24bit_wav(void)
 static void test_open_seek_read_aiff(void)
 {
     static const uint8_t aiff[] = {
-        'F','O','R','M', 0,0,0,52, 'A','I','F','F',
+        'F','O','R','M', 0,0,0,54, 'A','I','F','F',
         'C','O','M','M', 0,0,0,18, 0,2, 0,0,0,2, 0,16,
         0x40,0x0e,0xac,0x44,0,0,0,0,0,0,
         'S','S','N','D', 0,0,0,16, 0,0,0,0, 0,0,0,0,
         0,1,0,2, 0x12,0x34,0x80,0,
     };
+    assert(sizeof(aiff) - 8u == aiff[7]); /* The fixture's high size bytes are zero. */
     FILE *fp = fopen("test_pcm.aiff", "wb");
     assert(fp && fwrite(aiff, sizeof(aiff), 1, fp) == 1);
     assert(fclose(fp) == 0);
     audio_decoder_t dec;
     assert(audio_decoder_open(&dec, "test_pcm.aiff") == ESP_OK);
     assert(dec.info.sample_rate == 44100 && dec.info.total_frames == 2);
-    assert(audio_decoder_seek_frame(&dec, 1) == ESP_OK);
     size_t frames_read = 0;
-    int16_t out[2] = {0};
+    int16_t out[4] = {0};
+    assert(audio_decoder_read_pcm_s16(&dec, out, 2, &frames_read) == ESP_OK);
+    assert(frames_read == 2 && out[0] == 1 && out[1] == 2 &&
+           out[2] == 0x1234 && out[3] == -32768);
+    assert(audio_decoder_seek_frame(&dec, 1) == ESP_OK);
     assert(audio_decoder_read_pcm_s16(&dec, out, 1, &frames_read) == ESP_OK);
     assert(frames_read == 1 && out[0] == 0x1234 && out[1] == -32768);
     audio_decoder_close(&dec);

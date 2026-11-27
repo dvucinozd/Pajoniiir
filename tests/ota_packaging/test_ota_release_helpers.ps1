@@ -105,20 +105,24 @@ try {
     $manifestPath = Join-Path $releaseDir 'manifest.json'
     $signaturePath = Join-Path $releaseDir 'manifest.sig'
     function Write-TestManifest {
-        param($Project, $Version, $BundlePath, [switch]$Sd, [switch]$Wsola2)
-        @{
-            schema_version = 3; release_version = $Version; development_candidate = $false
-            experimental_sd_cold_power = [bool]$Sd; experimental_wsola2 = [bool]$Wsola2
+        param($Project, $Version, $BundlePath, [switch]$Sd, [switch]$Wsola2, [switch]$Legacy)
+        $testManifest = @{
+            schema_version = $(if ($Legacy) { 2 } else { 3 })
+            release_version = $Version
+            development_candidate = $false
             targets = @(@{
                 target = 'p4'; project = $Project; ota_bundle = "$Project.ddjota"
                 bundle_size = (Get-Item -LiteralPath $BundlePath).Length
                 bundle_sha256 = (Get-FileHash -LiteralPath $BundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
             })
-        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        }
+        if (-not $Legacy -or $Sd) { $testManifest.experimental_sd_cold_power = [bool]$Sd }
+        if (-not $Legacy -or $Wsola2) { $testManifest.experimental_wsola2 = [bool]$Wsola2 }
+        $testManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
         & $Python (Join-Path $RepoRoot 'tools/ota_signing.py') sign-file --private-key $privateKey --input $manifestPath --output $signaturePath
         if ($LASTEXITCODE -ne 0) { throw 'test sidecar signing failed' }
     }
-    Write-TestManifest main-deck-p4 M2.1 $bundle
+    Write-TestManifest main-deck-p4 M2.1 $bundle -Legacy
     $publishOutput = & (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
         -ReleaseDir $releaseDir -PublicKey $publicKey -WriteToReleaseDir
     if (($publishOutput -join "`n") -notmatch `
@@ -213,8 +217,9 @@ try {
     }
     $latest = Get-Content (Join-Path $releaseDir 'latest.json') -Raw | ConvertFrom-Json
     Assert-Equal 'M2.1/main-deck-jc1060.ddjota' $latest.p4.url 'JC1060 compatible channel schema'
-    foreach ($case in @('SD', 'WSOLA2', 'altered', 'missing', 'unrelated')) {
+    foreach ($case in @('legacy', 'SD', 'WSOLA2', 'altered', 'missing', 'unrelated')) {
         $expected = switch ($case) {
+            legacy { Write-TestManifest main-deck-jc1060 M2.1 $jcBundle -Legacy; 'Publication manifest schema' }
             SD { Write-TestManifest main-deck-jc1060 M2.1 $jcBundle -Sd; 'cannot generate a public pull channel' }
             WSOLA2 { Write-TestManifest main-deck-jc1060 M2.1 $jcBundle -Wsola2; 'cannot generate a public pull channel' }
             altered { Add-Content -LiteralPath $manifestPath -Value ' '; 'manifest signature verification failed' }
@@ -240,7 +245,7 @@ try {
     $m3Bundle = Join-Path $releaseDir 'main-deck-m3.ddjota'
     & $Python (Join-Path $RepoRoot 'tools/ota_signing.py') bundle --private-key $privateKey --target p4 --chip-id 0x12 --project main-deck-m3 --version M3-52 --input $image --output $m3Bundle
     if ($LASTEXITCODE -ne 0) { throw 'M3 test bundle failed' }
-    Write-TestManifest main-deck-m3 M3-52 $m3Bundle
+    Write-TestManifest main-deck-m3 M3-52 $m3Bundle -Legacy
     $m3Output = & (Join-Path $RepoRoot 'tools/publish_ota_release.ps1') -Project main-deck-m3 -ReleaseDir $releaseDir -PublicKey $publicKey -WriteToReleaseDir
     if (($m3Output -join "`n") -notmatch [regex]::Escape('https://ota.pajoniiir.eu/m3/latest.json')) { throw 'M3 channel not isolated' }
     $latest = Get-Content (Join-Path $releaseDir 'latest.json') -Raw | ConvertFrom-Json

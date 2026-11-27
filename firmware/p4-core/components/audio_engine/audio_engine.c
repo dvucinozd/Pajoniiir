@@ -3370,6 +3370,12 @@ static void ae_decode_task(void *arg)
         ae_warm_cache_for_next_read(eng, fw);
 
         AE_LOCK();
+        /* A user seek may arrive while the decoder warms the old file page.
+         * Service it before decoding or scheduling a wrap from that cursor. */
+        if (eng->seek_requested) {
+            AE_UNLOCK();
+            continue;
+        }
         const size_t backend_before = fw->cache.backend_bytes;
         int64_t decode_start_us = esp_timer_get_time();
         int  samples = decode_one_frame(eng, fw, ctx->deck, decode_pcm);
@@ -5222,9 +5228,10 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 }
 
 /* ── audio_engine_seek ────────────────────────────────────────────────────── */
-static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
-                                                   uint32_t position_ms,
-                                                   ae_seek_reason_t reason)
+static esp_err_t audio_engine_seek_with_optional_loop(uint8_t deck,
+                                                       uint32_t position_ms,
+                                                       ae_seek_reason_t reason,
+                                                       const uint32_t *recall_loop_end)
 {
     audio_engine_state_t *eng = &s_engines[deck];
     #if AE_FW
@@ -5232,6 +5239,28 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
 #else
     if (!eng->loaded || (!eng->fp && !eng->decoder_open)) return ESP_ERR_INVALID_STATE;
 #endif
+
+    AE_LOCK();
+    if (recall_loop_end) {
+        if (atomic_load_bool(&eng->playing) && !atomic_load_bool(&eng->paused)) {
+            AE_UNLOCK();
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (*recall_loop_end &&
+            !audio_loop_range_valid(position_ms, *recall_loop_end, eng->duration_ms)) {
+            AE_UNLOCK();
+            return ESP_ERR_INVALID_ARG;
+        }
+        /* Recall replaces the loop and performs a full user seek. Publish both
+         * before decode can observe the request. Discard pending resize work
+         * derived from the previous loop's PCM. */
+        eng->loop_active = *recall_loop_end != 0u;
+        eng->loop_start_ms = eng->loop_active ? position_ms : 0u;
+        eng->loop_end_ms = *recall_loop_end;
+#if AE_FW
+        atomic_store_bool(&eng->loop_resize_pending, false);
+#endif
+    }
 
 #if AE_FW
     if (reason != AE_SEEK_REASON_LOOP) {
@@ -5248,7 +5277,6 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
     }
 #endif
 
-    AE_LOCK();
     /* The decode task writes the same seek fields under the lock (loop-wrap
      * seek and end-of-handling clear), so a user seek must publish them under
      * the lock too — otherwise it can be lost or downgraded to a no-flush
@@ -5295,6 +5323,13 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
     AE_UNLOCK();
 
     return ESP_OK;
+}
+
+static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
+                                                   uint32_t position_ms,
+                                                   ae_seek_reason_t reason)
+{
+    return audio_engine_seek_with_optional_loop(deck, position_ms, reason, NULL);
 }
 
 static esp_err_t audio_engine_request_user_seek(uint8_t deck, uint32_t position_ms)
@@ -5778,26 +5813,8 @@ esp_err_t audio_engine_deck_recall_memory(uint8_t deck, uint32_t session,
         eng->loaded_session_generation == session &&
         !atomic_load_bool(&s_scratch_playing[deck]) &&
         !atomic_load_bool(&s_deck_hold[deck])) {
-        if (loop_end_ms && !audio_loop_range_valid(position_ms, loop_end_ms, eng->duration_ms)) {
-            rc = ESP_ERR_INVALID_ARG;
-        } else {
-            rc = audio_engine_request_user_seek(deck, position_ms);
-            if (rc == ESP_OK && loop_end_ms) {
-                /* A recall already requested a seek to loop-in. The loop resize
-                 * path could otherwise request a second seek from the old head. */
-                AE_LOCK();
-#if AE_FW
-                ae_note_loop_change(eng, eng->loop_active &&
-                    (eng->loop_start_ms != position_ms || eng->loop_end_ms != loop_end_ms));
-#endif
-                eng->loop_start_ms = position_ms;
-                eng->loop_end_ms = loop_end_ms;
-                eng->loop_active = true;
-                AE_UNLOCK();
-            } else if (rc == ESP_OK) {
-                (void)audio_engine_deck_clear_loop(deck);
-            }
-        }
+        rc = audio_engine_seek_with_optional_loop(deck, position_ms, AE_SEEK_REASON_USER,
+                                                   &loop_end_ms);
     }
     lifecycle_deck_unlock(deck);
     return rc;

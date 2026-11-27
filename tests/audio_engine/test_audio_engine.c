@@ -1553,20 +1553,29 @@ static void test_deck_states_are_independent(void)
     EXPECT(audio_engine_deck_position_ms(1) == 5678, "deck 1 position is independent");
 
     audio_engine_deck_status_t loaded = {0};
-    EXPECT(audio_engine_deck_pause(0) == ESP_OK, "pause before memory recall");
     EXPECT(audio_engine_deck_get_status(0, &loaded) == ESP_OK &&
            loaded.session_generation != 0u, "memory recall identifies the loaded session");
+    EXPECT(audio_engine_deck_set_loop(0, 1000u, 2000u) == ESP_OK, "old loop before memory recall");
+    EXPECT(audio_engine_deck_recall_memory(0, loaded.session_generation, 5000u, 6000u)
+           == ESP_ERR_INVALID_STATE, "playing deck rejects direct memory recall");
+    bool loop_active = false;
+    uint32_t loop_start = 0, loop_end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(0, &loop_active, &loop_start, &loop_end) == ESP_OK &&
+           loop_active && loop_start == 1000u && loop_end == 2000u &&
+           audio_engine_deck_position_ms(0) == 1234u, "playing recall leaves old loop and position");
+    EXPECT(audio_engine_deck_pause(0) == ESP_OK, "pause before memory recall");
     EXPECT(audio_engine_deck_recall_memory(0, loaded.session_generation + 1u, 1000u, 2000u)
            == ESP_ERR_INVALID_STATE, "stale memory recall rejected by audio engine");
     EXPECT(audio_engine_deck_position_ms(0) == 1234u, "stale recall leaves replacement position alone");
-    EXPECT(audio_engine_deck_recall_memory(0, loaded.session_generation, 1000u, 2000u)
+    EXPECT(audio_engine_deck_recall_memory(0, loaded.session_generation, 5000u, 6000u)
            == ESP_OK, "bound memory recall seeks and restores a loop");
-    EXPECT(audio_engine_deck_position_ms(0) == 1000u, "bound recall seeks to loop-in");
-    bool loop_active = false;
-    EXPECT(audio_engine_deck_get_loop_state(0, &loop_active, NULL, NULL) == ESP_OK &&
-           loop_active, "bound recall activates the loop");
+    EXPECT(audio_engine_deck_position_ms(0) == 5000u, "bound recall seeks to new loop-in");
+    EXPECT(audio_engine_deck_get_loop_state(0, &loop_active, &loop_start, &loop_end) == ESP_OK &&
+           loop_active && loop_start == 5000u && loop_end == 6000u, "bound recall replaces old loop");
     EXPECT(audio_engine_deck_recall_memory(0, loaded.session_generation, 1234u, 0u)
            == ESP_OK, "bound single cue clears the loop");
+    EXPECT(audio_engine_deck_get_loop_state(0, &loop_active, NULL, NULL) == ESP_OK &&
+           !loop_active && !audio_engine_deck_is_playing(0), "single cue leaves the deck stopped without a loop");
 
     EXPECT(audio_engine_deck_stop(0) == ESP_OK, "deck 0 stop returns ESP_OK");
     EXPECT(!audio_engine_deck_is_playing(0), "deck 0 stopped");
