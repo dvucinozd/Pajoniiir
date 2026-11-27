@@ -295,8 +295,9 @@ is independent of Ethernet DJ LINK; Link remains Ethernet-only. This newer
 candidate requires its own physical acceptance before broader support claims.
 
 1. Enable **Wi-Fi Remote** on the Settings screen.
-2. Connect a phone or computer to the `Pajoniiir` Wi-Fi network. The default
-   WPA password is `Pajoniiir`.
+2. Connect a phone or computer to the Wi-Fi network shown in Settings
+   (`Pajoniiir` on JC4880, `Pajoniiir-JC1060` on JC1060, or `Pajoniiir-M3` on M3).
+   The default WPA password is `Pajoniiir`.
 3. Open [`http://192.168.4.1`](http://192.168.4.1) or
    [`http://pajoniiir.local`](http://pajoniiir.local).
 

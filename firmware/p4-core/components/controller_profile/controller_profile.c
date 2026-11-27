@@ -94,6 +94,11 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         return CP_ERR_SIZE;
     }
 
+    /* The local JC1060 DDJ-400 profile from 8bc3b53a used action IDs 10/11
+     * before the shared ABI assigned memory store/delete to 15/16. Match the
+     * entire validated payload by length and CRC before rewriting its entries. */
+    const bool legacy_memory_profile = version == 4 && len == 6176u &&
+        crc == 0x230e3f3cu && out->vid == 0x2b73u && out->pid == 0x0026u;
     const uint8_t *p = data + CP_HEADER_SIZE;
     for (uint16_t i = 0; i < out->input_count; i++, p += CP_INPUT_ENTRY_SIZE) {
         cp_input_entry_t *e = &out->inputs[i];
@@ -106,10 +111,7 @@ int cp_profile_parse(const uint8_t *data, size_t len, cp_profile_t *out)
         e->flags = rd_u16(p + 6);
         e->base_value = rd_i16(p + 8);
         e->press_mask = rd_u16(p + 10);
-        /* Migrate the two memory bindings shipped in the early local DDJ-400
-         * candidate. Match the exact device and MIDI notes so SB3's action
-         * 10 (VINYL) and custom DDJ-400 mappings keep their meaning. */
-        if (out->vid == 0x2B73 && out->pid == 0x0026 &&
+        if (legacy_memory_profile &&
             e->raw_type == CP_IN_NOTE_VALUE && e->semantic_type == 0x01 &&
             e->press_mask == 0x80 &&
             ((e->match_status == 0x90 && e->semantic_id == 0x2C) ||

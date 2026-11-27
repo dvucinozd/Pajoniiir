@@ -4258,6 +4258,8 @@ Invoke-Step -Name "run linked startup capture initialization contract" -WorkingD
     -Executable $pythonSource -Arguments @("tests/restart_diagnostics/test_startup_elf_contract.py")
 Invoke-Step -Name "run production remote load progress and cancellation retirement" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/ui_library/test_remote_progress.py")
+Invoke-Step -Name "run production web memory action queue mapping" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/web_api_helpers/test_memory_events.py")
 Invoke-Step -Name "run production paired RGB565 fill regression" -WorkingDirectory $RepoRoot `
     -Executable $pythonSource -Arguments @("tests/ui_framebuffer_pair/test_backend_fill.py")
 Invoke-Step -Name "run production controller profile rescan regression" -WorkingDirectory $RepoRoot `
